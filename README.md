@@ -128,8 +128,7 @@ ai-debug/
 # 在仓库根目录
 pnpm install
 
-# 启动开发服务器（必须进入 apps/web，根目录仅是 workspace 入口）
-cd apps/web
+# 启动开发服务器（根目录或 apps/web 下均可）
 pnpm dev
 ```
 
@@ -226,7 +225,7 @@ MIT
 
 如需支持本项目的持续开发，请前往统一赞赏页面：
 
-👉 `https://ale160.com/sponsor`
+👉 [https://ale160.com/sponsor](https://ale160.com/sponsor)
 
 
 ---

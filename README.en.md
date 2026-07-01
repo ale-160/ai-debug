@@ -128,8 +128,7 @@ ai-debug/
 # From the repo root
 pnpm install
 
-# Start the dev server (you must cd into apps/web; root is only the workspace entry)
-cd apps/web
+# Start the dev server (works from repo root or apps/web)
 pnpm dev
 ```
 
@@ -226,7 +225,7 @@ For questions, suggestions, or feedback, reach out via:
 
 To support the ongoing development of this project, please visit the unified sponsorship page:
 
-👉 `https://ale160.com/sponsor`
+👉 [https://ale160.com/sponsor](https://ale160.com/sponsor)
 
 
 ---

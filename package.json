@@ -1,0 +1,16 @@
+{
+  "name": "ai-debug",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "pnpm --filter @ai-debug/web dev",
+    "build": "pnpm --filter @ai-debug/web build",
+    "lint": "pnpm --filter @ai-debug/web lint",
+    "clean": "pnpm --filter @ai-debug/web clean"
+  },
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@9.12.0"
+}

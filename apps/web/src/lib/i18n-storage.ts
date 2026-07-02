@@ -1,6 +1,6 @@
 import type { Language } from '@/data/i18n';
 
-export const LANGUAGE_STORAGE_KEY = 'ai-debug:language';
+export const LANGUAGE_STORAGE_KEY = 'ai-debug:user-lang';
 
 /** 加载已存储的语言偏好；未设置时返回 null（由调用方决定回退策略） */
 export function loadLanguage(): Language | null {

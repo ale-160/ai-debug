@@ -10,7 +10,6 @@ import React, {
 } from 'react';
 import {
   applyLanguage,
-  loadLanguage,
   saveLanguage,
   LANGUAGE_STORAGE_KEY,
 } from '@/lib/i18n-storage';
@@ -33,21 +32,14 @@ interface I18nProviderProps {
 }
 
 export function I18nProvider({ children, defaultLang = 'en' }: I18nProviderProps) {
-  // 初始值用路由语言，避免首屏闪烁
+  // 路由语言作为初始值，确保首屏与 URL 一致
   const [language, setLanguageState] = useState<Language>(defaultLang);
 
   useEffect(() => {
-    // 客户端挂载后：优先读取 localStorage，没有则用路由默认语言
-    const stored = loadLanguage();
-    if (stored === 'zh' || stored === 'en') {
-      setLanguageState(stored);
-      applyLanguage(stored);
-    } else {
-      // 没有存储过，用路由语言作为默认值并持久化
-      setLanguageState(defaultLang);
-      saveLanguage(defaultLang);
-      applyLanguage(defaultLang);
-    }
+    // 路由语言优先：/zh/ 始终显示中文，/ 始终显示英文
+    // localStorage 仅在用户主动切换语言时更新（切换会同时跳转路由）
+    setLanguageState(defaultLang);
+    applyLanguage(defaultLang);
   }, [defaultLang]);
 
   useEffect(() => {

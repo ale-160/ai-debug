@@ -18,28 +18,12 @@ import {
   importProject,
 } from '@/lib/project-storage';
 import { analyzeNetwork, derivePrunedProject } from '@/lib/network-pruner';
+import { useTranslation } from '@/components/I18nProvider';
 import type { NetworkProject } from './types';
 
-function formatTime(ts: number): string {
-  const now = Date.now();
-  const diff = now - ts;
-  const seconds = Math.floor(diff / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
-
-  if (seconds < 60) return '刚刚';
-  if (minutes < 60) return `${minutes} 分钟前`;
-  if (hours < 24) return `${hours} 小时前`;
-  if (days < 30) return `${days} 天前`;
-  const d = new Date(ts);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
 export default function NodeSidebar() {
+  const { t, tf } = useTranslation();
+
   const projects = useDebugStore((s) => s.projects);
   const currentProjectId = useDebugStore((s) => s.currentProjectId);
   const mobileSidebarOpen = useDebugStore((s) => s.mobileSidebarOpen);
@@ -49,6 +33,28 @@ export default function NodeSidebar() {
   const toggleMobileSidebar = useDebugStore((s) => s.toggleMobileSidebar);
   const setMobileSidebarOpen = useDebugStore((s) => s.setMobileSidebarOpen);
   const refreshProjects = useDebugStore((s) => s.refreshProjects);
+
+  const formatTime = useCallback(
+    (ts: number): string => {
+      const now = Date.now();
+      const diff = now - ts;
+      const seconds = Math.floor(diff / 1000);
+      const minutes = Math.floor(seconds / 60);
+      const hours = Math.floor(minutes / 60);
+      const days = Math.floor(hours / 24);
+
+      if (seconds < 60) return t.justNow;
+      if (minutes < 60) return tf('minutesAgo', { count: minutes });
+      if (hours < 24) return tf('hoursAgo', { count: hours });
+      if (days < 30) return tf('daysAgo', { count: days });
+      const d = new Date(ts);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    },
+    [t, tf]
+  );
 
   // 正在执行 AI 清理蛛网的项目 id（用于按钮 loading + 禁用）
   const [pruningProjectId, setPruningProjectId] = useState<string | null>(null);
@@ -90,7 +96,7 @@ export default function NodeSidebar() {
   const handleRename = (e: React.MouseEvent, project: NetworkProject) => {
     e.stopPropagation();
     setMenuOpenId(null);
-    const newName = window.prompt('重命名项目：', project.name);
+    const newName = window.prompt(t.renameProject, project.name);
     if (!newName || !newName.trim() || newName.trim() === project.name) return;
     updateProject(project.id, { name: newName.trim() });
     refreshProjects();
@@ -128,7 +134,7 @@ export default function NodeSidebar() {
   const handleDelete = (e: React.MouseEvent, project: NetworkProject) => {
     e.stopPropagation();
     setMenuOpenId(null);
-    if (confirm(`确定删除项目「${project.name}」？此操作不可撤销。`)) {
+    if (confirm(tf('confirmDeleteProject', { name: project.name }))) {
       deleteProject(project.id);
     }
   };
@@ -147,19 +153,19 @@ export default function NodeSidebar() {
           const nextEdges = Array.isArray(project?.edges) ? project.edges : [];
           const nextViewport = project?.viewport ?? null;
           const nextMemory = Array.isArray(project?.memory) ? project.memory : undefined;
-          const name = typeof project?.name === 'string' ? project.name : '导入的项目';
+          const name = typeof project?.name === 'string' ? project.name : t.importedProjectName;
           const newProject = importProject(name, nextNodes, nextEdges, nextViewport, nextMemory);
           refreshProjects();
           loadProject(newProject.id);
           setMobileSidebarOpen(false);
         } catch {
-          alert('导入失败：文件格式无效');
+          alert(t.importFailed);
         }
       };
       reader.readAsText(file);
       e.target.value = '';
     },
-    [refreshProjects, loadProject, setMobileSidebarOpen]
+    [refreshProjects, loadProject, setMobileSidebarOpen, t]
   );
 
   // AI 清理蛛网：分析当前项目 → 派生精简项目 → 刷新列表 → 切换到新项目
@@ -178,7 +184,7 @@ export default function NodeSidebar() {
       setMobileSidebarOpen(false);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      alert(`AI 清理蛛网失败：${msg}`);
+      alert(tf('aiPruneFailed', { message: msg }));
     } finally {
       setPruningProjectId(null);
     }
@@ -201,35 +207,39 @@ export default function NodeSidebar() {
         <div
           className="fixed inset-0 bg-black/30 z-20 md:hidden"
           onClick={toggleMobileSidebar}
+          aria-hidden="true"
         />
       )}
 
       <div
-        className={`fixed inset-y-0 left-0 w-64 z-30 transform transition-transform duration-200 bg-white border-r border-slate-200 flex flex-col md:relative md:translate-x-0 md:z-auto ${
+        className={`fixed inset-y-0 left-0 w-64 z-30 transform transition-transform duration-200 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 flex flex-col md:relative md:translate-x-0 md:z-auto ${
           mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
+        role="navigation"
+        aria-label={t.projectList}
       >
-        <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
-          <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+        <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+          <h2 className="font-semibold text-slate-800 dark:text-slate-100 text-sm flex items-center gap-2">
             <Folder size={16} className="text-blue-500" />
-            项目列表
+            {t.projectList}
           </h2>
         </div>
 
-        <div className="p-3 border-b border-slate-100">
+        <div className="p-3 border-b border-slate-100 dark:border-slate-700">
           <button
             onClick={handleCreate}
             className="w-full bg-blue-500 text-white rounded-lg py-2 px-3 hover:bg-blue-600 flex items-center justify-center gap-2 transition-colors"
+            aria-label={t.newProject}
           >
             <Plus size={16} />
-            <span className="text-sm font-medium">新建项目</span>
+            <span className="text-sm font-medium">{t.newProject}</span>
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto">
           {sortedProjects.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-slate-400">
-              还没有项目，点击上方新建
+            <div className="px-4 py-8 text-center text-sm text-slate-400 dark:text-slate-500">
+              {t.noProjects}
             </div>
           ) : (
             sortedProjects.map((project) => {
@@ -238,9 +248,9 @@ export default function NodeSidebar() {
                 <div
                   key={project.id}
                   onClick={() => handleSelect(project.id)}
-                  className={`group p-3 border-b border-slate-100 hover:bg-slate-50 cursor-pointer flex items-center justify-between transition-colors ${
+                  className={`group p-3 border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer flex items-center justify-between transition-colors ${
                     isActive
-                      ? 'bg-blue-50 border-l-4 border-l-blue-300'
+                      ? 'bg-blue-50 dark:bg-blue-900/30 border-l-4 border-l-blue-300 dark:border-l-blue-600'
                       : 'border-l-4 border-l-transparent'
                   }`}
                 >
@@ -252,7 +262,7 @@ export default function NodeSidebar() {
                           className="text-amber-500 flex-shrink-0"
                         />
                       )}
-                      <div className="font-bold text-sm text-slate-800 truncate">
+                      <div className="font-bold text-sm text-slate-800 dark:text-slate-100 truncate">
                         {project.name}
                       </div>
                     </div>
@@ -262,17 +272,19 @@ export default function NodeSidebar() {
                           handleJumpToOriginal(e, project.originalProjectId)
                         }
                         className="mt-0.5 text-xs text-blue-500 hover:text-blue-700 hover:underline flex items-center gap-1 max-w-full"
-                        title="跳转到原项目"
+                        title={t.jumpToOriginal}
                       >
                         <span className="truncate">
-                          派生自{' '}
-                          {getProject(project.originalProjectId ?? '')?.name ??
-                            '已删除'}
+                          {tf('derivedFrom', {
+                            name:
+                              getProject(project.originalProjectId ?? '')
+                                ?.name ?? t.deleted,
+                          })}
                         </span>
                       </button>
                     )}
-                    <div className="text-xs text-slate-400 mt-1 flex items-center gap-2">
-                      <span>{project.nodes.length} 个节点</span>
+                    <div className="text-xs text-slate-500 dark:text-slate-500 mt-1 flex items-center gap-2">
+                      <span>{tf('nodesCount', { count: project.nodes.length })}</span>
                       <span>·</span>
                       <span>{formatTime(project.updatedAt)}</span>
                     </div>
@@ -283,7 +295,7 @@ export default function NodeSidebar() {
                         onClick={(e) => handlePruneNetwork(e, project)}
                         disabled={pruningProjectId === project.id}
                         className="md:opacity-0 md:group-hover:opacity-100 text-amber-500 hover:text-amber-700 disabled:opacity-50 transition-all p-1"
-                        title="AI 清理蛛网"
+                        title={t.aiPruneNetwork}
                       >
                         {pruningProjectId === project.id ? (
                           <Loader2 size={14} className="animate-spin" />
@@ -302,7 +314,8 @@ export default function NodeSidebar() {
                           );
                         }}
                         className="md:opacity-0 md:group-hover:opacity-100 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 rounded transition-all p-1"
-                        title="更多操作"
+                        title={t.moreActions}
+                        aria-label={t.moreActions}
                       >
                         <svg
                           width="14"
@@ -316,28 +329,31 @@ export default function NodeSidebar() {
                         </svg>
                       </button>
                       {menuOpenId === project.id && (
-                        <div className="absolute right-0 top-full mt-1 w-32 bg-white border border-slate-200 rounded-lg shadow-lg z-50 py-1">
+                        <div className="absolute right-0 top-full mt-1 w-32 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-50 py-1" role="menu">
                           <button
                             onClick={(e) => handleRename(e, project)}
-                            className="w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-blue-50 flex items-center gap-2"
+                            className="w-full text-left px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 flex items-center gap-2"
+                            role="menuitem"
                           >
                             <Pencil size={12} />
-                            重命名
+                            {t.rename}
                           </button>
                           <button
                             onClick={(e) => handleExport(e, project)}
-                            className="w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-sky-50 flex items-center gap-2"
+                            className="w-full text-left px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-sky-50 dark:hover:bg-sky-900/30 flex items-center gap-2"
+                            role="menuitem"
                           >
                             <Download size={12} />
-                            导出
+                            {t.export}
                           </button>
-                          <div className="border-t border-slate-100 my-1" />
+                          <div className="border-t border-slate-100 dark:border-slate-700 my-1" />
                           <button
                             onClick={(e) => handleDelete(e, project)}
-                            className="w-full text-left px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2"
+                            className="w-full text-left px-3 py-1.5 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 flex items-center gap-2"
+                            role="menuitem"
                           >
                             <Trash2 size={12} />
-                            删除
+                            {t.delete}
                           </button>
                         </div>
                       )}
@@ -350,7 +366,7 @@ export default function NodeSidebar() {
         </div>
 
         {/* 底部：从 JSON 文件导入 */}
-        <div className="px-3 pt-1 pb-1 border-t border-slate-100">
+        <div className="px-3 pt-1 pb-1 border-t border-slate-100 dark:border-slate-700">
           <input
             ref={importFileRef}
             type="file"
@@ -360,10 +376,11 @@ export default function NodeSidebar() {
           />
           <button
             onClick={() => importFileRef.current?.click()}
-            className="flex items-center gap-2 w-full text-xs text-slate-500 hover:text-amber-600 py-2 px-2 rounded hover:bg-amber-50 transition-colors"
+            className="flex items-center gap-2 w-full text-xs text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 py-2 px-2 rounded hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors"
+            aria-label={t.importFromJson}
           >
             <Upload size={14} />
-            从 JSON 文件导入
+            {t.importFromJson}
           </button>
         </div>
       </div>

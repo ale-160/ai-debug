@@ -1,17 +1,11 @@
 import "./globals.css";
 import { Toaster } from "sonner";
 import React from "react";
-import type { Metadata } from "next";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { I18nProvider } from "@/components/I18nProvider";
+import { viewport } from "@/config/metadata";
 
-export const metadata: Metadata = {
-  title: "蛛网 · AI Debug —— 蛛网式上下文管理工具",
-  description:
-    "把 AI 对话从线性列表变成 git 仓库式的蛛网结构。每个分支独立维护自己的上下文路径，支持分叉、合并、放弃、恢复，让复杂问题的排查不再被无关历史污染。",
-  icons: {
-    icon: "https://ale160.com/favicon.png",
-  },
-};
+export { viewport };
 
 export default function RootLayout({
   children,
@@ -19,11 +13,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <link rel="preconnect" href="https://ale160.com" />
+      </head>
       <body className="min-h-screen antialiased">
         <ThemeProvider>
-          {children}
-          <Toaster position="top-center" richColors />
+          <I18nProvider>
+            {children}
+            <Toaster position="top-center" richColors />
+          </I18nProvider>
         </ThemeProvider>
       </body>
     </html>

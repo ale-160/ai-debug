@@ -25,15 +25,14 @@ import { useDebugStore } from '@/lib/debug-store';
 import { streamTurnResponse } from '@/lib/network-engine';
 import { isConfigured } from '@/lib/llm-config';
 import { updateProject } from '@/lib/project-storage';
+import { useTranslation } from '@/components/I18nProvider';
 
-// 默认边样式：smoothstep + 灰色
 const defaultEdgeOptions = {
   type: 'smoothstep',
   animated: false,
   style: { stroke: '#94a3b8', strokeWidth: 2 },
 };
 
-// MiniMap 节点颜色：按 TurnStatus 映射
 const statusColorMap: Record<TurnStatus, string> = {
   running: '#3b82f6',
   success: '#10b981',
@@ -43,29 +42,20 @@ const statusColorMap: Record<TurnStatus, string> = {
   idle: '#ffffff',
 };
 
-/**
- * 收集选中节点的完整路径（根 → 当前）+ 路径上所有节点的全部子树节点 id。
- * 用于聚焦模式下决定哪些节点需要显示。
- * - 先沿 parentId 向上回溯，得到根 → 当前路径上的全部节点 id
- * - 再沿父子关系向下 BFS，把路径上每个节点的所有子树节点也纳入可见集合
- * 返回 null 表示无选中节点，调用方应显示全部节点。
- */
 function collectVisibleNodeIds(
   selectedNodeId: string | null,
   nodes: Node<TurnNodeData>[],
 ): Set<string> | null {
   if (!selectedNodeId) return null;
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
-  // 1. 向上回溯收集 根 → 当前 的路径
   const pathIds = new Set<string>();
   let currentId: string | null = selectedNodeId;
   while (currentId) {
-    if (pathIds.has(currentId)) break; // 防御异常环引用导致死循环
+    if (pathIds.has(currentId)) break;
     pathIds.add(currentId);
     const node = nodeMap.get(currentId);
     currentId = node?.data.parentId ?? null;
   }
-  // 2. 构建 父 → 子 映射
   const childrenMap = new Map<string, string[]>();
   for (const n of nodes) {
     if (n.data.parentId) {
@@ -74,7 +64,6 @@ function collectVisibleNodeIds(
       childrenMap.set(n.data.parentId, list);
     }
   }
-  // 3. 向下 BFS 收集路径上每个节点的全部子树
   const allVisible = new Set<string>(pathIds);
   const queue: string[] = [...pathIds];
   while (queue.length > 0) {
@@ -91,7 +80,8 @@ function collectVisibleNodeIds(
 }
 
 export default function NodeCanvas() {
-  // 画布数据
+  const { t, tf } = useTranslation();
+
   const nodes = useDebugStore((s) => s.nodes);
   const edges = useDebugStore((s) => s.edges);
   const onNodesChange = useDebugStore((s) => s.onNodesChange);
@@ -106,20 +96,16 @@ export default function NodeCanvas() {
   const focusMode = useDebugStore((s) => s.focusMode);
   const toggleFocusMode = useDebugStore((s) => s.toggleFocusMode);
 
-  // 项目数据
   const currentProjectId = useDebugStore((s) => s.currentProjectId);
   const projects = useDebugStore((s) => s.projects);
   const saveProject = useDebugStore((s) => s.saveProject);
   const refreshProjects = useDebugStore((s) => s.refreshProjects);
   const currentProject = projects.find((p) => p.id === currentProjectId);
 
-  // React Flow 实例方法
   const { zoomIn, zoomOut, fitView, setViewport: rfSetViewport } = useReactFlow();
 
-  // 当前流式请求的 AbortController：用于在发起新请求前取消旧请求
   const abortRef = useRef<AbortController | null>(null);
 
-  // ========== 项目名编辑（受控 input + 本地 state，blur 保存） ==========
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
 
@@ -137,12 +123,10 @@ export default function NodeCanvas() {
     const trimmed = nameDraft.trim();
     const current = state.projects.find((p) => p.id === id);
     if (!trimmed || trimmed === current?.name) return;
-    // store 未提供 rename 方法，直接调用 project-storage 更新，再刷新列表
     updateProject(id, { name: trimmed });
     refreshProjects();
   }, [nameDraft, refreshProjects]);
 
-  // ========== 节点交互 ==========
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
       setSelectedNode(node.id);
@@ -161,25 +145,17 @@ export default function NodeCanvas() {
     [setViewport],
   );
 
-  // ========== 交互模式：select（选择/框选） / hand（抓手平移） ==========
   const [interactionMode, setInteractionMode] = useState<'select' | 'hand'>('select');
-  // 空格键是否按住（临时切换抓手）
   const [spacePressed, setSpacePressed] = useState(false);
-  // 当前是否真的处于抓手模式（用户选的模式 or 空格键临时）
   const isHandMode = interactionMode === 'hand' || spacePressed;
 
-  // viewport 单独订阅（用于自动保存，避免与 nodes/edges 防抖混在一起）
   const viewport = useDebugStore((s) => s.viewport);
 
-  // ========== 自动保存（防抖 500ms） ==========
-  // 监听 nodes/edges 变化，若有改动且已绑定项目则自动保存。
-  // 草稿态（currentProjectId 为空）不保存，等首条消息提交后绑定项目再启用。
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isInitialLoadRef = useRef(true);
 
   useEffect(() => {
     if (!currentProjectId) return;
-    // 跳过项目切换后的首次加载（loadProject 已设 isDirty=false）
     if (isInitialLoadRef.current) {
       isInitialLoadRef.current = false;
       return;
@@ -196,7 +172,6 @@ export default function NodeCanvas() {
     };
   }, [nodes, edges, currentProjectId]);
 
-  // viewport 单独防抖保存（拖动/缩放时避免频繁写入）
   const viewportSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!currentProjectId) return;
@@ -213,20 +188,16 @@ export default function NodeCanvas() {
     };
   }, [viewport, currentProjectId]);
 
-  // ========== 项目切换时恢复视口 ==========
   useEffect(() => {
-    isInitialLoadRef.current = true; // 切换项目后跳过首次自动保存
+    isInitialLoadRef.current = true;
     const vp = useDebugStore.getState().viewport;
     if (vp) {
       rfSetViewport(vp);
     } else if (useDebugStore.getState().nodes.length > 0) {
       setTimeout(() => fitView({ padding: 0.2 }), 50);
     }
-    // 仅在 currentProjectId 变化时触发，避免 onMove 引发的 viewport 更新造成循环
   }, [currentProjectId, rfSetViewport, fitView]);
 
-  // ========== 键盘快捷键 ==========
-  // Delete/Backspace 删除选中节点（连带下游子树）和边
   const handleDelete = useCallback(() => {
     const state = useDebugStore.getState();
     const selectedNodes = state.nodes.filter((n) => n.selected);
@@ -234,7 +205,7 @@ export default function NodeCanvas() {
     if (selectedNodes.length === 0 && selectedEdges.length === 0) return;
 
     if (selectedNodes.length > 0) {
-      const ok = confirm('确定删除此节点及其所有下游节点？');
+      const ok = confirm(t.confirmPruneNode);
       if (!ok) return;
       selectedNodes.forEach((n) => state.deleteNode(n.id));
       state.setSelectedNode(null);
@@ -247,12 +218,11 @@ export default function NodeCanvas() {
         isDirty: true,
       }));
     }
-  }, []);
+  }, [t.confirmPruneNode]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
-      // 输入框 / textarea / contenteditable 内不触发画布快捷键
       if (
         target.tagName === 'INPUT' ||
         target.tagName === 'TEXTAREA' ||
@@ -263,34 +233,29 @@ export default function NodeCanvas() {
 
       const isCtrl = e.ctrlKey || e.metaKey;
 
-      // Delete/Backspace 删除
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
         handleDelete();
         return;
       }
 
-      // F 适应视图
       if ((e.key === 'f' || e.key === 'F') && !isCtrl && !e.repeat) {
         e.preventDefault();
         fitView({ padding: 0.2 });
         return;
       }
 
-      // 空格按下 → 临时抓手
       if (e.code === 'Space' && !e.repeat) {
         e.preventDefault();
         setSpacePressed(true);
         return;
       }
 
-      // V 选择模式
       if (e.key === 'v' || e.key === 'V') {
         setInteractionMode('select');
         return;
       }
 
-      // H 抓手模式
       if (e.key === 'h' || e.key === 'H') {
         setInteractionMode('hand');
         return;
@@ -304,7 +269,6 @@ export default function NodeCanvas() {
       }
     };
 
-    // 窗口失焦时重置空格状态，避免松开事件丢失
     const handleBlur = () => setSpacePressed(false);
 
     window.addEventListener('keydown', handleKeyDown);
@@ -317,32 +281,27 @@ export default function NodeCanvas() {
     };
   }, [handleDelete, fitView]);
 
-  // ========== 工具栏按钮 ==========
   const handleFitView = useCallback(() => {
     fitView({ padding: 0.2 });
   }, [fitView]);
 
-  // ========== 多选合并 ==========
-  // ReactFlow 的 selection 通过 node.selected 反映（Shift+点击多选）。
   const selectedNodes = useMemo(() => nodes.filter((n) => n.selected), [nodes]);
   const canMerge = selectedNodes.length >= 2;
 
-  // 合并选中节点：弹窗确认 + 输入合并意图 -> 创建合并节点 -> 流式生成回答
   const handleMerge = useCallback(async () => {
     const state = useDebugStore.getState();
     const picked = state.nodes.filter((n) => n.selected);
     if (picked.length < 2) return;
     const ids = picked.map((n) => n.id);
 
-    // 弹窗确认 + 输入合并意图（如"结合 A 和 B 的结论给出下一步"）
     const intent = window.prompt(
-      `合并 ${ids.length} 个分支为新节点，请输入合并意图：`,
-      '结合这些分支的结论给出下一步',
+      tf('mergePrompt', { n: ids.length }),
+      t.mergeDefaultIntent,
     );
     if (!intent || !intent.trim()) return;
 
     if (!isConfigured()) {
-      alert('请先配置 API Key');
+      alert(t.pleaseConfigureApiKey);
       return;
     }
 
@@ -350,7 +309,6 @@ export default function NodeCanvas() {
     setSelectedNode(newId);
     updateTurnNode(newId, { status: 'running' });
     const currentNodes = useDebugStore.getState().nodes;
-    // 取消前一次流式请求（如有），再发起新请求
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -369,11 +327,8 @@ export default function NodeCanvas() {
     } else {
       updateTurnNode(newId, { status: 'error', errorMessage: result.error });
     }
-  }, [createMergedNode, setSelectedNode, updateTurnNode, appendAssistantChunk]);
+  }, [createMergedNode, setSelectedNode, updateTurnNode, appendAssistantChunk, tf, t]);
 
-  // ========== 聚焦模式：过滤显示节点 ==========
-  // 聚焦模式开启且有选中节点时，仅显示选中节点路径 + 路径子树；
-  // 其他路径上的 abandoned 节点隐藏，非 abandoned 节点仍显示。
   const { displayNodes, displayEdges } = useMemo(() => {
     if (!focusMode || !selectedNodeId) {
       return { displayNodes: nodes, displayEdges: edges };
@@ -382,29 +337,24 @@ export default function NodeCanvas() {
     if (!visibleIds) {
       return { displayNodes: nodes, displayEdges: edges };
     }
-    // 路径上的节点全部显示；不在路径上的节点仅在非 abandoned 时显示
     const displayNodes = nodes.filter(
       (n) => visibleIds.has(n.id) || n.data.status !== 'abandoned',
     );
     const displayedNodeIds = new Set(displayNodes.map((n) => n.id));
-    // 过滤掉连接到隐藏节点的边，避免出现悬空边
     const displayEdges = edges.filter(
       (e) => displayedNodeIds.has(e.source) && displayedNodeIds.has(e.target),
     );
     return { displayNodes, displayEdges };
   }, [nodes, edges, selectedNodeId, focusMode]);
 
-  // 节点较多且未开启聚焦时，显示提示条
   const showFocusHint = nodes.length > 20 && !focusMode;
 
   const isEmpty = nodes.length === 0;
   const hasProject = !!currentProjectId;
 
   return (
-    <div className="flex-1 h-full flex flex-col bg-slate-50">
-      {/* 顶部工具栏：仅保留项目名编辑 + 聚焦模式 + 缩放控件 */}
-      <div className="h-12 px-4 bg-white border-b border-slate-200 flex items-center justify-between shrink-0">
-        {/* 左：项目名编辑（点击进入编辑态，blur/Enter 保存） */}
+    <div className="flex-1 h-full flex flex-col bg-slate-50 dark:bg-slate-900" role="main" aria-label={t.projectName}>
+      <div className="h-12 px-4 bg-white border-b border-slate-200 dark:bg-slate-900 dark:border-slate-700 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           {editingName ? (
             <input
@@ -416,43 +366,43 @@ export default function NodeCanvas() {
                 if (e.key === 'Enter') commitName();
                 if (e.key === 'Escape') setEditingName(false);
               }}
-              className="px-2 py-1 text-sm border border-sky-300 rounded focus:outline-none focus:ring-1 focus:ring-sky-400 w-48"
-              placeholder="项目名"
+              className="px-2 py-1 text-sm border border-sky-300 rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-400 w-48 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
+              placeholder={t.projectName}
+              aria-label={t.projectName}
             />
           ) : (
             <button
               onClick={startEditName}
               disabled={!hasProject}
-              className="px-2 py-1 text-sm font-medium text-slate-700 hover:text-sky-600 hover:bg-sky-50 rounded transition-colors max-w-[200px] truncate disabled:opacity-50 disabled:cursor-not-allowed"
-              title={hasProject ? '点击编辑项目名' : '未打开项目'}
+              className="px-2 py-1 text-sm font-medium text-slate-700 hover:text-sky-600 hover:bg-sky-50 rounded transition-colors max-w-[200px] truncate disabled:opacity-50 disabled:cursor-not-allowed dark:text-slate-200 dark:hover:text-sky-400 dark:hover:bg-sky-900/30"
+              title={hasProject ? t.clickToEditProjectName : t.noProjectSelected}
             >
-              {currentProject?.name ?? '未打开项目'}
+              {currentProject?.name ?? t.noProjectSelected}
             </button>
           )}
         </div>
 
-        {/* 右：聚焦模式切换（缩放控件在左下角工具栏） */}
         <div className="flex items-center gap-1">
           <button
             onClick={toggleFocusMode}
             disabled={isEmpty}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
               focusMode
-                ? 'text-sky-600 bg-sky-50 hover:bg-sky-100'
-                : 'text-slate-600 hover:text-sky-600 hover:bg-sky-50'
+                ? 'text-sky-600 bg-sky-50 hover:bg-sky-100 dark:text-sky-400 dark:bg-sky-900/30 dark:hover:bg-sky-900/50'
+                : 'text-slate-600 hover:text-sky-600 hover:bg-sky-50 dark:text-slate-300 dark:hover:text-sky-400 dark:hover:bg-sky-900/30'
             }`}
             title={
               focusMode
-                ? '当前为聚焦模式，点击显示全部节点'
-                : '开启聚焦模式：仅显示选中路径与子树'
+                ? t.focusModeOnHint
+                : t.focusModeOffHint
             }
+            aria-pressed={focusMode}
           >
-            {focusMode ? '显示全部' : '聚焦当前'}
+            {focusMode ? t.showAll : t.focusCurrent}
           </button>
         </div>
       </div>
 
-      {/* 画布区域 */}
       <div className="flex-1 relative">
         <ReactFlow
           nodes={displayNodes}
@@ -467,10 +417,8 @@ export default function NodeCanvas() {
           fitView
           defaultEdgeOptions={defaultEdgeOptions}
           deleteKeyCode={null}
-          // 抓手/选择模式：抓手时左键拖拽平移，选择时左键框选
           selectionOnDrag={!isHandMode}
           panOnDrag={isHandMode}
-          // Shift+点击启用多选（用于合并分支）
           multiSelectionKeyCode={['Shift']}
           minZoom={0.1}
           maxZoom={4}
@@ -485,101 +433,99 @@ export default function NodeCanvas() {
               return statusColorMap[data.status] ?? '#ffffff';
             }}
             nodeStrokeColor="#94a3b8"
-            className="!bg-white !border-slate-200"
+            className="!bg-white !border-slate-200 dark:!bg-slate-800 dark:!border-slate-700"
           />
         </ReactFlow>
 
-        {/* 聚焦模式提示条：节点数 > 20 且未开启聚焦时显示在画布顶部居中 */}
         {showFocusHint && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 px-4 py-2 bg-slate-900/80 text-white text-sm rounded-full shadow-lg backdrop-blur-sm">
-            <span>节点较多（{nodes.length} 个），建议开启聚焦模式</span>
+            <span>{tf('focusHint', { n: nodes.length })}</span>
             <button
               onClick={toggleFocusMode}
               className="px-2 py-0.5 bg-sky-500 hover:bg-sky-600 rounded text-xs font-medium transition-colors"
             >
-              开启
+              {t.enable}
             </button>
           </div>
         )}
 
-        {/* 多选合并浮动按钮：Shift+多选 2+ 节点时显示在画布顶部居中。
-            提示条显示时下移避免重叠。 */}
         {canMerge && (
           <button
             onClick={handleMerge}
             className={`absolute left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 px-4 py-2 bg-violet-600 text-white text-sm rounded-full shadow-lg hover:bg-violet-700 transition-colors ${
               showFocusHint ? 'top-20' : 'top-4'
             }`}
-            title={`合并选中的 ${selectedNodes.length} 个节点为新支线根`}
+            title={tf('mergeBranchesTitle', { n: selectedNodes.length })}
+            aria-label={tf('mergeBranchesTitle', { n: selectedNodes.length })}
           >
             <GitMerge size={14} />
-            合并分支（{selectedNodes.length}）
+            {tf('mergeBranches', { n: selectedNodes.length })}
           </button>
         )}
 
-        {/* 空状态提示：主输入框由父组件 NetworkEditor 提供 */}
         {isEmpty && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none" role="status" aria-live="polite">
             <div className="text-center">
-              <div className="text-slate-400 text-base">输入问题开始排查</div>
+              <div className="text-slate-400 text-base">{t.inputPlaceholder}</div>
             </div>
           </div>
         )}
 
-        {/* 左下角工具栏：选择/抓手模式切换 + 缩放控制 */}
-        <div className="absolute bottom-4 left-4 z-10 flex flex-col gap-1 bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
-          {/* 模式切换 */}
-          <div className="flex border-b border-slate-100">
+        <div className="absolute bottom-4 left-4 z-10 flex flex-col gap-1 bg-white border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-lg shadow-sm overflow-hidden">
+          <div className="flex border-b border-slate-100 dark:border-slate-700">
             <button
               onClick={() => setInteractionMode('select')}
               className={`flex flex-col items-center justify-center w-10 h-10 transition-colors ${
                 interactionMode === 'select' && !spacePressed
-                  ? 'bg-violet-50 text-violet-600'
-                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+                  ? 'bg-violet-50 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400'
+                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200'
               }`}
-              title="选择工具 (V)"
+              title={t.selectTool}
+              aria-label={t.selectTool}
             >
               <MousePointer2 size={15} />
               <span className="text-[9px] mt-0.5">V</span>
             </button>
             <button
               onClick={() => setInteractionMode('hand')}
-              className={`flex flex-col items-center justify-center w-10 h-10 border-l border-slate-100 transition-colors ${
+              className={`flex flex-col items-center justify-center w-10 h-10 border-l border-slate-100 dark:border-slate-700 transition-colors ${
                 interactionMode === 'hand' || spacePressed
-                  ? 'bg-violet-50 text-violet-600'
-                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+                  ? 'bg-violet-50 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400'
+                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200'
               }`}
-              title="抓手工具 (H / 按住空格)"
+              title={t.handTool}
+              aria-label={t.handTool}
             >
               <Hand size={15} />
               <span className="text-[9px] mt-0.5">H</span>
             </button>
           </div>
-          {/* 缩放控制 */}
           <div className="flex flex-col">
             <button
               onClick={() => zoomIn()}
-              className="flex items-center justify-center w-10 h-8 text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors border-b border-slate-100"
-              title="放大 (Ctrl + 滚轮)"
+              className="flex items-center justify-center w-10 h-8 text-slate-500 hover:bg-slate-50 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200 transition-colors border-b border-slate-100 dark:border-slate-700"
+              title={t.zoomIn}
+              aria-label={t.zoomIn}
             >
               <ZoomIn size={15} />
             </button>
             <button
               onClick={() => zoomOut()}
-              className="flex items-center justify-center w-10 h-8 text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors border-b border-slate-100"
-              title="缩小 (Ctrl + 滚轮)"
+              className="flex items-center justify-center w-10 h-8 text-slate-500 hover:bg-slate-50 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200 transition-colors border-b border-slate-100 dark:border-slate-700"
+              title={t.zoomOut}
+              aria-label={t.zoomOut}
             >
               <ZoomOut size={15} />
             </button>
             <button
               onClick={handleFitView}
-              className="flex items-center justify-center w-10 h-8 text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
-              title="适应视图 (F)"
+              className="flex items-center justify-center w-10 h-8 text-slate-500 hover:bg-slate-50 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200 transition-colors"
+              title={t.fitView}
+              aria-label={t.fitView}
             >
               <Maximize2 size={15} />
             </button>
           </div>
-          {/* 节点显示模式切换：详细 / 紧凑 */}
           <NodeDisplayModeToggle />
         </div>
       </div>
@@ -587,20 +533,21 @@ export default function NodeCanvas() {
   );
 }
 
-/** 节点显示模式切换按钮：详细（完整内容）/ 紧凑（仅摘要标题） */
 function NodeDisplayModeToggle() {
+  const { t } = useTranslation();
   const nodeDisplayMode = useDebugStore((s) => s.nodeDisplayMode);
   const toggleNodeDisplayMode = useDebugStore((s) => s.toggleNodeDisplayMode);
   const isCompact = nodeDisplayMode === 'compact';
   return (
     <button
       onClick={toggleNodeDisplayMode}
-      className={`flex items-center justify-center w-10 h-9 border-t border-slate-100 transition-colors ${
+      className={`flex items-center justify-center w-10 h-9 border-t border-slate-100 dark:border-slate-700 transition-colors ${
         isCompact
-          ? 'bg-violet-50 text-violet-600'
-          : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+          ? 'bg-violet-50 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400'
+          : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200'
       }`}
-      title={isCompact ? '切换到详细模式' : '切换到紧凑模式'}
+      title={isCompact ? t.detailedMode : t.compactMode}
+      aria-label={isCompact ? t.detailedMode : t.compactMode}
     >
       {isCompact ? <Rows3 size={15} /> : <AlignJustify size={15} />}
     </button>

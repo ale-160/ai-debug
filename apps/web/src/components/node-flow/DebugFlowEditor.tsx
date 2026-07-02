@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { ReactFlowProvider } from 'reactflow';
-import { Send, Settings, Sun, Moon, Menu, HelpCircle, Network, Heart } from 'lucide-react';
+import { Send, Settings, Sun, Moon, Menu, HelpCircle, Network, Heart, Globe } from 'lucide-react';
 import { toast } from 'sonner';
 
 import NodeCanvas from './NodeCanvas';
@@ -15,8 +15,13 @@ import { useDebugStore } from '@/lib/debug-store';
 import { streamTurnResponse } from '@/lib/network-engine';
 import { buildMemoryContext } from '@/lib/memory-engine';
 import { isConfigured, maskKey } from '@/lib/llm-config';
+import { useTranslation, I18nProvider } from '@/components/I18nProvider';
+import { useRouter } from 'next/navigation';
+import { getStrings, type Language } from '@/data/i18n';
 
 function TopNav() {
+  const { t, toggleLanguage } = useTranslation();
+  const router = useRouter();
   const { theme, toggleTheme } = useTheme();
   const currentProjectId = useDebugStore((s) => s.currentProjectId);
   const projects = useDebugStore((s) => s.projects);
@@ -25,7 +30,7 @@ function TopNav() {
   const toggleMobileSidebar = useDebugStore((s) => s.toggleMobileSidebar);
 
   const currentProject = projects.find((p) => p.id === currentProjectId);
-  const projectLabel = currentProject?.name ?? '未选择项目';
+  const projectLabel = currentProject?.name ?? t.noProjectSelected;
 
   const configured =
     !!llmConfig &&
@@ -35,9 +40,19 @@ function TopNav() {
   const maskedKey = llmConfig ? maskKey(llmConfig.apiKey) : '';
 
   const handleHelp = () => {
-    toast.info(
-      '输入问题 → AI 给出建议方向 → 点击方向卡片可补充后继续追问 → 不满意可重新生成 → 可随时回退到任意节点换方向',
-    );
+    toast.info(t.helpTooltip);
+  };
+
+  const handleToggleLanguage = () => {
+    const nextLang = toggleLanguage();
+    // 同步路由跳转，确保 URL 与语言一致
+    if (nextLang === 'zh') {
+      router.replace('/zh');
+    } else {
+      router.replace('/');
+    }
+    const newT = getStrings(nextLang);
+    toast.success(newT.languageSwitched);
   };
 
   return (
@@ -47,7 +62,7 @@ function TopNav() {
         <button
           onClick={toggleMobileSidebar}
           className="md:hidden p-1.5 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors dark:text-slate-300 dark:hover:bg-slate-800"
-          aria-label="切换侧边栏"
+          aria-label={t.toggleSidebar}
         >
           <Menu size={18} />
         </button>
@@ -72,7 +87,7 @@ function TopNav() {
           <button
             onClick={() => setShowSettings(true)}
             className="flex items-center gap-1.5 px-2.5 py-1 bg-green-50 border border-green-200 rounded text-xs font-medium text-green-700 hover:bg-green-100 transition-colors dark:bg-green-900/30 dark:border-green-800 dark:text-green-300"
-            title="点击修改 API Key 配置"
+            title={t.clickToModify}
           >
             <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
             {maskedKey}
@@ -81,33 +96,41 @@ function TopNav() {
           <button
             onClick={() => setShowSettings(true)}
             className="flex items-center gap-1.5 px-2.5 py-1 bg-red-50 border border-red-200 rounded text-xs font-medium text-red-700 hover:bg-red-100 transition-colors dark:bg-red-900/30 dark:border-red-800 dark:text-red-300"
-            title="点击配置 API Key"
+            title={t.clickToConfigure}
           >
             <Settings size={12} />
-            未配置 API Key
+            {t.notConfigured}
           </button>
         )}
         <button
           onClick={toggleTheme}
           className="p-1.5 text-slate-400 hover:text-amber-500 hover:bg-amber-50 rounded transition-colors dark:hover:bg-slate-800"
-          title={theme === 'dark' ? '切换到亮色模式' : '切换到暗色模式'}
-          aria-label="切换主题"
+          title={theme === 'dark' ? t.lightMode : t.darkMode}
+          aria-label={t.toggleTheme}
         >
           {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
         </button>
         <button
+          onClick={handleToggleLanguage}
+          className="p-1.5 text-slate-400 hover:text-violet-500 hover:bg-violet-50 rounded transition-colors dark:hover:bg-slate-800"
+          title={t.language}
+          aria-label={t.language}
+        >
+          <Globe size={16} />
+        </button>
+        <button
           onClick={handleHelp}
           className="p-1.5 text-slate-400 hover:text-violet-500 hover:bg-violet-50 rounded transition-colors dark:hover:bg-slate-800"
-          title="帮助"
-          aria-label="帮助"
+          title={t.help}
+          aria-label={t.help}
         >
           <HelpCircle size={16} />
         </button>
         <button
           onClick={() => setShowSettings(true)}
           className="p-1.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded transition-colors dark:hover:bg-slate-800"
-          title="设置"
-          aria-label="设置"
+          title={t.settings}
+          aria-label={t.settings}
         >
           <Settings size={16} />
         </button>
@@ -117,6 +140,7 @@ function TopNav() {
 }
 
 function EmptyStateInput() {
+  const { t } = useTranslation();
   const [input, setInput] = useState('');
   const createTurnNode = useDebugStore((s) => s.createTurnNode);
   const updateTurnNode = useDebugStore((s) => s.updateTurnNode);
@@ -130,7 +154,7 @@ function EmptyStateInput() {
     if (!userMessage) return;
 
     if (!isConfigured()) {
-      alert('请先配置 API Key');
+      alert(t.pleaseConfigureApiKey);
       return;
     }
 
@@ -196,10 +220,10 @@ function EmptyStateInput() {
       <div className="text-center">
         <Network className="w-10 h-10 text-violet-500 mx-auto mb-3" />
         <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">
-          开始你的蛛网式排查
+          {t.startYourDebug}
         </h2>
         <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-          描述你的问题，AI 会像蛛网一样展开不同排查方向
+          {t.startYourDebugDesc}
         </p>
       </div>
       <div className="w-full bg-white rounded-xl shadow-lg border border-slate-200 p-3 flex items-end gap-2 dark:bg-slate-800 dark:border-slate-700">
@@ -207,7 +231,7 @@ function EmptyStateInput() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="输入你的问题开始排查..."
+          placeholder={t.inputPlaceholder}
           rows={3}
           className="flex-1 resize-none text-base text-slate-800 placeholder:text-slate-400 bg-transparent focus:outline-none dark:text-slate-100 dark:placeholder:text-slate-500"
         />
@@ -217,15 +241,16 @@ function EmptyStateInput() {
           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           <Send size={14} />
-          开始排查
+          {t.startDebug}
         </button>
       </div>
-      <p className="text-xs text-slate-400">Enter 提交 · Shift+Enter 换行</p>
+      <p className="text-xs text-slate-400">{t.enterSubmit}</p>
     </div>
   );
 }
 
 function EditorInner() {
+  const { t } = useTranslation();
   const nodes = useDebugStore((s) => s.nodes);
   const showSettings = useDebugStore((s) => s.showSettings);
   const setShowSettings = useDebugStore((s) => s.setShowSettings);
@@ -275,7 +300,7 @@ function EditorInner() {
       <div className="flex h-screen w-screen items-center justify-center bg-slate-100 dark:bg-slate-950">
         <div className="flex flex-col items-center gap-3">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-300 border-t-violet-500" />
-          <span className="text-sm text-slate-500">加载蛛网编辑器...</span>
+          <span className="text-sm text-slate-500">{t.loadingEditor}</span>
         </div>
       </div>
     );
@@ -283,10 +308,13 @@ function EditorInner() {
 
   return (
     <div className="h-screen flex flex-col bg-slate-100 dark:bg-slate-950">
+      <a href="#main-canvas" className="skip-link">
+        {t.skipToContent}
+      </a>
       <TopNav />
       <div className="flex-1 flex overflow-hidden relative">
         <NodeSidebar />
-        <div className="flex-1 relative overflow-hidden">
+        <div id="main-canvas" className="flex-1 relative overflow-hidden" tabIndex={-1}>
           <NodeCanvas />
           {isEmpty && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none p-4">
@@ -303,34 +331,34 @@ function EditorInner() {
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-1.5 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
-          title="GitHub 仓库"
+          title={t.githubRepo}
         >
           <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
             <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
           </svg>
-          <span>GitHub 仓库</span>
+          <span>{t.githubRepo}</span>
         </a>
-        <span className="text-slate-200 dark:text-slate-600">|</span>
+        <span className="text-slate-300 dark:text-slate-600" aria-hidden="true">|</span>
         <a
           href="https://ale160.com/sponsor"
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-1.5 hover:text-rose-500 dark:text-pink-400 transition-colors"
-          title="赞赏支持"
+          title={t.sponsor}
         >
           <Heart className="w-3.5 h-3.5" />
-          <span>赞赏支持</span>
+          <span>{t.sponsor}</span>
         </a>
-        <span className="text-slate-200 dark:text-slate-600">|</span>
+        <span className="text-slate-300 dark:text-slate-600" aria-hidden="true">|</span>
         <a
           href="https://ale160.com"
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-1.5 hover:text-blue-500 transition-colors"
-          title="阿乐一百六"
+          title={t.ale160}
         >
           <img src="https://ale160.com/images/Avatar-SVG.png" alt="" className="w-3.5 h-3.5" />
-          <span>阿乐一百六</span>
+          <span>{t.ale160}</span>
         </a>
       </footer>
       <SettingsModal open={showSettings} onClose={() => setShowSettings(false)} />
@@ -339,10 +367,12 @@ function EditorInner() {
   );
 }
 
-export default function DebugFlowEditor() {
+export default function DebugFlowEditor({ lang = 'en' }: { lang?: Language }) {
   return (
     <ReactFlowProvider>
-      <EditorInner />
+      <I18nProvider defaultLang={lang}>
+        <EditorInner />
+      </I18nProvider>
     </ReactFlowProvider>
   );
 }

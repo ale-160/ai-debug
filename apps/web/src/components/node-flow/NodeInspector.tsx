@@ -9,6 +9,7 @@ import { streamTurnResponse } from '@/lib/network-engine';
 import { detectConflicts } from '@/lib/conflict-engine';
 import { extractMemory, buildMemoryContext } from '@/lib/memory-engine';
 import { isConfigured } from '@/lib/llm-config';
+import { useTranslation } from '@/components/I18nProvider';
 import type { Node } from 'reactflow';
 import type { TurnNodeData, Suggestion } from './types';
 
@@ -72,6 +73,7 @@ const mdComponents: Components = {
 };
 
 export default function NodeInspector() {
+  const { t, tf } = useTranslation();
   const selectedNodeId = useDebugStore((s) => s.selectedNodeId);
   const nodes = useDebugStore((s) => s.nodes);
   const createTurnNode = useDebugStore((s) => s.createTurnNode);
@@ -207,7 +209,7 @@ export default function NodeInspector() {
   /** 创建子节点并流式生成 AI 回答（继续追问 / 分叉 / 建议方向 共用） */
   const createChildAndStream = async (userMsg: string) => {
     if (!isConfigured()) {
-      alert('请先配置 API Key');
+      alert(t.pleaseConfigureApiKey);
       return;
     }
     const parentId = selectedNodeId;
@@ -249,7 +251,7 @@ export default function NodeInspector() {
   /** 重新生成当前节点的 AI 回答；输入框有内容时作为补充并入 userMessage */
   const handleRegenerate = async () => {
     if (!isConfigured()) {
-      alert('请先配置 API Key');
+      alert(t.pleaseConfigureApiKey);
       return;
     }
     if (!selectedNodeId) return;
@@ -320,7 +322,7 @@ export default function NodeInspector() {
   /** 手动检测当前支线冲突：调用 LLM 分析并标注冲突节点 */
   const handleCheckConflict = async () => {
     if (!isConfigured()) {
-      alert('请先配置 API Key');
+      alert(t.pleaseConfigureApiKey);
       return;
     }
     if (!selectedNodeId) return;
@@ -364,7 +366,7 @@ export default function NodeInspector() {
   /** 裁剪当前节点及其子树（冲突处理选项之一） */
   const handlePruneNode = () => {
     if (!selectedNodeId) return;
-    if (confirm('将删除此节点及其所有下游子节点，确定裁剪？')) {
+    if (confirm(t.confirmPruneNode)) {
       deleteNode(selectedNodeId);
     }
   };
@@ -395,7 +397,7 @@ export default function NodeInspector() {
                 {n.data.summary ? n.data.summary : summarize(n.data.userMessage)}
               </button>
               {idx < breadcrumb.length - 1 && (
-                <span className="text-slate-300 text-xs">&gt;</span>
+                <span className="text-slate-300 dark:text-slate-600 text-xs" aria-hidden="true">&gt;</span>
               )}
             </div>
           ))}
@@ -403,7 +405,8 @@ export default function NodeInspector() {
         <button
           onClick={() => setSelectedNode(null)}
           className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors shrink-0"
-          title="关闭"
+          title={t.closeInspector}
+          aria-label={t.closeInspector}
         >
           <X size={16} />
         </button>
@@ -422,7 +425,7 @@ export default function NodeInspector() {
                 <img
                   key={i}
                   src={src}
-                  alt={`附件 ${i + 1}`}
+                  alt={tf('attachmentN', { n: i + 1 })}
                   className="max-w-32 rounded border border-slate-200"
                 />
               ))}
@@ -435,14 +438,14 @@ export default function NodeInspector() {
           {isRunning && assistantMessage === '' ? (
             <div className="flex items-center gap-2 text-slate-500 text-sm">
               <Loader2 className="animate-spin" size={14} />
-              AI 思考中...
+              {t.aiThinking}
             </div>
           ) : status === 'error' ? (
             <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded p-2 break-words">
-              出错了：{errorMessage ?? '未知错误'}
+              {tf('errorOccurred', { message: errorMessage ?? t.unknownError })}
             </div>
           ) : assistantMessage === '' ? (
-            <div className="text-slate-400 text-sm italic">等待生成...</div>
+            <div className="text-slate-400 text-sm italic">{t.waitingForGeneration}</div>
           ) : (
             <div className="text-sm text-slate-700 break-words">
               <ReactMarkdown
@@ -462,7 +465,7 @@ export default function NodeInspector() {
               <AlertTriangle size={14} className="text-red-500 shrink-0 mt-0.5" />
               <div className="flex-1">
                 <div className="text-xs font-semibold text-red-700 uppercase tracking-wide mb-1">
-                  冲突标注
+                  {t.conflictLabel}
                 </div>
                 <div className="text-sm text-red-700 break-words">{conflictNote}</div>
               </div>
@@ -472,34 +475,34 @@ export default function NodeInspector() {
                 onClick={handleAbandon}
                 disabled={isAbandoned}
                 className="inline-flex items-center gap-1 rounded bg-red-500 px-2 py-1 text-xs text-white hover:bg-red-600 disabled:opacity-50"
-                title="弃用此支线（标记 abandoned，保留节点）"
+                title={t.abandonBranch}
               >
                 <Ban size={12} />
-                弃用支线
+                {t.abandonBranch}
               </button>
               <button
                 onClick={handlePruneNode}
                 className="inline-flex items-center gap-1 rounded bg-orange-500 px-2 py-1 text-xs text-white hover:bg-orange-600"
-                title="裁剪此节点及其子树（删除）"
+                title={t.pruneNode}
               >
                 <ScanSearch size={12} />
-                裁剪节点
+                {t.pruneNode}
               </button>
               <button
                 onClick={handleIgnore}
                 disabled={isIgnored}
                 className="inline-flex items-center gap-1 rounded bg-amber-500 px-2 py-1 text-xs text-white hover:bg-amber-600 disabled:opacity-50"
-                title="忽略此节点（构建上下文时跳过）"
+                title={t.ignoreNode}
               >
                 <EyeOff size={12} />
-                忽略节点
+                {t.ignoreNode}
               </button>
               <button
                 onClick={handleClearConflict}
                 className="inline-flex items-center gap-1 rounded bg-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-300"
-                title="清除冲突标注（不做处理）"
+                title={t.clearLabel}
               >
-                清除标注
+                {t.clearLabel}
               </button>
             </div>
           </div>
@@ -509,7 +512,7 @@ export default function NodeInspector() {
         {mergedFromIds && mergedFromIds.length > 0 && (
           <div className="space-y-2">
             <h4 className="text-xs font-semibold text-violet-500 uppercase tracking-wide">
-              合并来源（{mergedFromIds.length} 路）
+              {tf('mergeSources', { count: mergedFromIds.length })}
             </h4>
             {mergedFromIds.map((id, i) => {
               const src = nodes.find((n) => n.id === id);
@@ -519,7 +522,7 @@ export default function NodeInspector() {
                     key={id}
                     className="rounded-lg border border-slate-200 p-2 text-xs text-slate-400 italic"
                   >
-                    分支 {i + 1}（节点已删除）
+                    {tf('branchN', { n: i + 1 })}（{t.nodeDeleted}）
                   </div>
                 );
               }
@@ -532,7 +535,7 @@ export default function NodeInspector() {
                   <div className="flex items-center gap-1.5">
                     <GitMerge size={12} className="text-violet-500 shrink-0" />
                     <span className="text-[11px] text-violet-500 shrink-0">
-                      分支 {i + 1}
+                      {tf('branchN', { n: i + 1 })}
                     </span>
                   </div>
                   <div className="text-sm text-slate-700 mt-0.5 truncate">
@@ -546,7 +549,7 @@ export default function NodeInspector() {
             {/* 合并节点冲突检测限制说明 */}
             <div className="flex items-start gap-1.5 text-[11px] text-slate-400 bg-slate-50 border border-slate-100 rounded p-1.5">
               <Info size={11} className="shrink-0 mt-0.5" />
-              <span>冲突检测仅分析 parentId 主干路径，不展开合并来源多路（已知限制）</span>
+              <span>{t.conflictLimitNote}</span>
             </div>
           </div>
         )}
@@ -555,7 +558,7 @@ export default function NodeInspector() {
         {suggestions.length > 0 && (
           <div className="space-y-2">
             <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-              可能的下一步方向
+              {t.possibleNextDirections}
             </h4>
             {suggestions.map((s, i) => (
               <button
@@ -578,21 +581,21 @@ export default function NodeInspector() {
       <div className="p-3 border-t border-slate-100">
         {isAbandoned && (
           <div className="text-center text-sm text-slate-400 py-1 mb-2">
-            此支线已放弃，可恢复后继续
+            {t.branchAbandoned}
           </div>
         )}
         {isIgnored && (
           <div className="text-center text-sm text-amber-500 py-1 mb-2">
-            此节点已忽略，构建上下文时跳过，可随时取消忽略
+            {t.nodeIgnored}
           </div>
         )}
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="输入追问或新方向..."
+          placeholder={t.inputFollowUpPlaceholder}
           rows={3}
-          className="w-full border border-slate-300 rounded-lg p-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-400"
+          className="w-full border border-slate-300 rounded-lg p-2 text-sm resize-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
         />
         <div className="flex gap-2 mt-2">
           <button
@@ -601,34 +604,34 @@ export default function NodeInspector() {
             className="flex-1 inline-flex items-center justify-center gap-1 bg-blue-500 text-white text-sm px-3 py-1.5 rounded-md hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <Send size={14} />
-            继续追问
+            {t.continueQuestion}
           </button>
           <button
             onClick={() => void handleRegenerate()}
             disabled={regenerateDisabled}
-            title="重新生成本节点回答；输入框有内容时会作为补充并入问题"
+            title={t.regenerate}
             className="flex-1 inline-flex items-center justify-center gap-1 bg-slate-600 text-white text-sm px-3 py-1.5 rounded-md hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <RefreshCw size={14} />
-            重新生成
+            {t.regenerate}
           </button>
           {isAbandoned ? (
             <button
               onClick={handleReactivate}
               className="flex-1 inline-flex items-center justify-center gap-1 bg-emerald-500 text-white text-sm px-3 py-1.5 rounded-md hover:bg-emerald-600 transition-colors"
-              title="恢复支线"
+              title={t.restoreBranch}
             >
               <RotateCcw size={14} />
-              恢复支线
+              {t.restoreBranch}
             </button>
           ) : (
             <button
               onClick={handleAbandon}
               className="flex-1 inline-flex items-center justify-center gap-1 bg-red-500 text-white text-sm px-3 py-1.5 rounded-md hover:bg-red-600 transition-colors"
-              title="放弃此支线"
+              title={t.abandonThisBranch}
             >
               <Ban size={14} />
-              放弃此支线
+              {t.abandonThisBranch}
             </button>
           )}
         </div>
@@ -638,20 +641,20 @@ export default function NodeInspector() {
             <button
               onClick={handleUnignore}
               className="flex-1 inline-flex items-center justify-center gap-1 bg-amber-500 text-white text-sm px-3 py-1.5 rounded-md hover:bg-amber-600 transition-colors"
-              title="取消忽略此节点"
+              title={t.unignore}
             >
               <RotateCcw size={14} />
-              取消忽略
+              {t.unignore}
             </button>
           ) : (
             <button
               onClick={handleIgnore}
               disabled={isRunning || isAbandoned}
               className="flex-1 inline-flex items-center justify-center gap-1 bg-amber-100 text-amber-700 text-sm px-3 py-1.5 rounded-md hover:bg-amber-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              title="忽略此节点（构建上下文时跳过，子节点照常运行）"
+              title={t.ignoreThisNode}
             >
               <EyeOff size={14} />
-              忽略此节点
+              {t.ignoreThisNode}
             </button>
           )}
           {/* 手动检测当前支线冲突。
@@ -663,8 +666,8 @@ export default function NodeInspector() {
             className="flex-1 inline-flex items-center justify-center gap-1 bg-red-100 text-red-700 text-sm px-3 py-1.5 rounded-md hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             title={
               mergedFromIds && mergedFromIds.length > 0
-                ? '合并节点：仅检测 parentId 主干路径，不展开 mergedFromIds 多路（已知限制）'
-                : '检测当前支线（根→此节点）的前后冲突'
+                ? t.mergeNodeLimitDesc
+                : t.detectConflict
             }
           >
             {checkingConflict ? (
@@ -672,7 +675,7 @@ export default function NodeInspector() {
             ) : (
               <ScanSearch size={14} />
             )}
-            {checkingConflict ? '检测中...' : '检测冲突'}
+            {checkingConflict ? t.detecting : t.detectConflict}
           </button>
         </div>
       </div>

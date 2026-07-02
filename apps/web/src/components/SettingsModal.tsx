@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useDialogA11y } from "@/hooks/useDialogA11y";
 import {
   AlertCircle,
   Check,
@@ -25,6 +26,7 @@ import {
 import { testLLMConnection } from "@/lib/llm-client";
 import { useDebugStore } from "@/lib/debug-store";
 import { StorageManager } from "./StorageManager";
+import { useTranslation } from "@/components/I18nProvider";
 import type { AppSettings } from "./node-flow/types";
 
 interface SettingsModalProps {
@@ -41,6 +43,8 @@ interface TestResult {
 type SettingsTab = "api" | "memory" | "data";
 
 export function SettingsModal({ open, onClose }: SettingsModalProps) {
+  const { t, tf } = useTranslation();
+
   // 当前 Tab
   const [activeTab, setActiveTab] = useState<SettingsTab>("api");
 
@@ -117,15 +121,15 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   // 测试连接
   const handleTest = async () => {
     if (!apiKey.trim()) {
-      setTestResult({ success: false, message: "请先填写 API Key" });
+      setTestResult({ success: false, message: t.pleaseFillApiKey });
       return;
     }
     if (!baseUrl.trim()) {
-      setTestResult({ success: false, message: "请先填写 Base URL" });
+      setTestResult({ success: false, message: t.pleaseFillBaseUrl });
       return;
     }
     if (!model.trim()) {
-      setTestResult({ success: false, message: "请先填写模型名" });
+      setTestResult({ success: false, message: t.pleaseFillModelName });
       return;
     }
 
@@ -158,9 +162,11 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     updateAppSettings(settingsDraft);
     // 通知全局配置已更新
     window.dispatchEvent(new CustomEvent("llm-config-updated"));
-    toast.success("设置已保存");
+    toast.success(t.settingsSaved);
     onClose();
   };
+
+  const dialogRef = useDialogA11y(open, onClose);
 
   if (!open) return null;
 
@@ -168,24 +174,26 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
       onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-label="设置"
     >
       <div
+        ref={dialogRef}
         className="w-full max-w-lg rounded-lg bg-white shadow-xl dark:bg-slate-800"
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t.settings}
+        tabIndex={-1}
       >
         {/* 标题栏 */}
         <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4 dark:border-slate-700">
           <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">
-            设置
+            {t.settings}
           </h2>
           <button
             type="button"
             onClick={onClose}
             className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-200"
-            aria-label="关闭"
+            aria-label={t.close}
           >
             <X className="h-5 w-5" />
           </button>
@@ -203,7 +211,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
             }`}
           >
             <Key className="h-4 w-4" />
-            API 配置
+            {t.apiConfig}
           </button>
           <button
             type="button"
@@ -215,7 +223,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
             }`}
           >
             <Brain className="h-4 w-4" />
-            记忆 &amp; 规则
+            {t.memoryRules}
             <span className="ml-1 inline-flex items-center rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
               Beta
             </span>
@@ -230,7 +238,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
             }`}
           >
             <Database className="h-4 w-4" />
-            数据管理
+            {t.dataManagement}
           </button>
         </div>
 
@@ -241,14 +249,14 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               {/* Provider 选择 */}
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
-                  服务商
+                  {t.provider}
                 </label>
                 <select
                   value={provider}
                   onChange={(e) =>
                     handleProviderChange(e.target.value as LLMProvider)
                   }
-                  className="w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:ring-2 focus:ring-violet-400 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+                  className="w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
                 >
                   {(Object.keys(PROVIDER_PRESETS) as LLMProvider[]).map((key) => (
                     <option key={key} value={key}>
@@ -261,7 +269,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               {/* API Key 输入 */}
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
-                  API Key
+                  {t.apiKey}
                 </label>
                 <div className="relative">
                   <input
@@ -272,14 +280,14 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                       setTestResult(null);
                     }}
                     placeholder="sk-..."
-                    className="w-full rounded border border-slate-200 bg-white px-3 py-2 pr-10 text-sm text-slate-800 focus:ring-2 focus:ring-violet-400 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+                    className="w-full rounded border border-slate-200 bg-white px-3 py-2 pr-10 text-sm text-slate-800 focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
                     autoComplete="off"
                   />
                   <button
                     type="button"
                     onClick={() => setShowKey((v) => !v)}
                     className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                    aria-label={showKey ? "隐藏 API Key" : "显示 API Key"}
+                    aria-label={showKey ? t.hideApiKey : t.showApiKey}
                   >
                     {showKey ? (
                       <EyeOff className="h-4 w-4" />
@@ -293,7 +301,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               {/* Base URL 输入 */}
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
-                  Base URL
+                  {t.baseUrl}
                 </label>
                 <input
                   type="text"
@@ -303,7 +311,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                     setTestResult(null);
                   }}
                   placeholder="https://api.example.com/v1"
-                  className="w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:ring-2 focus:ring-violet-400 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+                  className="w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
                   autoComplete="off"
                 />
               </div>
@@ -312,17 +320,17 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               <div>
                 <div className="mb-1 flex items-center justify-between">
                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
-                    模型名
+                    {t.modelName}
                   </label>
                   {provider !== "custom" && (
                     <button
                       type="button"
                       onClick={() => setShowModelHelp((v) => !v)}
                       className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-violet-600 hover:bg-violet-50 hover:text-violet-700 dark:text-violet-300 dark:hover:bg-violet-900/30"
-                      title="查看官方获取方法"
+                      title={t.officialGuide}
                     >
                       <HelpCircle className="h-3 w-3" />
-                      如何获取？
+                      {t.howToGet}
                     </button>
                   )}
                 </div>
@@ -334,17 +342,17 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                     setTestResult(null);
                   }}
                   placeholder="gpt-4o-mini"
-                  className="w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:ring-2 focus:ring-violet-400 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+                  className="w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
                   autoComplete="off"
                 />
                 {/* 官方文档链接提示 */}
                 {showModelHelp && provider !== "custom" && (
                   <div className="mt-2 rounded border border-violet-200 bg-violet-50 px-3 py-2 text-xs dark:border-violet-800 dark:bg-violet-900/30">
                     <div className="mb-1 font-medium text-violet-800 dark:text-violet-200">
-                      官方获取方法
+                      {t.officialGuide}
                     </div>
                     <p className="mb-2 text-violet-700 dark:text-violet-300">
-                      前往 {PROVIDER_PRESETS[provider].label} 官方控制台创建 API Key，并在模型列表中查看可用的模型名。
+                      {tf('goToProviderConsole', { provider: PROVIDER_PRESETS[provider].label })}
                     </p>
                     <a
                       href={PROVIDER_PRESETS[provider].docsUrl}
@@ -361,7 +369,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
 
               {/* 安全提示 */}
               <div className="rounded bg-yellow-50 px-3 py-2 text-xs text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200">
-                API Key 仅存储在当前浏览器 localStorage，不会上传到任何服务器（除你配置的 LLM 服务商外）
+                {t.apiKeySecurityNote}
               </div>
 
               {/* 测试连接结果 */}
@@ -390,7 +398,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 className="inline-flex items-center gap-2 rounded border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
               >
                 {testing && <Loader2 className="h-4 w-4 animate-spin" />}
-                {testing ? "测试中..." : "测试连接"}
+                {testing ? t.testing : t.testConnection}
               </button>
             </div>
           )}
@@ -400,7 +408,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               {/* 记忆开关 */}
               <div className="space-y-2">
                 <div className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                  记忆功能
+                  {t.memoryFunction}
                 </div>
                 <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
                   <input
@@ -414,7 +422,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                     }
                     className="rounded"
                   />
-                  开启全局记忆（自动提取 + 注入，跨项目共享）
+                  {t.enableGlobalMemory}
                 </label>
                 <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
                   <input
@@ -428,14 +436,14 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                     }
                     className="rounded"
                   />
-                  开启项目记忆（自动提取 + 注入，仅当前项目）
+                  {t.enableProjectMemory}
                 </label>
               </div>
 
               {/* 记忆频率 */}
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
-                  记忆提取频率（每 N 轮 AI 回答提取一次）
+                  {t.memoryFrequency}
                 </label>
                 <input
                   type="number"
@@ -448,14 +456,14 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                       memoryFrequency: Math.max(1, Number(e.target.value) || 1),
                     })
                   }
-                  className="w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-violet-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+                  className="w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-violet-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
                 />
               </div>
 
               {/* 冲突自动检测 */}
               <div className="space-y-2">
                 <div className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                  冲突检测
+                  {t.conflictDetection}
                 </div>
                 <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
                   <input
@@ -469,12 +477,12 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                     }
                     className="rounded"
                   />
-                  开启冲突自动检测（每次回答后自动分析支线矛盾）
+                  {t.enableConflictAutoCheck}
                 </label>
                 {settingsDraft.enableConflictAutoCheck && (
                   <div>
                     <label className="mb-1 block text-[11px] text-slate-500 dark:text-slate-400">
-                      冲突检测频率（每 N 轮检测一次）
+                      {t.conflictCheckFrequency}
                     </label>
                     <input
                       type="number"
@@ -487,7 +495,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                           conflictCheckFrequency: Math.max(1, Number(e.target.value) || 1),
                         })
                       }
-                      className="w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-violet-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+                      className="w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-violet-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
                     />
                   </div>
                 )}
@@ -496,7 +504,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               {/* 用户规则（补充指令） */}
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
-                  用户规则 / 补充指令（注入到 system prompt，如技术栈、偏好）
+                  {t.userRules}
                 </label>
                 <textarea
                   value={settingsDraft.globalRules}
@@ -506,12 +514,12 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                       globalRules: e.target.value,
                     })
                   }
-                  placeholder="例如：我是 Java 出身，使用 Cloudflare 部署，优先考虑性能而非可读性..."
+                  placeholder={t.userRulesPlaceholder}
                   rows={3}
-                  className="w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-violet-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+                  className="w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-violet-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
                 />
                 <p className="mt-1 text-[10px] text-slate-400">
-                  默认人设不开放编辑；此处仅添加补充规则，自由度高的用户可自行部署开源版本修改。
+                  {t.userRulesNote}
                 </p>
               </div>
 
@@ -524,7 +532,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 }}
                 className="w-full rounded border border-violet-200 bg-violet-50 px-2 py-1.5 text-xs font-medium text-violet-700 hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-900/30 dark:text-violet-300"
               >
-                打开记忆管理面板（查看/编辑/删除记忆条目）
+                {t.openMemoryPanel}
               </button>
             </div>
           )}
@@ -545,14 +553,14 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               onClick={onClose}
               className="rounded border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
             >
-              取消
+              {t.cancel}
             </button>
             <button
               type="button"
               onClick={handleSave}
-              className="rounded bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 focus:ring-2 focus:ring-violet-400 focus:outline-none disabled:opacity-60"
+              className="rounded bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:outline-none disabled:opacity-60"
             >
-              保存
+              {t.save}
             </button>
           </div>
         )}

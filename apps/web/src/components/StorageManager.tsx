@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from 'react';
 import { Trash2, RefreshCw, AlertTriangle, Database } from 'lucide-react';
+import { useTranslation } from '@/components/I18nProvider';
 import { useDebugStore } from '@/lib/debug-store';
 import {
   saveProjects,
@@ -54,6 +55,7 @@ const WARNING_THRESHOLD = 4 * 1024 * 1024;
 const MAX_QUOTA = 5 * 1024 * 1024;
 
 export function StorageManager() {
+  const { t, tf } = useTranslation();
   const [totalSize, setTotalSize] = useState(0);
   const [keySizes, setKeySizes] = useState<{ key: string; size: number }[]>([]);
   const [clearing, setClearing] = useState(false);
@@ -136,38 +138,33 @@ export function StorageManager() {
   const keyInfos: KeyInfo[] = [
     {
       key: PROJECTS_KEY,
-      label: '项目数据',
-      description: '所有蛛网项目的节点、边、视口、记忆、turnCounter',
+      label: t.projectData,
+      description: t.projectDataDesc,
       clearFn: clearProjectsKey,
     },
     {
       key: GLOBAL_MEMORY_KEY,
-      label: '全局记忆',
-      description: '跨项目共享的长期记忆条目',
+      label: t.globalMemoryLabel,
+      description: t.globalMemoryDesc,
       clearFn: clearMemoryKey,
     },
     {
       key: APP_SETTINGS_KEY,
-      label: '应用设置',
-      description: '规则、频率、模式开关等（不含 API Key）',
+      label: t.appSettings,
+      description: t.appSettingsDesc,
       clearFn: clearSettingsKey,
     },
     {
       key: LLM_CONFIG_KEY,
-      label: 'API 配置',
-      description: '服务商、API Key、Base URL、模型',
+      label: t.apiConfigLabel,
+      description: t.apiConfigDesc,
       clearFn: clearApiKey,
     },
   ];
 
   // 清空全部数据（危险操作）
   const clearAll = () => {
-    if (
-      !confirm(
-        '确定清空全部本地数据吗？\n\n此操作将删除：\n• 所有项目与节点\n• 全局/项目记忆\n• 应用设置\n• API 配置\n\n删除后无法恢复，建议先导出备份。',
-      )
-    )
-      return;
+    if (!confirm(t.confirmClearAll)) return;
     setClearing(true);
     try {
       window.localStorage.clear();
@@ -195,12 +192,12 @@ export function StorageManager() {
         <div className="flex items-center gap-2">
           <Database className="h-4 w-4 text-violet-500" />
           <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-            本地存储总览
+            {t.storageOverview}
           </span>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="bg-slate-50 dark:bg-slate-800 rounded-md p-3">
-            <div className="text-xs text-slate-500 dark:text-slate-400">总占用</div>
+            <div className="text-xs text-slate-500 dark:text-slate-400">{t.totalUsage}</div>
             <div
               className={`text-lg font-bold ${
                 isWarning
@@ -212,7 +209,7 @@ export function StorageManager() {
             </div>
           </div>
           <div className="bg-slate-50 dark:bg-slate-800 rounded-md p-3">
-            <div className="text-xs text-slate-500 dark:text-slate-400">建议上限</div>
+            <div className="text-xs text-slate-500 dark:text-slate-400">{t.suggestedLimit}</div>
             <div className="text-lg font-bold text-slate-700 dark:text-slate-200">
               {formatBytes(MAX_QUOTA)}
             </div>
@@ -221,7 +218,7 @@ export function StorageManager() {
         {/* 使用率进度条 */}
         <div className="space-y-1">
           <div className="flex justify-between text-xs">
-            <span className="text-slate-500 dark:text-slate-400">使用率</span>
+            <span className="text-slate-500 dark:text-slate-400">{t.usageRate}</span>
             <span
               className={
                 isWarning
@@ -244,26 +241,25 @@ export function StorageManager() {
         {isWarning && (
           <div className="flex items-start gap-2 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded p-2">
             <AlertTriangle size={12} className="shrink-0 mt-0.5" />
-            <span>
-              本地存储接近上限，建议导出备份后清理旧项目，避免保存失败导致数据丢失。
-            </span>
+            <span>{t.storageWarning}</span>
           </div>
         )}
         <button
           onClick={clearAll}
           disabled={clearing}
           className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 text-sm bg-red-50 text-red-600 border border-red-200 rounded-md hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors dark:bg-red-900/20 dark:text-red-400 dark:border-red-800 dark:hover:bg-red-900/30"
+          aria-label={t.clearAllData}
         >
           {clearing ? (
             <RefreshCw size={14} className="animate-spin" />
           ) : (
             <Trash2 size={14} />
           )}
-          {clearing ? '正在清空...' : '清空全部数据'}
+          {clearing ? t.clearing : t.clearAllData}
         </button>
         {clearedKey === '__all__' && (
           <div className="text-xs text-center text-amber-600 dark:text-amber-400">
-            即将刷新页面...
+            {t.reloadingPage}
           </div>
         )}
       </div>
@@ -271,7 +267,7 @@ export function StorageManager() {
       {/* 按 key 分类清理 */}
       <div className="space-y-2">
         <h4 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-          按分类清理
+          {t.clearByCategory}
         </h4>
         {keyInfos.map((info) => {
           const sizeInfo = keySizes.find((s) => s.key === info.key);
@@ -287,7 +283,7 @@ export function StorageManager() {
                   <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
                     {info.label}
                   </span>
-                  <span className="text-xs text-slate-400">
+                  <span className="text-xs text-slate-500">
                     {formatBytes(size)}
                   </span>
                 </div>
@@ -297,32 +293,29 @@ export function StorageManager() {
               </div>
               <button
                 onClick={() => {
-                  if (
-                    confirm(
-                      `确定清理「${info.label}」吗？此操作不可恢复，建议先导出备份。`,
-                    )
-                  ) {
+                  if (confirm(tf('confirmClearCategory', { label: info.label }))) {
                     info.clearFn();
                   }
                 }}
                 disabled={size === 0}
                 className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 text-xs bg-slate-100 text-slate-600 rounded hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                title={`清理 ${info.label}`}
+                title={`${t.clear} ${info.label}`}
+                aria-label={`${t.clear} ${info.label}`}
               >
                 {isCleared ? (
                   <RefreshCw size={12} className="animate-spin" />
                 ) : (
                   <Trash2 size={12} />
                 )}
-                {isCleared ? '已清理' : '清理'}
+                {isCleared ? t.cleared : t.clear}
               </button>
             </div>
           );
         })}
       </div>
 
-      <p className="text-xs text-slate-400 dark:text-slate-500">
-        提示：浏览器 localStorage 单域名配额约 5MB，适合中小型项目。大型项目建议定期导出备份后清理，避免保存失败。
+      <p className="text-xs text-slate-500 dark:text-slate-500">
+        {t.storageTip}
       </p>
     </div>
   );

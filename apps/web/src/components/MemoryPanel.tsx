@@ -3,7 +3,9 @@
 import React, { useState } from 'react';
 import { X, Plus, Trash2, Pencil, Check, Brain } from 'lucide-react';
 import { useDebugStore } from '@/lib/debug-store';
+import { useDialogA11y } from '@/hooks/useDialogA11y';
 import type { MemoryEntry } from './node-flow/types';
+import { useTranslation } from '@/components/I18nProvider';
 
 interface MemoryPanelProps {
   open: boolean;
@@ -20,6 +22,7 @@ function MemoryItem({
   onUpdate: (content: string) => void;
   onDelete: () => void;
 }) {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(entry.content);
 
@@ -44,22 +47,23 @@ function MemoryItem({
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             rows={2}
-            className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-violet-400 dark:border-slate-500 dark:bg-slate-600 dark:text-slate-100"
+            className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-violet-400 dark:border-slate-500 dark:bg-slate-600 dark:text-slate-100"
             autoFocus
+            aria-label={t.edit}
           />
           <div className="flex justify-end gap-1">
             <button
               onClick={handleCancel}
               className="rounded px-2 py-0.5 text-xs text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-600"
             >
-              取消
+              {t.cancel}
             </button>
             <button
               onClick={handleSave}
               className="inline-flex items-center gap-1 rounded bg-violet-600 px-2 py-0.5 text-xs text-white hover:bg-violet-700"
             >
               <Check size={12} />
-              保存
+              {t.save}
             </button>
           </div>
         </div>
@@ -73,14 +77,16 @@ function MemoryItem({
               <button
                 onClick={() => setEditing(true)}
                 className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-600"
-                title="编辑"
+                title={t.edit}
+                aria-label={t.edit}
               >
                 <Pencil size={12} />
               </button>
               <button
                 onClick={onDelete}
                 className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/30"
-                title="删除"
+                title={t.delete}
+                aria-label={t.delete}
               >
                 <Trash2 size={12} />
               </button>
@@ -94,7 +100,7 @@ function MemoryItem({
                   : 'bg-slate-100 text-slate-500 dark:bg-slate-600 dark:text-slate-300'
               }`}
             >
-              {entry.source === 'auto' ? '自动' : '手动'}
+              {entry.source === 'auto' ? t.auto : t.manual}
             </span>
           </div>
         </div>
@@ -104,6 +110,7 @@ function MemoryItem({
 }
 
 export function MemoryPanel({ open, onClose }: MemoryPanelProps) {
+  const { t, tf } = useTranslation();
   const globalMemory = useDebugStore((s) => s.globalMemory);
   const projects = useDebugStore((s) => s.projects);
   const currentProjectId = useDebugStore((s) => s.currentProjectId);
@@ -134,32 +141,36 @@ export function MemoryPanel({ open, onClose }: MemoryPanelProps) {
     setProjectDraft('');
   };
 
+  const dialogRef = useDialogA11y(open, onClose);
+
   if (!open) return null;
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
       onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-label="记忆管理"
     >
       <div
+        ref={dialogRef}
         className="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-lg bg-white shadow-xl dark:bg-slate-800"
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t.memoryManagement}
+        tabIndex={-1}
       >
         {/* 标题栏 */}
         <div className="flex items-center justify-between border-b border-slate-100 p-4 dark:border-slate-700">
           <div className="flex items-center gap-2">
             <Brain className="h-5 w-5 text-violet-500" />
             <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">
-              记忆管理
+              {t.memoryManagement}
             </h2>
           </div>
           <button
             onClick={onClose}
             className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-200"
-            aria-label="关闭"
+            aria-label={t.close}
           >
             <X className="h-5 w-5" />
           </button>
@@ -171,10 +182,10 @@ export function MemoryPanel({ open, onClose }: MemoryPanelProps) {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                全局记忆
+                {t.globalMemory}
               </h3>
               <span className="text-xs text-slate-400">
-                {globalMemory.length} 条 · 跨项目
+                {tf('entriesCount', { count: globalMemory.length })} · {t.crossProject}
               </span>
             </div>
             <div className="flex gap-1">
@@ -184,22 +195,24 @@ export function MemoryPanel({ open, onClose }: MemoryPanelProps) {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') handleAddGlobal();
                 }}
-                placeholder="添加全局记忆条目..."
-                className="flex-1 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-violet-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+                placeholder={t.addGlobalMemoryPlaceholder}
+                className="flex-1 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-violet-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+                aria-label={t.addGlobalMemoryPlaceholder}
               />
               <button
                 onClick={handleAddGlobal}
                 disabled={!globalDraft.trim()}
                 className="inline-flex items-center gap-1 rounded bg-violet-600 px-2 py-1 text-xs text-white hover:bg-violet-700 disabled:opacity-50"
+                aria-label={t.add}
               >
                 <Plus size={12} />
-                添加
+                {t.add}
               </button>
             </div>
             <div className="space-y-1.5">
               {globalMemory.length === 0 ? (
                 <div className="rounded border border-dashed border-slate-200 p-3 text-center text-xs text-slate-400 dark:border-slate-600">
-                  暂无全局记忆
+                  {t.noGlobalMemory}
                 </div>
               ) : (
                 globalMemory.map((entry) => (
@@ -218,10 +231,10 @@ export function MemoryPanel({ open, onClose }: MemoryPanelProps) {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                项目记忆
+                {t.projectMemory}
               </h3>
               <span className="text-xs text-slate-400 truncate max-w-[120px]">
-                {currentProject ? currentProject.name : '未选择项目'}
+                {currentProject ? currentProject.name : t.noProjectSelected}
               </span>
             </div>
             {currentProject ? (
@@ -233,22 +246,24 @@ export function MemoryPanel({ open, onClose }: MemoryPanelProps) {
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') handleAddProject();
                     }}
-                    placeholder="添加项目记忆条目..."
-                    className="flex-1 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-violet-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+                    placeholder={t.addProjectMemoryPlaceholder}
+                    className="flex-1 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-violet-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+                    aria-label={t.addProjectMemoryPlaceholder}
                   />
                   <button
                     onClick={handleAddProject}
                     disabled={!projectDraft.trim()}
                     className="inline-flex items-center gap-1 rounded bg-violet-600 px-2 py-1 text-xs text-white hover:bg-violet-700 disabled:opacity-50"
+                    aria-label={t.add}
                   >
                     <Plus size={12} />
-                    添加
+                    {t.add}
                   </button>
                 </div>
                 <div className="space-y-1.5">
                   {projectMemory.length === 0 ? (
                     <div className="rounded border border-dashed border-slate-200 p-3 text-center text-xs text-slate-400 dark:border-slate-600">
-                      暂无项目记忆
+                      {t.noProjectMemory}
                     </div>
                   ) : (
                     projectMemory.map((entry) => (
@@ -266,7 +281,7 @@ export function MemoryPanel({ open, onClose }: MemoryPanelProps) {
               </>
             ) : (
               <div className="rounded border border-dashed border-slate-200 p-3 text-center text-xs text-slate-400 dark:border-slate-600">
-                请先选择一个项目
+                {t.pleaseSelectProject}
               </div>
             )}
           </div>

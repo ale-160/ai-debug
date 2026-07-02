@@ -1,22 +1,20 @@
 import type { Metadata } from 'next';
-import ClientRedirect from '@/components/seo/ClientRedirect';
 import DebugFlowEditorLoader from '@/components/DebugFlowEditorLoader';
 import { getMetadata } from '@/config/metadata';
 import { getStructuredData } from '@/config/structuredData';
 
-export const metadata: Metadata = getMetadata('en');
+export const metadata: Metadata = getMetadata('zh');
 
-const jsonLd = getStructuredData('en');
+const jsonLd = getStructuredData('zh');
 
-export default function EnglishPage() {
+export default function ZhPage() {
   return (
     <>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
-      <ClientRedirect />
-      <DebugFlowEditorLoader lang="en" />
+      <DebugFlowEditorLoader lang="zh" />
     </>
   );
 }

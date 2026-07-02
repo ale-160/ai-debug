@@ -4,41 +4,17 @@ import { Handle, Position, type NodeProps } from 'reactflow';
 import { Loader2, GitMerge, AlertTriangle } from 'lucide-react';
 import type { TurnNodeData } from '../types';
 import { useDebugStore } from '@/lib/debug-store';
+import { useTranslation } from '@/components/I18nProvider';
 
 // 截取字符串前 n 个字符，超出加省略号
 function truncate(text: string, n: number): string {
   return text.length > n ? text.slice(0, n) + '…' : text;
 }
 
-// 渲染状态指示器（圆点 / 旋转图标）
-function renderStatusIndicator(
-  status: TurnNodeData['status'],
-  errorMessage?: string,
-): React.ReactNode {
-  switch (status) {
-    case 'running':
-      return <Loader2 size={12} className="text-blue-500 animate-spin" />;
-    case 'success':
-      return <span className="w-2 h-2 rounded-full bg-emerald-500" />;
-    case 'error':
-      return (
-        <span
-          className="w-2 h-2 rounded-full bg-red-500"
-          title={errorMessage}
-        />
-      );
-    case 'ignored':
-      return <span className="w-2 h-2 rounded-full bg-amber-400" title="已忽略" />;
-    case 'idle':
-    case 'abandoned':
-    default:
-      return <span className="w-2 h-2 rounded-full bg-slate-300" />;
-  }
-}
-
 type TurnNodeProps = NodeProps<TurnNodeData>;
 
 function TurnNodeComponent({ data, selected }: TurnNodeProps) {
+  const { t, tf } = useTranslation();
   const {
     parentId,
     userMessage,
@@ -60,17 +36,43 @@ function TurnNodeComponent({ data, selected }: TurnNodeProps) {
   const isMerged = Array.isArray(mergedFromIds) && mergedFromIds.length > 0;
   const hasConflict = !!conflictNote;
 
+  // 渲染状态指示器（圆点 / 旋转图标）
+  const renderStatusIndicator = (
+    status: TurnNodeData['status'],
+    errorMessage?: string,
+  ): React.ReactNode => {
+    switch (status) {
+      case 'running':
+        return <Loader2 size={12} className="text-blue-500 animate-spin" />;
+      case 'success':
+        return <span className="w-2 h-2 rounded-full bg-emerald-500" />;
+      case 'error':
+        return (
+          <span
+            className="w-2 h-2 rounded-full bg-red-500"
+            title={errorMessage}
+          />
+        );
+      case 'ignored':
+        return <span className="w-2 h-2 rounded-full bg-amber-400" title={t.ignored} />;
+      case 'idle':
+      case 'abandoned':
+      default:
+        return <span className="w-2 h-2 rounded-full bg-slate-300" />;
+    }
+  };
+
   return (
     <div
-      className={`relative rounded-lg bg-white shadow-sm transition-all duration-200 p-3 ${
+      className={`relative rounded-lg bg-white dark:bg-slate-800 shadow-sm transition-all duration-200 p-3 ${
         isCompact ? 'w-[180px]' : 'w-[240px]'
       } ${
         // 合并节点：双色边框（violet 加粗）；普通节点：灰色细边框
-        isMerged ? 'border-2 border-violet-400' : 'border border-slate-200'
+        isMerged ? 'border-2 border-violet-400 dark:border-violet-500' : 'border border-slate-200 dark:border-slate-600'
       } ${selected ? 'ring-2 ring-blue-400 ring-offset-1' : ''} ${
         isAbandoned ? 'opacity-50' : ''
-      } ${isIgnored ? 'border-amber-300 border-dashed opacity-70' : ''} ${
-        hasConflict ? 'border-red-400' : ''
+      } ${isIgnored ? 'border-amber-300 dark:border-amber-500 border-dashed opacity-70' : ''} ${
+        hasConflict ? 'border-red-400 dark:border-red-500' : ''
       }`}
     >
       {/* 左侧输入端口：仅非根节点显示（合并节点 parentId 为 null，不显示） */}
@@ -95,28 +97,28 @@ function TurnNodeComponent({ data, selected }: TurnNodeProps) {
       <div className="flex items-center gap-1.5 mb-2">
         {renderStatusIndicator(status, errorMessage)}
         {isMerged && <GitMerge size={12} className="text-violet-500" />}
-        <span className="text-[11px] font-medium text-slate-400">
-          {isMerged ? '合并' : '对话'}
+        <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
+          {isMerged ? t.merge : t.conversation}
         </span>
         {isIgnored && (
           <span className="text-[11px] font-medium text-amber-500 ml-auto">
-            已忽略
+            {t.ignored}
           </span>
         )}
         {isMerged && mergedFromIds && (
           <span className="text-[11px] text-violet-400 ml-auto">
-            {mergedFromIds.length} 路
+            {tf('nRoutes', { count: mergedFromIds.length })}
           </span>
         )}
       </div>
 
       {/* 摘要标题（commit message）：紧凑模式下作为主体显示，无摘要时回退到用户消息 */}
       {summary ? (
-        <div className="text-sm font-semibold text-slate-800 mb-1 truncate">
+        <div className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-1 truncate">
           {summary}
         </div>
       ) : isCompact && (
-        <div className="text-sm font-medium text-slate-700 mb-1 truncate">
+        <div className="text-sm font-medium text-slate-700 dark:text-slate-200 mb-1 truncate">
           {truncate(userMessage, 20)}
         </div>
       )}
@@ -126,26 +128,26 @@ function TurnNodeComponent({ data, selected }: TurnNodeProps) {
         <>
           {/* 用户消息摘要 */}
           <div
-            className={`text-sm text-sky-600 mb-1 ${
+            className={`text-sm text-sky-600 dark:text-sky-400 mb-1 ${
               isAbandoned || isIgnored ? 'line-through' : ''
             }`}
           >
-            你：{truncate(userMessage, 30)}
+            {t.you}：{truncate(userMessage, 30)}
           </div>
 
           {/* AI 回答摘要 / 思考中 */}
           <div
-            className={`text-sm text-slate-500 ${
+            className={`text-sm text-slate-500 dark:text-slate-400 ${
               isAbandoned || isIgnored ? 'line-through' : ''
             }`}
           >
             {isThinking ? (
               <span className="flex items-center gap-1">
                 <Loader2 size={12} className="animate-spin" />
-                思考中...
+                {t.thinking}
               </span>
             ) : (
-              <>AI：{truncate(assistantMessage, 50)}</>
+              <>{t.ai}：{truncate(assistantMessage, 50)}</>
             )}
           </div>
         </>
@@ -154,8 +156,8 @@ function TurnNodeComponent({ data, selected }: TurnNodeProps) {
       {/* 建议方向徽章 */}
       {suggestions && suggestions.length > 0 && (
         <div className="mt-2">
-          <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-medium bg-violet-100 text-violet-700">
-            {suggestions.length} 个方向
+          <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-medium bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300">
+            {tf('nDirections', { count: suggestions.length })}
           </span>
         </div>
       )}
@@ -164,11 +166,11 @@ function TurnNodeComponent({ data, selected }: TurnNodeProps) {
       {hasConflict && (
         <div className="mt-2">
           <span
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-red-100 text-red-700"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300"
             title={conflictNote}
           >
             <AlertTriangle size={10} />
-            冲突
+            {t.conflict}
           </span>
         </div>
       )}

@@ -4,6 +4,8 @@ import { quickCallLLM, buildVisionMessage } from './llm-helpers';
 import type { LLMMessage } from './llm-client';
 import { describeError } from './request';
 import { createTurnNodeData } from '@/components/node-flow/node-definitions';
+import { SUMMARY_THRESHOLD, RECENT_KEEP } from './context-config';
+import { generatePathSummary } from './path-summary-engine';
 
 /** 系统提示词，引导 AI 给出回答并在末尾附上后续探索方向 */
 export const SYSTEM_PROMPT = `你是一位资深的问题排查助手，帮助用户分析各类问题（bug、技术疑问、方案决策等）。
@@ -24,6 +26,8 @@ interface ContextPathItem {
   images?: string[];
   /** 节点状态：ignored 节点在 buildLLMMessages 时跳过 */
   status: TurnStatus;
+  /** 路径摘要（rolling summary）：混合模式下前段节点用此字段替代完整内容 */
+  pathSummary?: string;
 }
 
 /** 将一个节点的 data 转换为上下文路径条目 */
@@ -33,6 +37,7 @@ function toContextPathItem(node: Node<TurnNodeData>): ContextPathItem {
     assistantMessage: node.data.assistantMessage,
     images: node.data.images,
     status: node.data.status,
+    pathSummary: node.data.pathSummary,
   };
 }
 
@@ -114,52 +119,154 @@ export function collectContextPath(
   return collectContextPathRecursive(nodeId, nodeMap, new Set());
 }
 
+/** buildLLMMessages 的混合模式选项 */
+export interface BuildLLMMessagesOptions {
+  /** 路径摘要（rolling summary）：当前节点的聚合摘要，混合模式下替代前段完整内容 */
+  pathSummary?: string;
+  /** 后段保留完整内容的节点数（默认 RECENT_KEEP） */
+  recentKeep?: number;
+  /** 路径总长度（用于判断是否启用混合模式，未传时按各段长度之和计算） */
+  pathLength?: number;
+}
+
+/**
+ * 计算多段路径的总节点数（所有段长度之和）。
+ */
+function computeTotalPathLength(segments: ContextPathItem[][]): number {
+  return segments.reduce((sum, seg) => sum + seg.length, 0);
+}
+
+/**
+ * 将单个节点条目拼接为 LLM 消息（user + assistant）。
+ * - ignored 节点跳过（返回空数组，路径视为断点）。
+ * - 含图片的节点用 buildVisionMessage 构造多模态消息。
+ * - assistantMessage 为空则只拼 user。
+ */
+function pushItemMessages(item: ContextPathItem): LLMMessage[] {
+  if (item.status === 'ignored') return [];
+  const result: LLMMessage[] = [];
+  if (item.images && item.images.length > 0) {
+    const visionMessages = buildVisionMessage(item.userMessage, item.images);
+    result.push(visionMessages[0]);
+  } else {
+    result.push({ role: 'user', content: item.userMessage });
+  }
+  if (item.assistantMessage.trim().length > 0) {
+    result.push({ role: 'assistant', content: item.assistantMessage });
+  }
+  return result;
+}
+
+/**
+ * 在段的 front portion（前 segment.length - recentKeep 个节点）中，
+ * 从分割点向前查找最近一个有非空 pathSummary 的节点索引。
+ * 找不到返回 -1（该段不启用混合模式，回退为完整拼接）。
+ *
+ * 注意：ignored 节点的 pathSummary 仍可用于前段摘要（其子节点路径摘要已包含 ignored 节点信息）。
+ */
+function findNearestSummaryInFront(
+  segment: ContextPathItem[],
+  splitPoint: number,
+): number {
+  for (let i = splitPoint - 1; i >= 0; i--) {
+    const s = segment[i]?.pathSummary;
+    if (typeof s === 'string' && s.trim().length > 0) {
+      return i;
+    }
+  }
+  return -1;
+}
+
 /**
  * 将多段上下文路径构造为 OpenAI 兼容的消息数组。
  *
- * - 前置 system 消息（SYSTEM_PROMPT）。
+ * - 前置 system 消息（SYSTEM_PROMPT + 可选 extraContext）。
  * - 多段路径时，每段之间插入一条 system 分隔标记 `--- 分支 N ---`，
  *   第一段前不插入（保持单段路径与原行为完全一致）。
  * - 每段内按顺序拼接 user / assistant 消息；assistantMessage 为空则跳过；
  *   含图片的节点用 buildVisionMessage 构造多模态消息。
- * - ignored 节点在上下文路径中会被跳过（不传 user/assistant），
- *   路径视为"断点"，子节点照常进入上下文。
+ * - ignored 节点在完整段跳过（不传 user/assistant），路径视为"断点"，
+ *   但其 pathSummary 仍可用于前段摘要。
+ *
+ * 混合模式（options.pathSummary 存在且路径超过 SUMMARY_THRESHOLD 时启用）：
+ * - 前段（path.length - RECENT_KEEP 个节点）只传 pathSummary，合并为一条 system 消息
+ *   `【前序路径摘要】\n{pathSummary}`，插入在 SYSTEM_PROMPT 之后、所有段之前。
+ * - 后 RECENT_KEEP 段（最近节点）传完整 userMessage + assistantMessage。
+ * - 合并节点的多段路径在混合模式下每段独立应用规则。
+ *
+ * 前段回退（options.pathSummary 为空但路径超阈值时）：
+ * - 从分割点向前查找最近一个有 pathSummary 的前段节点作为摘要源。
+ * - 该节点之后的所有节点传完整内容（split point 移动到该节点之后）。
+ * - 兼容旧数据，找不到则该段保持原行为。
  *
  * @param segments       上下文路径分段
  * @param extraContext   可选的额外 system 文本（如记忆条目），插入在 SYSTEM_PROMPT 之后
+ * @param options        混合模式选项（pathSummary / recentKeep / pathLength）
  */
 export function buildLLMMessages(
   segments: ContextPathItem[][],
   extraContext?: string,
+  options?: BuildLLMMessagesOptions,
 ): LLMMessage[] {
   const systemContent = extraContext
     ? `${SYSTEM_PROMPT}\n\n${extraContext}`
     : SYSTEM_PROMPT;
   const messages: LLMMessage[] = [{ role: 'system', content: systemContent }];
 
+  // 计算路径总长度与 recentKeep（带默认值）
+  const totalLength = options?.pathLength ?? computeTotalPathLength(segments);
+  const recentKeep = options?.recentKeep ?? RECENT_KEEP;
+  const optionsSummary = options?.pathSummary;
+  const hasOptionsSummary =
+    typeof optionsSummary === 'string' && optionsSummary.trim().length > 0;
+
+  // 判断是否启用混合模式：路径超过阈值 且（有 options.pathSummary 或 可能存在前段节点 pathSummary）
+  const enableHybrid = totalLength > SUMMARY_THRESHOLD;
+
+  // Case A：options.pathSummary 存在 → 单条摘要插入在最前，各段只发后 recentKeep 个节点
+  if (enableHybrid && hasOptionsSummary) {
+    messages.push({
+      role: 'system',
+      content: `【前序路径摘要】\n${optionsSummary}`,
+    });
+    segments.forEach((segment, idx) => {
+      if (idx > 0) {
+        messages.push({ role: 'system', content: `--- 分支 ${idx + 1} ---` });
+      }
+      // 该段超过 recentKeep 时只发后 recentKeep 个节点；否则全发（每段独立应用规则）
+      const startIdx =
+        segment.length > recentKeep ? segment.length - recentKeep : 0;
+      for (let i = startIdx; i < segment.length; i++) {
+        messages.push(...pushItemMessages(segment[i]));
+      }
+    });
+    return messages;
+  }
+
+  // Case B / 原行为：逐段拼接。超阈值时尝试前段回退（取最近有 pathSummary 的前段节点）
   segments.forEach((segment, idx) => {
-    // 段间分隔标记（第一段前不加，保持单段路径行为不变）
     if (idx > 0) {
-      messages.push({
-        role: 'system',
-        content: `--- 分支 ${idx + 1} ---`,
-      });
+      messages.push({ role: 'system', content: `--- 分支 ${idx + 1} ---` });
     }
-    for (const item of segment) {
-      // ignored 节点：跳过，路径视为断点
-      if (item.status === 'ignored') continue;
 
-      if (item.images && item.images.length > 0) {
-        // buildVisionMessage 返回单元素数组，取第一条多模态 user 消息
-        const visionMessages = buildVisionMessage(item.userMessage, item.images);
-        messages.push(visionMessages[0]);
-      } else {
-        messages.push({ role: 'user', content: item.userMessage });
+    // 前段回退：该段超过 recentKeep 且未提供 options.pathSummary 时，
+    // 从分割点向前查找最近一个有 pathSummary 的前段节点作为摘要源。
+    let startIdx = 0;
+    if (enableHybrid && !hasOptionsSummary && segment.length > recentKeep) {
+      const splitPoint = segment.length - recentKeep;
+      const summaryIdx = findNearestSummaryInFront(segment, splitPoint);
+      if (summaryIdx >= 0) {
+        // 找到前段摘要源：插入摘要 system 消息，该节点之后全部发完整内容
+        messages.push({
+          role: 'system',
+          content: `【前序路径摘要】\n${segment[summaryIdx].pathSummary}`,
+        });
+        startIdx = summaryIdx + 1;
       }
+    }
 
-      if (item.assistantMessage.trim().length > 0) {
-        messages.push({ role: 'assistant', content: item.assistantMessage });
-      }
+    for (let i = startIdx; i < segment.length; i++) {
+      messages.push(...pushItemMessages(segment[i]));
     }
   });
 
@@ -245,14 +352,16 @@ async function generateSummary(assistantMessage: string): Promise<string> {
  * 流式生成当前节点的 AI 回答：收集上下文 -> 构造消息 -> 流式调用 -> 解析建议方向。
  * 出错时返回 success=false 与错误信息，不抛异常。
  * 流式结束后会旁路调用 generateSummary 生成摘要标题，通过 onSummary 回调通知调用方；
- * 摘要生成失败静默跳过，不阻塞主流程。
+ * 同时旁路调用 generatePathSummary 生成路径摘要，通过 onPathSummary 回调通知调用方。
+ * 两个旁路任务并行执行、互不阻塞，失败静默跳过，不阻塞主流程。
  *
- * @param nodeId        当前节点 id
- * @param nodes         全部节点（用于收集上下文路径）
- * @param onDelta       流式回调
- * @param signal        AbortSignal
- * @param onSummary     摘要生成完成回调
- * @param extraContext  注入到 system prompt 的额外上下文（如记忆条目），可选
+ * @param nodeId         当前节点 id
+ * @param nodes          全部节点（用于收集上下文路径）
+ * @param onDelta        流式回调
+ * @param signal         AbortSignal
+ * @param onSummary      摘要标题生成完成回调
+ * @param extraContext   注入到 system prompt 的额外上下文（如记忆条目），可选
+ * @param onPathSummary  路径摘要生成完成回调，可选
  */
 export async function streamTurnResponse(
   nodeId: string,
@@ -261,6 +370,7 @@ export async function streamTurnResponse(
   signal?: AbortSignal,
   onSummary?: (summary: string) => void,
   extraContext?: string,
+  onPathSummary?: (summary: string) => void,
 ): Promise<{
   success: boolean;
   text?: string;
@@ -272,7 +382,7 @@ export async function streamTurnResponse(
     const messages = buildLLMMessages(contextPath, extraContext);
     const fullText = await quickCallLLM(messages, onDelta, signal);
     const suggestions = parseSuggestions(fullText);
-    // 旁路：流式结束后异步生成摘要标题（非阻塞，失败静默跳过，不影响主流程）
+    // 旁路 1：流式结束后异步生成摘要标题（非阻塞，失败静默跳过，不影响主流程）
     void (async () => {
       try {
         const summary = await generateSummary(fullText);
@@ -281,6 +391,42 @@ export async function streamTurnResponse(
         // 摘要生成失败，静默跳过
       }
     })();
+    // 旁路 2：流式结束后异步生成路径摘要（与摘要标题并行，互不阻塞，失败静默跳过）
+    // 通过 collectContextPath 已收集的路径 + parentId 链获取父节点 pathSummary 作为基线
+    if (onPathSummary) {
+      void (async () => {
+        try {
+          const currentNode = nodes.find((n) => n.id === nodeId);
+          if (!currentNode) return;
+          // 构造含完整 assistantMessage 的节点副本（nodes 中的 assistantMessage 尚未更新）
+          const updatedNode: Node<TurnNodeData> = {
+            ...currentNode,
+            data: { ...currentNode.data, assistantMessage: fullText },
+          };
+          // 确定父节点 pathSummary 基线：
+          // - 合并节点：传 undefined，generatePathSummary 通过 allNodes 查找来源节点 pathSummary
+          // - 普通子节点：查找父节点 pathSummary
+          // - 根节点：无基线
+          const mergedFromIds = currentNode.data.mergedFromIds;
+          let parentPathSummary: string | undefined;
+          if (!mergedFromIds || mergedFromIds.length === 0) {
+            const parentId = currentNode.data.parentId;
+            if (parentId !== null) {
+              const parentNode = nodes.find((n) => n.id === parentId);
+              parentPathSummary = parentNode?.data.pathSummary;
+            }
+          }
+          const pathSummary = await generatePathSummary(
+            updatedNode,
+            parentPathSummary,
+            nodes,
+          );
+          if (pathSummary) onPathSummary(pathSummary);
+        } catch {
+          // 路径摘要生成失败，静默跳过
+        }
+      })();
+    }
     return { success: true, text: fullText, suggestions };
   } catch (err) {
     // 复用 request.ts 的 describeError 归一化错误信息

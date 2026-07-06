@@ -126,6 +126,7 @@ export function StorageManager() {
       enableConflictAutoCheck: false,
       conflictCheckFrequency: 5,
       nodeDisplayMode: 'detailed' as const,
+      hoverShowPathSummary: false,
     };
     saveAppSettings(defaults);
     refreshAppSettings();

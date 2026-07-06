@@ -23,6 +23,8 @@ import { on as onEvent, NODE_EVENTS } from './event-bus';
 
 // 快捷键帮助面板懒加载，用户点击帮助按钮后才渲染
 const KeyboardShortcuts = lazy(() => import('./KeyboardShortcuts'));
+// 自动推演对话框懒加载，用户点击"自动推演"入口按钮后才渲染
+const AutoEvolutionDialog = lazy(() => import('./AutoEvolutionDialog'));
 
 function TopNav({ onShowHelp }: { onShowHelp: () => void }) {
   const { t, toggleLanguage } = useTranslation();
@@ -196,6 +198,8 @@ function EmptyStateInput() {
       controller.signal,
       (summary) => updateTurnNode(newId, { summary }),
       extraContext,
+      // 旁路回调：流式完成后异步生成根节点路径摘要并写入 data.pathSummary
+      (pathSummary) => updateTurnNode(newId, { pathSummary }),
     );
 
     if (result.success) {
@@ -261,6 +265,9 @@ function EditorInner() {
   const setShowSettings = useDebugStore((s) => s.setShowSettings);
   const showMemoryPanel = useDebugStore((s) => s.showMemoryPanel);
   const setShowMemoryPanel = useDebugStore((s) => s.setShowMemoryPanel);
+  // 自动推演对话框可见性（懒加载，由 NodeSidebar 入口按钮触发）
+  const showAutoEvolution = useDebugStore((s) => s.showAutoEvolution);
+  const setShowAutoEvolution = useDebugStore((s) => s.setShowAutoEvolution);
   const refreshLlmConfig = useDebugStore((s) => s.refreshLlmConfig);
   const refreshProjects = useDebugStore((s) => s.refreshProjects);
   const refreshAppSettings = useDebugStore((s) => s.refreshAppSettings);
@@ -375,6 +382,11 @@ function EditorInner() {
       {showShortcuts && (
         <Suspense fallback={null}>
           <KeyboardShortcuts onClose={() => setShowShortcuts(false)} />
+        </Suspense>
+      )}
+      {showAutoEvolution && (
+        <Suspense fallback={null}>
+          <AutoEvolutionDialog onClose={() => setShowAutoEvolution(false)} />
         </Suspense>
       )}
     </div>

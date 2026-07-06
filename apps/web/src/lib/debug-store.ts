@@ -16,7 +16,7 @@ import {
   type EdgeChange,
   type Connection,
 } from 'reactflow';
-import type { TurnNodeData, Suggestion, NetworkProject, MemoryEntry, AppSettings } from '@/components/node-flow/types';
+import type { TurnNodeData, Suggestion, NetworkProject, MemoryEntry, AppSettings, AutoEvolutionState } from '@/components/node-flow/types';
 import { createTurnNodeData } from '@/components/node-flow/node-definitions';
 import { mergeBranches } from './network-engine';
 import { incrementalLayout } from '@/components/node-flow/radial-layout';
@@ -70,6 +70,10 @@ interface NetworkState {
   // ========== UI ==========
   showSettings: boolean;
   mobileSidebarOpen: boolean;
+  /** 桌面端侧边栏收纳状态（true=已收纳隐藏，false=展开） */
+  sidebarCollapsed: boolean;
+  /** 自动推演对话框可见性（懒加载，由 NodeSidebar 入口按钮触发） */
+  showAutoEvolution: boolean;
   llmConfig: LLMConfig | null;
 
   // ========== 设置 & 记忆 ==========
@@ -102,6 +106,13 @@ interface NetworkState {
   setNodeSuggestions: (nodeId: string, suggestions: Suggestion[]) => void;
   /** 删除节点及其下游子树（递归通过 parentId 找子节点）+ 相关 edges */
   deleteNode: (nodeId: string) => void;
+  /**
+   * 删除本次推演产生的所有节点：遍历 nodes，删除所有 evolutionMeta.startNodeId
+   * 等于 startNodeId 的节点（不含推演起点本身）+ 关联 edges。
+   * 多路推演时支持按 startNodeId 单独删除某一路。
+   * 删除后保留推演起点父节点，不强制清理失去子节点的节点。
+   */
+  deleteEvolutionNodes: (startNodeId: string) => void;
 
   // ========== 支线操作 ==========
   /** 标记节点及下游为 abandoned */
@@ -163,8 +174,14 @@ interface NetworkState {
 
   // ========== UI 操作 ==========
   setShowSettings: (show: boolean) => void;
+  /** 设置自动推演对话框可见性 */
+  setShowAutoEvolution: (show: boolean) => void;
   toggleMobileSidebar: () => void;
   setMobileSidebarOpen: (open: boolean) => void;
+  /** 切换桌面端侧边栏收纳/展开 */
+  toggleSidebarCollapsed: () => void;
+  /** 设置桌面端侧边栏收纳状态 */
+  setSidebarCollapsed: (collapsed: boolean) => void;
   refreshLlmConfig: () => void;
   setShowMemoryPanel: (show: boolean) => void;
 
@@ -173,6 +190,24 @@ interface NetworkState {
   toggleNodeDisplayMode: () => void;
   /** 设置节点显示模式 */
   setNodeDisplayMode: (mode: 'detailed' | 'compact') => void;
+
+  // ========== 自动推演 ==========
+  /** 自动推演运行时状态（idle/running/paused/done + 进度计数） */
+  autoEvolutionState: AutoEvolutionState;
+  /** 启动推演：状态置 running，初始化进度计数 */
+  startAutoEvolution: (maxSteps: number, activeBranches: number) => void;
+  /** 暂停推演：状态置 paused（置信度低时由引擎触发） */
+  pauseAutoEvolution: () => void;
+  /** 恢复推演：状态置 running（用户确认继续时触发） */
+  resumeAutoEvolution: () => void;
+  /** 停止推演：状态置 idle，清空进度（用户主动停止或推演完成） */
+  stopAutoEvolution: () => void;
+  /** 推演完成：状态置 done，保留进度供 UI 展示总结 */
+  doneAutoEvolution: () => void;
+  /** 更新当前步数（引擎每完成一步后调用） */
+  setAutoEvolutionStep: (step: number) => void;
+  /** 更新活跃路数（多路推演中某路收敛/停止后递减） */
+  setAutoEvolutionActiveBranches: (count: number) => void;
 }
 
 /**
@@ -218,6 +253,10 @@ export const useDebugStore = create<NetworkState>((set, get) => ({
   // ========== UI ==========
   showSettings: false,
   mobileSidebarOpen: false,
+  // 桌面端侧边栏默认展开
+  sidebarCollapsed: false,
+  // 自动推演对话框默认关闭，由 NodeSidebar 入口按钮触发
+  showAutoEvolution: false,
   // 初始为 null 以保证 SSR/CSR 一致，客户端在 EditorInner 挂载时通过 refreshLlmConfig() 加载
   llmConfig: null,
 
@@ -228,6 +267,10 @@ export const useDebugStore = create<NetworkState>((set, get) => ({
   showMemoryPanel: false,
   turnCounter: 0,
   nodeDisplayMode: 'detailed',
+
+  // ========== 自动推演 ==========
+  // 默认 idle，由引擎在 start/done 时切换
+  autoEvolutionState: { status: 'idle', currentStep: 0, maxSteps: 0, activeBranches: 0 },
 
   // ========== React Flow 集成 ==========
   // 选中变化不算 dirty，避免无谓的自动保存。
@@ -360,6 +403,35 @@ export const useDebugStore = create<NetworkState>((set, get) => ({
     set((state) => {
       const toDelete = collectDescendants(nodeId, state.nodes);
       toDelete.add(nodeId);
+      const isDeleted = (id: string) => toDelete.has(id);
+      return {
+        nodes: state.nodes.filter((n) => !isDeleted(n.id)),
+        edges: state.edges.filter(
+          (e) => !isDeleted(e.source) && !isDeleted(e.target),
+        ),
+        selectedNodeId: isDeleted(state.selectedNodeId ?? '')
+          ? null
+          : state.selectedNodeId,
+        isDirty: true,
+      };
+    });
+  },
+
+  // 删除本次推演产生的所有节点（按 evolutionMeta.startNodeId 匹配）。
+  // 不删除推演起点本身（起点是用户节点，可能仍想保留）。
+  // 删除后保留失去子节点的父节点（spec 约束：不强制清理）。
+  deleteEvolutionNodes: (startNodeId) => {
+    set((state) => {
+      const toDelete = new Set<string>();
+      for (const n of state.nodes) {
+        if (
+          n.data.evolutionMeta &&
+          n.data.evolutionMeta.startNodeId === startNodeId
+        ) {
+          toDelete.add(n.id);
+        }
+      }
+      if (toDelete.size === 0) return {};
       const isDeleted = (id: string) => toDelete.has(id);
       return {
         nodes: state.nodes.filter((n) => !isDeleted(n.id)),
@@ -622,10 +694,18 @@ export const useDebugStore = create<NetworkState>((set, get) => ({
   // ========== UI 操作 ==========
   setShowSettings: (show) => set({ showSettings: show }),
 
+  // 自动推演对话框可见性切换（UI 开关，不改变项目数据，不计入 dirty）
+  setShowAutoEvolution: (show) => set({ showAutoEvolution: show }),
+
   toggleMobileSidebar: () =>
     set((state) => ({ mobileSidebarOpen: !state.mobileSidebarOpen })),
 
   setMobileSidebarOpen: (open) => set({ mobileSidebarOpen: open }),
+
+  // 桌面端侧边栏收纳切换（不改变项目数据，不计入 dirty）
+  toggleSidebarCollapsed: () =>
+    set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
+  setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
 
   refreshLlmConfig: () => set({ llmConfig: loadConfig() }),
 
@@ -638,4 +718,60 @@ export const useDebugStore = create<NetworkState>((set, get) => ({
     })),
 
   setNodeDisplayMode: (mode) => set({ nodeDisplayMode: mode }),
+
+  // ========== 自动推演 ==========
+  // 启动推演：状态置 running，初始化 maxSteps 与 activeBranches，步数从 0 起
+  startAutoEvolution: (maxSteps, activeBranches) =>
+    set({
+      autoEvolutionState: {
+        status: 'running',
+        currentStep: 0,
+        maxSteps,
+        activeBranches,
+      },
+    }),
+
+  // 暂停推演：仅切换状态，保留进度
+  pauseAutoEvolution: () =>
+    set((state) => ({
+      autoEvolutionState: { ...state.autoEvolutionState, status: 'paused' },
+    })),
+
+  // 恢复推演：状态置 running，保留进度
+  resumeAutoEvolution: () =>
+    set((state) => ({
+      autoEvolutionState: { ...state.autoEvolutionState, status: 'running' },
+    })),
+
+  // 停止推演：状态归零到 idle（用户主动停止或完成清理时调用）
+  stopAutoEvolution: () =>
+    set({
+      autoEvolutionState: {
+        status: 'idle',
+        currentStep: 0,
+        maxSteps: 0,
+        activeBranches: 0,
+      },
+    }),
+
+  // 推演完成：状态置 done，保留进度供 UI 展示总结
+  doneAutoEvolution: () =>
+    set((state) => ({
+      autoEvolutionState: { ...state.autoEvolutionState, status: 'done' },
+    })),
+
+  // 更新当前步数
+  setAutoEvolutionStep: (step) =>
+    set((state) => ({
+      autoEvolutionState: { ...state.autoEvolutionState, currentStep: step },
+    })),
+
+  // 更新活跃路数（多路推演中某路收敛/停止后递减）
+  setAutoEvolutionActiveBranches: (count) =>
+    set((state) => ({
+      autoEvolutionState: {
+        ...state.autoEvolutionState,
+        activeBranches: count,
+      },
+    })),
 }));

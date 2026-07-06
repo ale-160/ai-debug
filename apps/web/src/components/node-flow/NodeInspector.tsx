@@ -14,6 +14,8 @@ import ConflictCard from './inspector/ConflictCard';
 import MergeSourcesList from './inspector/MergeSourcesList';
 import SuggestionsList from './inspector/SuggestionsList';
 import MessageInput from './inspector/MessageInput';
+import PathSummaryCard from './inspector/PathSummaryCard';
+import EvolutionMetaCard from './inspector/EvolutionMetaCard';
 import { useInspectorActions } from './inspector/useInspectorActions';
 
 /** Markdown 元素样式（项目未启用 tailwindcss/typography，故手动提供基础排版） */
@@ -197,9 +199,22 @@ export default function NodeInspector() {
         </div>
       )}
 
-      {/* Tab 2: 上下文 —— 合并来源 + 冲突标注 + 注入的记忆条目 */}
+      {/* Tab 2: 上下文 —— 路径摘要 + 推演元数据 + 合并来源 + 冲突标注 + 注入的记忆条目 */}
       {activeTab === 'context' && (
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {/* 路径摘要（rolling summary）：从根到当前节点的聚合结论 */}
+          <PathSummaryCard
+            pathSummary={data.pathSummary}
+            pathLength={breadcrumb.length}
+          />
+          {/* 推演元数据：自动推演产生的节点显示 step/confidence/startNodeId/reasoning + 清除按钮 */}
+          {data.evolutionMeta && (
+            <EvolutionMetaCard
+              evolutionMeta={data.evolutionMeta}
+              nodes={nodes}
+              onClear={actions.handleClearEvolutionMeta}
+            />
+          )}
           {conflictNote && (
             <ConflictCard
               conflictNote={conflictNote}

@@ -521,6 +521,9 @@ export default function NodeCanvas() {
       (delta) => appendAssistantChunk(newId, delta),
       controller.signal,
       (summary) => updateTurnNode(newId, { summary }),
+      undefined,
+      // 旁路回调：合并节点回答完成后生成多路聚合路径摘要
+      (pathSummary) => updateTurnNode(newId, { pathSummary }),
     );
     if (result.success) {
       updateTurnNode(newId, {

@@ -10,6 +10,9 @@ import {
   Download,
   Upload,
   Pencil,
+  Zap,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import { useDebugStore } from '@/lib/debug-store';
 import {
@@ -33,6 +36,12 @@ export default function NodeSidebar() {
   const toggleMobileSidebar = useDebugStore((s) => s.toggleMobileSidebar);
   const setMobileSidebarOpen = useDebugStore((s) => s.setMobileSidebarOpen);
   const refreshProjects = useDebugStore((s) => s.refreshProjects);
+  // 自动推演：选中节点才可用，未选中时 disabled
+  const selectedNodeId = useDebugStore((s) => s.selectedNodeId);
+  const setShowAutoEvolution = useDebugStore((s) => s.setShowAutoEvolution);
+  // 桌面端侧边栏收纳/展开
+  const sidebarCollapsed = useDebugStore((s) => s.sidebarCollapsed);
+  const toggleSidebarCollapsed = useDebugStore((s) => s.toggleSidebarCollapsed);
 
   const formatTime = useCallback(
     (ts: number): string => {
@@ -201,6 +210,13 @@ export default function NodeSidebar() {
     setMobileSidebarOpen(false);
   };
 
+  // 打开自动推演对话框（需选中节点）
+  const handleOpenAutoEvolution = () => {
+    if (!selectedNodeId) return;
+    setShowAutoEvolution(true);
+    setMobileSidebarOpen(false);
+  };
+
   return (
     <>
       {mobileSidebarOpen && (
@@ -211,9 +227,24 @@ export default function NodeSidebar() {
         />
       )}
 
+      {/* 桌面端收纳后展开按钮：浮动在画布左边缘 */}
+      {sidebarCollapsed && (
+        <button
+          onClick={toggleSidebarCollapsed}
+          className="hidden md:flex fixed top-3 left-2 z-30 items-center justify-center w-8 h-8 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-md text-slate-500 hover:text-violet-600 hover:border-violet-300 dark:hover:text-violet-400 dark:hover:border-violet-600 transition-colors"
+          aria-label={t.expandSidebar}
+          title={t.expandSidebar}
+        >
+          <PanelLeftOpen size={16} />
+        </button>
+      )}
+
       <div
-        className={`fixed inset-y-0 left-0 w-64 z-30 transform transition-transform duration-200 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 flex flex-col md:relative md:translate-x-0 md:z-auto ${
+        className={`fixed inset-y-0 left-0 w-64 z-30 transform transition-transform duration-200 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 flex flex-col md:relative md:z-auto ${
           mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        } ${
+          // 桌面端收纳：translate 隐藏 + 宽度归零避免占位
+          sidebarCollapsed ? 'md:-translate-x-full md:w-0 md:border-0 md:overflow-hidden' : 'md:translate-x-0'
         }`}
         role="navigation"
         aria-label={t.projectList}
@@ -223,6 +254,15 @@ export default function NodeSidebar() {
             <Folder size={16} className="text-blue-500" />
             {t.projectList}
           </h2>
+          {/* 桌面端收纳按钮（仅 md+ 显示） */}
+          <button
+            onClick={toggleSidebarCollapsed}
+            className="hidden md:inline-flex p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:text-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
+            aria-label={t.collapseSidebar}
+            title={t.collapseSidebar}
+          >
+            <PanelLeftClose size={16} />
+          </button>
         </div>
 
         <div className="p-3 border-b border-slate-100 dark:border-slate-700">
@@ -365,8 +405,20 @@ export default function NodeSidebar() {
           )}
         </div>
 
-        {/* 底部：从 JSON 文件导入 */}
-        <div className="px-3 pt-1 pb-1 border-t border-slate-100 dark:border-slate-700">
+        {/* 底部：自动推演入口 + 从 JSON 文件导入 */}
+        <div className="px-3 pt-2 pb-1 border-t border-slate-100 dark:border-slate-700 space-y-1">
+          <button
+            onClick={handleOpenAutoEvolution}
+            disabled={!selectedNodeId}
+            className="flex items-center gap-2 w-full text-xs font-medium py-2 px-2.5 rounded-lg bg-gradient-to-r from-violet-50 to-amber-50 dark:from-violet-900/20 dark:to-amber-900/20 text-violet-700 dark:text-violet-300 hover:from-violet-100 hover:to-amber-100 dark:hover:from-violet-900/30 dark:hover:to-amber-900/30 border border-violet-200/60 dark:border-violet-700/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:from-violet-50 disabled:hover:to-amber-50 dark:disabled:hover:from-violet-900/20 dark:disabled:hover:to-amber-900/20"
+            aria-label={t.autoEvolutionEntry}
+            title={t.autoEvolutionEntryHint}
+          >
+            <span className="inline-flex items-center justify-center w-5 h-5 rounded bg-gradient-to-br from-violet-500 to-amber-500 text-white shrink-0">
+              <Zap size={12} />
+            </span>
+            {t.autoEvolutionEntry}
+          </button>
           <input
             ref={importFileRef}
             type="file"

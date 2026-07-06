@@ -125,6 +125,8 @@ export function useInspectorActions(selectedNode: Node<TurnNodeData> | null) {
       controller.signal,
       (summary) => updateTurnNode(newId, { summary }),
       buildExtraContext(),
+      // 旁路回调：流式完成后异步生成路径摘要并写入节点 data.pathSummary
+      (pathSummary) => updateTurnNode(newId, { pathSummary }),
     );
     if (result.success) {
       updateTurnNode(newId, {
@@ -179,6 +181,8 @@ export function useInspectorActions(selectedNode: Node<TurnNodeData> | null) {
       controller.signal,
       (summary) => updateTurnNode(selectedNodeId, { summary }),
       buildExtraContext(),
+      // 旁路回调：重新生成时也刷新路径摘要（基于新回答内容）
+      (pathSummary) => updateTurnNode(selectedNodeId, { pathSummary }),
     );
     if (result.success) {
       updateTurnNode(selectedNodeId, {
@@ -254,6 +258,14 @@ export function useInspectorActions(selectedNode: Node<TurnNodeData> | null) {
     if (selectedNodeId) updateTurnNode(selectedNodeId, { conflictNote: undefined });
   };
 
+  /** 清除当前节点的推演元数据（转为普通节点） */
+  const handleClearEvolutionMeta = () => {
+    if (!selectedNodeId) return;
+    if (confirm(t.autoEvolutionConfirmClearMeta)) {
+      updateTurnNode(selectedNodeId, { evolutionMeta: undefined });
+    }
+  };
+
   /** 裁剪当前节点及其子树（冲突处理选项之一） */
   const handlePruneNode = () => {
     if (!selectedNodeId) return;
@@ -282,6 +294,7 @@ export function useInspectorActions(selectedNode: Node<TurnNodeData> | null) {
     handleUnignore,
     handleCheckConflict,
     handleClearConflict,
+    handleClearEvolutionMeta,
     handlePruneNode,
     handleKeyDown,
   };

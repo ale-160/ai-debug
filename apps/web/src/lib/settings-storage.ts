@@ -13,7 +13,7 @@ const SETTINGS_KEY = APP_SETTINGS_KEY;
 /** 全局记忆 localStorage key */
 export const GLOBAL_MEMORY_KEY = 'ai-debug:global-memory';
 
-/** 默认设置：记忆默认关闭，冲突自动检测默认关闭，每轮提取（开启后） */
+/** 默认设置：记忆默认关闭，冲突自动检测默认关闭，每轮提取（开启后），hover 路径摘要默认关闭 */
 export const DEFAULT_SETTINGS: AppSettings = {
   enableGlobalMemory: false,
   enableProjectMemory: false,
@@ -21,6 +21,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   enableConflictAutoCheck: false,
   conflictCheckFrequency: 1,
   globalRules: '',
+  hoverShowPathSummary: false,
 };
 
 /**

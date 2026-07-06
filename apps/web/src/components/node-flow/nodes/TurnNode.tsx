@@ -1,7 +1,7 @@
 'use client';
 import React, { memo, useMemo } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
-import { Loader2, GitMerge, AlertTriangle } from 'lucide-react';
+import { Loader2, GitMerge, AlertTriangle, Zap } from 'lucide-react';
 import type { TurnNodeData } from '../types';
 import { statusColors, truncateStreamingText } from './node-utils';
 import { pickStatusMessage } from '../marketing-messages';
@@ -27,9 +27,18 @@ function TurnNodeComponent({ data, selected }: TurnNodeProps) {
     summary,
     mergedFromIds,
     conflictNote,
+    pathSummary,
+    evolutionMeta,
   } = data;
   const nodeDisplayMode = useDebugStore((s) => s.nodeDisplayMode);
   const isCompact = nodeDisplayMode === 'compact';
+  // hover 显示路径摘要开关（默认关闭，用户主动开启后才显示）
+  const hoverShowPathSummary = useDebugStore((s) => s.appSettings.hoverShowPathSummary);
+  // 仅在开启开关且 pathSummary 非空时显示 hover 卡片
+  const showHoverSummary =
+    hoverShowPathSummary &&
+    typeof pathSummary === 'string' &&
+    pathSummary.trim().length > 0;
 
   const isAbandoned = status === 'abandoned';
   const isIgnored = status === 'ignored';
@@ -45,6 +54,14 @@ function TurnNodeComponent({ data, selected }: TurnNodeProps) {
   // 合并节点：mergedFromIds 非空，作为新支线根，无 parentId
   const isMerged = Array.isArray(mergedFromIds) && mergedFromIds.length > 0;
   const hasConflict = !!conflictNote;
+  // 自动推演产生节点：evolutionMeta 非空，左上角显示 ⚡ 图标 + hover tooltip
+  const isEvolution = !!evolutionMeta;
+  const evolutionTooltip = isEvolution
+    ? tf('autoEvolutionNodeTooltip', {
+        step: evolutionMeta.step,
+        confidence: evolutionMeta.confidence.toFixed(2),
+      })
+    : '';
 
   // 渲染状态指示器（圆点 / 旋转图标）：配色统一取自 statusColors，与 MiniMap 一致
   const renderStatusIndicator = (
@@ -79,16 +96,14 @@ function TurnNodeComponent({ data, selected }: TurnNodeProps) {
 
   return (
     <div
-      className={`relative rounded-lg bg-white dark:bg-slate-800 shadow-sm transition-all duration-200 p-3 ${
+      className={`group relative rounded-lg bg-white dark:bg-slate-800 shadow-sm transition-all duration-200 p-3 ${
         isCompact ? 'w-[180px]' : 'w-[240px]'
       } ${
         // 合并节点：双色边框（violet 加粗）；普通节点：灰色细边框
         isMerged ? 'border-2 border-violet-400 dark:border-violet-500' : 'border border-slate-200 dark:border-slate-600'
-      } ${selected ? 'ring-2 ring-blue-400 ring-offset-1' : ''} ${
-        isAbandoned ? 'opacity-50' : ''
-      } ${isIgnored ? 'border-amber-300 dark:border-amber-500 border-dashed opacity-70' : ''} ${
+      } ${selected ? 'ring-2 ring-blue-400 ring-offset-1' : ''} ${isAbandoned ? 'opacity-50' : ''} ${isIgnored ? 'border-amber-300 dark:border-amber-500 border-dashed opacity-70' : ''} ${
         hasConflict ? 'border-red-400 dark:border-red-500' : ''
-      }`}
+      } ${isEvolution && !isMerged && !hasConflict ? 'border-violet-300 dark:border-violet-600' : ''}`}
     >
       {/* 左侧输入端口：仅非根节点显示（合并节点 parentId 为 null，不显示） */}
       {parentId !== null && (
@@ -110,6 +125,16 @@ function TurnNodeComponent({ data, selected }: TurnNodeProps) {
 
       {/* 顶部：状态指示器 + 类型标签（合并节点显示 GitMerge 图标） */}
       <div className="flex items-center gap-1.5 mb-2">
+        {/* 自动推演产生节点：左上角 ⚡ 图标 + hover tooltip，带脉冲动画提示 */}
+        {isEvolution && (
+          <span
+            className="inline-flex items-center justify-center w-5 h-5 rounded bg-gradient-to-br from-violet-500 to-amber-500 text-white shadow-sm shadow-violet-500/30"
+            title={evolutionTooltip}
+            aria-label={evolutionTooltip}
+          >
+            <Zap size={11} />
+          </span>
+        )}
         {renderStatusIndicator(status, errorMessage)}
         {isMerged && <GitMerge size={12} className="text-violet-500" />}
         <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
@@ -195,6 +220,24 @@ function TurnNodeComponent({ data, selected }: TurnNodeProps) {
             <AlertTriangle size={10} />
             {t.conflict}
           </span>
+        </div>
+      )}
+
+      {/* 路径摘要 hover 卡片：仅在开启 hoverShowPathSummary 且存在 pathSummary 时显示。
+          绝对定位在节点右下方，避免遮挡节点本体；z-50 确保浮于其他节点之上。
+          pointer-events-none 防止 hover 卡片自身捕获鼠标导致闪烁。 */}
+      {showHoverSummary && (
+        <div
+          className="hidden group-hover:block absolute top-full left-0 mt-1 z-50 w-[320px] max-w-[320px] pointer-events-none rounded-lg border border-violet-200 dark:border-violet-700 bg-white dark:bg-slate-800 shadow-xl p-2.5 text-xs text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-words max-h-[240px] overflow-y-auto"
+          role="tooltip"
+        >
+          <div className="text-[10px] font-semibold text-violet-500 dark:text-violet-400 uppercase tracking-wide mb-1">
+            {t.pathSummaryTitle}
+          </div>
+          <div className="text-[10px] text-slate-400 dark:text-slate-500 mb-1.5">
+            {t.pathSummaryDesc}
+          </div>
+          {pathSummary}
         </div>
       )}
     </div>

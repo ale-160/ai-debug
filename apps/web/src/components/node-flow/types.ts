@@ -43,6 +43,8 @@ export interface AppSettings {
   conflictCheckFrequency: number;
   /** 用户自定义规则文本（注入到 system prompt，相当于全局档案/补充指令） */
   globalRules: string;
+  /** 是否在 hover 节点时显示路径摘要（默认关闭，用户主动开启后才显示） */
+  hoverShowPathSummary: boolean;
 }
 
 /** 对话节点数据（存储在 node.data 中） */
@@ -61,6 +63,12 @@ export interface TurnNodeData {
   errorMessage?: string;
   /** 摘要标题（commit message）：流式完成后由 LLM 生成的 ≤20 字一句话摘要 */
   summary?: string;
+  /**
+   * 路径摘要（rolling summary）：从根到当前节点的聚合摘要（≤1000 字）。
+   * 聚焦"已确立的结论/决策/事实"，子节点基于父节点 pathSummary 增量生成。
+   * 既有节点无此字段时按 undefined 处理，触发首次生成时回填，向后兼容。
+   */
+  pathSummary?: string;
   /** 合并来源节点 ID 列表：非空表示此节点由多个分支合并而来（合并节点 parentId 为 null） */
   mergedFromIds?: string[];
   /** 图片附件 base64 列表（用户消息可含图片） */
@@ -69,6 +77,20 @@ export interface TurnNodeData {
   createdAt: number;
   /** 冲突标注文案：由冲突检测填充，清空则取消标注 */
   conflictNote?: string;
+  /**
+   * 自动推演元数据：节点由 auto-evolution-engine 产生时填充。
+   * - step：该路推演的第几步（从 1 起）
+   * - confidence：本节点回答方向的置信度 0-1
+   * - startNodeId：该路推演的起点叶节点 id（用于批量删除本次推演）
+   * - reasoning：AI 生成该问题的理由
+   * 既有节点无此字段时按 undefined 处理，向后兼容。
+   */
+  evolutionMeta?: {
+    step: number;
+    confidence: number;
+    startNodeId: string;
+    reasoning: string;
+  };
 }
 
 /** 蛛网项目（一棵对话网络树） */
@@ -93,4 +115,18 @@ export interface NetworkProject {
 /** 从节点 data 中提取 TurnNodeData 的类型守卫 */
 export function isTurnNodeData(data: any): data is TurnNodeData {
   return data && typeof data.userMessage === 'string' && typeof data.parentId !== 'undefined';
+}
+
+/**
+ * 自动推演运行时状态：跟踪当前推演的进度与暂停态。
+ * - idle：未运行
+ * - running：推演进行中
+ * - paused：置信度低于阈值暂停，等待用户确认
+ * - done：达到最大步数或所有路已收敛
+ */
+export interface AutoEvolutionState {
+  status: 'idle' | 'running' | 'paused' | 'done';
+  currentStep: number;
+  maxSteps: number;
+  activeBranches: number;
 }

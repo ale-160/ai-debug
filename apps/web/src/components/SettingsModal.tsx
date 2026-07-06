@@ -524,6 +524,27 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 </p>
               </div>
 
+              {/* 可观测性：hover 节点显示路径摘要（默认关闭） */}
+              <div className="space-y-2">
+                <div className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                  {t.observabilitySettings}
+                </div>
+                <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={settingsDraft.hoverShowPathSummary}
+                    onChange={(e) =>
+                      setSettingsDraft({
+                        ...settingsDraft,
+                        hoverShowPathSummary: e.target.checked,
+                      })
+                    }
+                    className="rounded"
+                  />
+                  {t.hoverShowPathSummary}
+                </label>
+              </div>
+
               {/* 打开记忆管理面板 */}
               <button
                 type="button"

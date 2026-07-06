@@ -2,6 +2,7 @@ import type { Node } from 'reactflow';
 import type { TurnNodeData, Suggestion, TurnStatus } from '@/components/node-flow/types';
 import { quickCallLLM, buildVisionMessage } from './llm-helpers';
 import type { LLMMessage } from './llm-client';
+import { describeError } from './request';
 import { createTurnNodeData } from '@/components/node-flow/node-definitions';
 
 /** 系统提示词，引导 AI 给出回答并在末尾附上后续探索方向 */
@@ -282,8 +283,8 @@ export async function streamTurnResponse(
     })();
     return { success: true, text: fullText, suggestions };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { success: false, error: message };
+    // 复用 request.ts 的 describeError 归一化错误信息
+    return { success: false, error: describeError(err) };
   }
 }
 

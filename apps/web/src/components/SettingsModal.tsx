@@ -28,6 +28,7 @@ import { useDebugStore } from "@/lib/debug-store";
 import { StorageManager } from "./StorageManager";
 import { useTranslation } from "@/components/I18nProvider";
 import type { AppSettings } from "./node-flow/types";
+import { emit, NODE_EVENTS } from "./node-flow/event-bus";
 
 interface SettingsModalProps {
   open: boolean;
@@ -160,8 +161,8 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     saveConfig(config);
     // 同步保存应用设置（记忆/冲突/规则）
     updateAppSettings(settingsDraft);
-    // 通知全局配置已更新
-    window.dispatchEvent(new CustomEvent("llm-config-updated"));
+    // 通知全局配置已更新（走类型安全事件总线）
+    emit(NODE_EVENTS.LlmConfigUpdated);
     toast.success(t.settingsSaved);
     onClose();
   };

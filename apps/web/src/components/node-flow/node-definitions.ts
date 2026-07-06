@@ -3,6 +3,47 @@ import type { TurnNodeData } from './types';
 /** 节点类型 key（唯一一种） */
 export const TURN_NODE_TYPE = 'turn';
 
+// ============================================================
+// 类型预留：为未来扩展（备注节点 / 决策节点）声明 schema 体系
+// 当前 TurnNode 不使用 inputs 字段，仅类型层面预留，不影响运行时
+// ============================================================
+
+/** 节点参数 schema 声明（未来表单渲染用，参考 spark-flow NodeParam 精简版） */
+export interface NodeParam {
+  /** 参数 key（对应 node data 中的字段名） */
+  name: string;
+  /** 显示标签 */
+  label: string;
+  /** 参数类型 */
+  type: 'string' | 'number' | 'boolean' | 'multiline' | 'options' | 'asyncOptions';
+  /** 描述文案 */
+  description?: string;
+  /** 默认值 */
+  default?: unknown;
+}
+
+/** 节点定义基础字段（未来扩展备注节点 / 决策节点时使用） */
+export interface NodeDefinition {
+  type: string;
+  label: string;
+  description: string;
+  icon?: string;
+}
+
+/** 带 schema 的节点定义（扩展 NodeDefinition，支持 inputs / loadMethods）
+ *  当前 TurnNode 不使用，类型层面预留，未来备注节点 / 决策节点可直接套用 */
+export type SchemaNodeDefinition = NodeDefinition & {
+  /** 参数 schema 声明，前端据此后续渲染表单 */
+  inputs?: NodeParam[];
+  /** asyncOptions 加载方法注册表（key 对应 NodeParam.loadMethod） */
+  loadMethods?: {
+    [methodName: string]: (
+      nodeData: unknown,
+      ctx?: unknown,
+    ) => Promise<{ label: string; value: string }[]>;
+  };
+};
+
 /** 创建对话节点的默认数据 */
 export function createTurnNodeData(userMessage: string, parentId: string | null): TurnNodeData {
   return {

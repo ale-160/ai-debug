@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
 import { ReactFlowProvider } from 'reactflow';
 import { Send, Settings, Sun, Moon, Menu, HelpCircle, Network, Heart, Globe } from 'lucide-react';
 import { toast } from 'sonner';
@@ -18,8 +18,13 @@ import { isConfigured, maskKey } from '@/lib/llm-config';
 import { useTranslation, I18nProvider } from '@/components/I18nProvider';
 import { useRouter } from 'next/navigation';
 import { getStrings, type Language } from '@/data/i18n';
+import ExecutionStatusBar from './ExecutionStatusBar';
+import { on as onEvent, NODE_EVENTS } from './event-bus';
 
-function TopNav() {
+// 快捷键帮助面板懒加载，用户点击帮助按钮后才渲染
+const KeyboardShortcuts = lazy(() => import('./KeyboardShortcuts'));
+
+function TopNav({ onShowHelp }: { onShowHelp: () => void }) {
   const { t, toggleLanguage } = useTranslation();
   const router = useRouter();
   const { theme, toggleTheme } = useTheme();
@@ -40,7 +45,7 @@ function TopNav() {
   const maskedKey = llmConfig ? maskKey(llmConfig.apiKey) : '';
 
   const handleHelp = () => {
-    toast.info(t.helpTooltip);
+    onShowHelp();
   };
 
   const handleToggleLanguage = () => {
@@ -263,6 +268,8 @@ function EditorInner() {
 
   // hydration 守卫：客户端从 localStorage 加载数据完成前显示骨架，避免闪烁
   const [isHydrated, setIsHydrated] = useState(false);
+  // 快捷键帮助面板可见性（懒加载，仅用户点击帮助按钮后渲染）
+  const [showShortcuts, setShowShortcuts] = useState(false);
 
   const isEmpty = nodes.length === 0;
 
@@ -276,10 +283,11 @@ function EditorInner() {
   }, [refreshLlmConfig, refreshProjects, refreshAppSettings, refreshGlobalMemory]);
 
   // 监听 llm-config-updated 事件刷新 store 中的 llmConfig（TopNav 徽章随之更新）
+  // 走 event-bus 类型安全事件总线
   useEffect(() => {
-    const refresh = () => refreshLlmConfig();
-    window.addEventListener('llm-config-updated', refresh);
-    return () => window.removeEventListener('llm-config-updated', refresh);
+    return onEvent(NODE_EVENTS.LlmConfigUpdated, () => {
+      refreshLlmConfig();
+    });
   }, [refreshLlmConfig]);
 
   // 页面关闭/刷新前同步保存当前项目（自动保存的兜底，避免丢失最后几次防抖内的改动）
@@ -311,7 +319,7 @@ function EditorInner() {
       <a href="#main-canvas" className="skip-link">
         {t.skipToContent}
       </a>
-      <TopNav />
+      <TopNav onShowHelp={() => setShowShortcuts(true)} />
       <div className="flex-1 flex overflow-hidden relative">
         <NodeSidebar />
         <div id="main-canvas" className="flex-1 relative overflow-hidden" tabIndex={-1}>
@@ -363,6 +371,12 @@ function EditorInner() {
       </footer>
       <SettingsModal open={showSettings} onClose={() => setShowSettings(false)} />
       <MemoryPanel open={showMemoryPanel} onClose={() => setShowMemoryPanel(false)} />
+      <ExecutionStatusBar />
+      {showShortcuts && (
+        <Suspense fallback={null}>
+          <KeyboardShortcuts onClose={() => setShowShortcuts(false)} />
+        </Suspense>
+      )}
     </div>
   );
 }

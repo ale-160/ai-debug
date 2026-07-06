@@ -1,8 +1,10 @@
 'use client';
-import React, { memo } from 'react';
+import React, { memo, useMemo } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
 import { Loader2, GitMerge, AlertTriangle } from 'lucide-react';
 import type { TurnNodeData } from '../types';
+import { statusColors, truncateStreamingText } from './node-utils';
+import { pickStatusMessage } from '../marketing-messages';
 import { useDebugStore } from '@/lib/debug-store';
 import { useTranslation } from '@/components/I18nProvider';
 
@@ -14,7 +16,7 @@ function truncate(text: string, n: number): string {
 type TurnNodeProps = NodeProps<TurnNodeData>;
 
 function TurnNodeComponent({ data, selected }: TurnNodeProps) {
-  const { t, tf } = useTranslation();
+  const { t, tf, language } = useTranslation();
   const {
     parentId,
     userMessage,
@@ -31,34 +33,47 @@ function TurnNodeComponent({ data, selected }: TurnNodeProps) {
 
   const isAbandoned = status === 'abandoned';
   const isIgnored = status === 'ignored';
-  const isThinking = status === 'running' && !assistantMessage;
+  // running 且已有流式文本：在卡片内联展开流式预览
+  const isStreaming = status === 'running' && !!assistantMessage;
+  // 流式预览：保留尾部 2000 字，避免长对话渲染卡顿
+  const streamingPreview = isStreaming ? truncateStreamingText(assistantMessage) : '';
+  // 友好文案：running 时随机选取一条，按 status+lang 记忆化避免每次渲染都换文案
+  const runningLabel = useMemo(
+    () => (status === 'running' ? pickStatusMessage('running', language) : ''),
+    [status, language],
+  );
   // 合并节点：mergedFromIds 非空，作为新支线根，无 parentId
   const isMerged = Array.isArray(mergedFromIds) && mergedFromIds.length > 0;
   const hasConflict = !!conflictNote;
 
-  // 渲染状态指示器（圆点 / 旋转图标）
+  // 渲染状态指示器（圆点 / 旋转图标）：配色统一取自 statusColors，与 MiniMap 一致
   const renderStatusIndicator = (
     status: TurnNodeData['status'],
     errorMessage?: string,
   ): React.ReactNode => {
+    const colors = statusColors[status];
     switch (status) {
       case 'running':
-        return <Loader2 size={12} className="text-blue-500 animate-spin" />;
-      case 'success':
-        return <span className="w-2 h-2 rounded-full bg-emerald-500" />;
+        return <Loader2 size={12} className={`animate-spin ${colors.text}`} />;
       case 'error':
         return (
           <span
-            className="w-2 h-2 rounded-full bg-red-500"
+            className={`w-2 h-2 rounded-full ${colors.dot}`}
             title={errorMessage}
           />
         );
       case 'ignored':
-        return <span className="w-2 h-2 rounded-full bg-amber-400" title={t.ignored} />;
+        return (
+          <span
+            className={`w-2 h-2 rounded-full ${colors.dot}`}
+            title={t.ignored}
+          />
+        );
+      case 'success':
       case 'idle':
       case 'abandoned':
       default:
-        return <span className="w-2 h-2 rounded-full bg-slate-300" />;
+        return <span className={`w-2 h-2 rounded-full ${colors.dot}`} />;
     }
   };
 
@@ -135,22 +150,30 @@ function TurnNodeComponent({ data, selected }: TurnNodeProps) {
             {t.you}：{truncate(userMessage, 30)}
           </div>
 
-          {/* AI 回答摘要 / 思考中 */}
+          {/* AI 回答摘要 / 思考中 / 流式生成中 */}
           <div
             className={`text-sm text-slate-500 dark:text-slate-400 ${
               isAbandoned || isIgnored ? 'line-through' : ''
             }`}
           >
-            {isThinking ? (
-              <span className="flex items-center gap-1">
+            {status === 'running' ? (
+              <span className="flex items-center gap-1 text-blue-500 dark:text-blue-400">
                 <Loader2 size={12} className="animate-spin" />
-                {t.thinking}
+                {runningLabel}
               </span>
             ) : (
               <>{t.ai}：{truncate(assistantMessage, 50)}</>
             )}
           </div>
         </>
+      )}
+
+      {/* 流式预览：running 且有流式文本时展开，截断尾部 2000 字 + 闪烁光标 ▊ */}
+      {isStreaming && (
+        <div className="mt-1 text-xs leading-relaxed font-mono text-blue-600 dark:text-blue-300 bg-blue-50/60 dark:bg-blue-900/30 rounded px-1.5 py-1 max-h-[100px] overflow-hidden whitespace-pre-wrap break-words">
+          {streamingPreview}
+          <span className="inline-block w-1.5 h-3 bg-blue-500 animate-pulse ml-0.5 align-text-bottom" aria-hidden="true" />
+        </div>
       )}
 
       {/* 建议方向徽章 */}

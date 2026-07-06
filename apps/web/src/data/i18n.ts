@@ -149,6 +149,14 @@ export const STRINGS_ZH = {
 
   closeInspector: '关闭',
 
+  // Inspector 三 Tab 标签
+  inspectorTabConversation: '对话',
+  inspectorTabContext: '上下文',
+  inspectorTabActions: '操作',
+  // 上下文 Tab：注入记忆分区标题与空态
+  pathMemoryTitle: '注入的记忆',
+  noPathMemory: '当前无注入的记忆条目',
+
   aiThinking: 'AI 思考中...',
   errorOccurred: '出错了：{message}',
   unknownError: '未知错误',
@@ -230,6 +238,31 @@ export const STRINGS_ZH = {
   copy: '复制',
   copied: '已复制到剪贴板',
   copyFailed: '复制失败',
+
+  shortcutTitle: '画布操作指南',
+  shortcutSubtitle: '快捷键 & 操作说明',
+  shortcutGroupCanvas: '画布操作',
+  shortcutGroupTool: '工具切换',
+  shortcutGroupNode: '节点操作',
+  shortcutActionZoomIn: '放大画布',
+  shortcutActionZoomOut: '缩小画布',
+  shortcutActionHandDrag: '抓手平移',
+  shortcutActionFitView: '适应视图',
+  shortcutActionSelect: '选择工具',
+  shortcutActionHand: '抓手工具',
+  shortcutActionTempHand: '临时抓手',
+  shortcutActionClickSelect: '选中节点',
+  shortcutActionMultiSelect: '多选',
+  shortcutActionDeleteNode: '删除节点',
+  shortcutDescZoom: '以鼠标为中心',
+  shortcutDescHandDrag: '按住空格拖动',
+  shortcutDescTempHand: '按住临时切换',
+  shortcutDescDelete: '删除选中的节点',
+  shortcutDescSelect: '默认，可框选节点',
+  shortcutDescHand: '拖拽平移画布',
+  shortcutDescFitView: '所有节点居中显示',
+  shortcutTip: '按住空格键可以临时切换到抓手工具，快速平移画布。滚轮缩放会以鼠标位置为中心进行缩放。',
+  statusFailed: '生成失败',
 };
 
 export const STRINGS_EN = {
@@ -381,6 +414,14 @@ export const STRINGS_EN = {
 
   closeInspector: 'Close',
 
+  // Inspector three tabs
+  inspectorTabConversation: 'Chat',
+  inspectorTabContext: 'Context',
+  inspectorTabActions: 'Actions',
+  // Context Tab: injected memory section title and empty state
+  pathMemoryTitle: 'Injected Memory',
+  noPathMemory: 'No injected memory entries',
+
   aiThinking: 'AI is thinking...',
   errorOccurred: 'Error: {message}',
   unknownError: 'Unknown error',
@@ -462,6 +503,31 @@ export const STRINGS_EN = {
   copy: 'Copy',
   copied: 'Copied to clipboard',
   copyFailed: 'Copy failed',
+
+  shortcutTitle: 'Canvas Guide',
+  shortcutSubtitle: 'Shortcuts & Operations',
+  shortcutGroupCanvas: 'Canvas',
+  shortcutGroupTool: 'Tools',
+  shortcutGroupNode: 'Nodes',
+  shortcutActionZoomIn: 'Zoom In',
+  shortcutActionZoomOut: 'Zoom Out',
+  shortcutActionHandDrag: 'Hand Pan',
+  shortcutActionFitView: 'Fit View',
+  shortcutActionSelect: 'Select Tool',
+  shortcutActionHand: 'Hand Tool',
+  shortcutActionTempHand: 'Temp Hand',
+  shortcutActionClickSelect: 'Select Node',
+  shortcutActionMultiSelect: 'Multi Select',
+  shortcutActionDeleteNode: 'Delete Node',
+  shortcutDescZoom: 'Around mouse',
+  shortcutDescHandDrag: 'Hold Space + drag',
+  shortcutDescTempHand: 'Hold to switch',
+  shortcutDescDelete: 'Delete selected',
+  shortcutDescSelect: 'Default, box-select',
+  shortcutDescHand: 'Drag to pan',
+  shortcutDescFitView: 'Center all nodes',
+  shortcutTip: 'Hold Space to temporarily switch to the hand tool. Scroll to zoom around the mouse position.',
+  statusFailed: 'Generation failed',
 };
 
 export type Strings = typeof STRINGS_ZH;

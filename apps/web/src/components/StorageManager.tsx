@@ -65,7 +65,6 @@ export function StorageManager() {
   const refreshProjects = useDebugStore((s) => s.refreshProjects);
   const refreshAppSettings = useDebugStore((s) => s.refreshAppSettings);
   const refreshGlobalMemory = useDebugStore((s) => s.refreshGlobalMemory);
-  const loadProject = useDebugStore((s) => s.loadProject);
 
   // 刷新存储占用统计
   const refreshSizes = () => {

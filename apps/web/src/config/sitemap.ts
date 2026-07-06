@@ -42,5 +42,6 @@ export function generateSitemapXml(): string {
 }
 
 if (typeof require !== 'undefined' && require.main === module) {
+  // eslint-disable-next-line no-console -- CLI 脚本入口，输出 sitemap 到 stdout
   console.log(generateSitemapXml());
 }

@@ -6,6 +6,7 @@ import ReactFlow, {
   MiniMap,
   useReactFlow,
   type Node,
+  type Edge,
   type Viewport,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
@@ -20,7 +21,8 @@ import {
   Rows3,
 } from 'lucide-react';
 import { nodeTypes } from './nodes';
-import type { TurnNodeData, TurnStatus } from './types';
+import { getStatusColor } from './nodes/node-utils';
+import type { TurnNodeData } from './types';
 import { useDebugStore } from '@/lib/debug-store';
 import { streamTurnResponse } from '@/lib/network-engine';
 import { isConfigured } from '@/lib/llm-config';
@@ -31,15 +33,6 @@ const defaultEdgeOptions = {
   type: 'smoothstep',
   animated: false,
   style: { stroke: '#94a3b8', strokeWidth: 2 },
-};
-
-const statusColorMap: Record<TurnStatus, string> = {
-  running: '#3b82f6',
-  success: '#10b981',
-  error: '#ef4444',
-  abandoned: '#94a3b8',
-  ignored: '#f59e0b',
-  idle: '#ffffff',
 };
 
 function collectVisibleNodeIds(
@@ -98,13 +91,13 @@ export default function NodeCanvas() {
 
   const currentProjectId = useDebugStore((s) => s.currentProjectId);
   const projects = useDebugStore((s) => s.projects);
-  const saveProject = useDebugStore((s) => s.saveProject);
   const refreshProjects = useDebugStore((s) => s.refreshProjects);
   const currentProject = projects.find((p) => p.id === currentProjectId);
 
-  const { zoomIn, zoomOut, fitView, setViewport: rfSetViewport } = useReactFlow();
+  const { zoomIn, zoomOut, fitView, setViewport: rfSetViewport, getViewport } = useReactFlow();
 
   const abortRef = useRef<AbortController | null>(null);
+  const reactFlowWrapper = useRef<HTMLDivElement>(null);
 
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
@@ -154,6 +147,30 @@ export default function NodeCanvas() {
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isInitialLoadRef = useRef(true);
 
+  // 撤销/重做历史栈（50 步上限，存 nodes/edges 快照）
+  const historyRef = useRef<{ nodes: Node<TurnNodeData>[]; edges: Edge[] }[]>([]);
+  const redoStackRef = useRef<{ nodes: Node<TurnNodeData>[]; edges: Edge[] }[]>([]);
+  const isUndoRedoRef = useRef(false);
+  const prevSnapshotRef = useRef<{ nodes: Node<TurnNodeData>[]; edges: Edge[] } | null>(null);
+  const lastProjectIdRef = useRef<string | null>(null);
+  const lastPushTimeRef = useRef(0);
+
+  // 快捷键回调 refs（避免 useEffect 频繁重绑 keydown 监听器）
+  const undoRef = useRef<() => void>(() => {});
+  const redoRef = useRef<() => void>(() => {});
+  const handleDeleteRef = useRef<() => void>(() => {});
+  const fitViewRef = useRef<() => void>(() => {});
+
+  // 自定义滚轮 rAF 引用（合并连续 wheel 事件，平滑应用）
+  const wheelRafRef = useRef<number | null>(null);
+  const pendingWheelRef = useRef<{
+    deltaX: number;
+    deltaY: number;
+    clientX: number;
+    clientY: number;
+    isZoom: boolean;
+  } | null>(null);
+
   useEffect(() => {
     if (!currentProjectId) return;
     if (isInitialLoadRef.current) {
@@ -198,6 +215,56 @@ export default function NodeCanvas() {
     }
   }, [currentProjectId, rfSetViewport, fitView]);
 
+  // 撤销/重做：在 nodes/edges 变化时自动把上一快照推入历史栈
+  // 合并 500ms 内的快速变更（如流式输出），避免历史栈被中间状态填满
+  useEffect(() => {
+    // 项目切换：重置历史栈并记录初始快照
+    if (lastProjectIdRef.current !== currentProjectId) {
+      lastProjectIdRef.current = currentProjectId;
+      historyRef.current = [];
+      redoStackRef.current = [];
+      prevSnapshotRef.current = currentProjectId ? { nodes, edges } : null;
+      isUndoRedoRef.current = false;
+      lastPushTimeRef.current = 0;
+      return;
+    }
+
+    // 草稿态（currentProjectId 为空）不入栈，避免无意义入栈
+    if (!currentProjectId) {
+      prevSnapshotRef.current = null;
+      return;
+    }
+
+    // 撤销/重做触发的变更：仅更新快照引用，不入栈
+    if (isUndoRedoRef.current) {
+      prevSnapshotRef.current = { nodes, edges };
+      isUndoRedoRef.current = false;
+      return;
+    }
+
+    if (!prevSnapshotRef.current) {
+      prevSnapshotRef.current = { nodes, edges };
+      return;
+    }
+
+    // 合并 500ms 内的快速变更（如流式输出），避免历史栈被中间状态填满
+    const now = Date.now();
+    if (now - lastPushTimeRef.current < 500) {
+      return;
+    }
+
+    historyRef.current.push({
+      nodes: prevSnapshotRef.current.nodes.map((n) => ({ ...n, data: { ...n.data } })),
+      edges: prevSnapshotRef.current.edges.map((e) => ({ ...e })),
+    });
+    if (historyRef.current.length > 50) {
+      historyRef.current.shift();
+    }
+    redoStackRef.current = [];
+    lastPushTimeRef.current = now;
+    prevSnapshotRef.current = { nodes, edges };
+  }, [nodes, edges, currentProjectId]);
+
   const handleDelete = useCallback(() => {
     const state = useDebugStore.getState();
     const selectedNodes = state.nodes.filter((n) => n.selected);
@@ -220,6 +287,57 @@ export default function NodeCanvas() {
     }
   }, [t.confirmPruneNode]);
 
+  // 撤销：弹出历史栈顶快照并恢复，当前状态推入重做栈
+  const handleUndo = useCallback(() => {
+    if (historyRef.current.length === 0) return;
+    const state = useDebugStore.getState();
+    // 当前状态推入重做栈（深拷贝避免引用共享）
+    const currentSnapshot = {
+      nodes: state.nodes.map((n) => ({ ...n, data: { ...n.data } })),
+      edges: state.edges.map((e) => ({ ...e })),
+    };
+    redoStackRef.current.push(currentSnapshot);
+
+    // 弹出历史快照并恢复到 store
+    const prev = historyRef.current.pop()!;
+    isUndoRedoRef.current = true;
+    useDebugStore.setState({
+      nodes: prev.nodes.map((n) => ({ ...n, data: { ...n.data } })),
+      edges: prev.edges.map((e) => ({ ...e })),
+      isDirty: true,
+    });
+  }, []);
+
+  // 重做：弹出重做栈顶快照并恢复，当前状态推入历史栈
+  const handleRedo = useCallback(() => {
+    if (redoStackRef.current.length === 0) return;
+    const state = useDebugStore.getState();
+    // 当前状态推入历史栈（深拷贝避免引用共享）
+    const currentSnapshot = {
+      nodes: state.nodes.map((n) => ({ ...n, data: { ...n.data } })),
+      edges: state.edges.map((e) => ({ ...e })),
+    };
+    historyRef.current.push(currentSnapshot);
+
+    // 弹出重做快照并恢复到 store
+    const next = redoStackRef.current.pop()!;
+    isUndoRedoRef.current = true;
+    useDebugStore.setState({
+      nodes: next.nodes.map((n) => ({ ...n, data: { ...n.data } })),
+      edges: next.edges.map((e) => ({ ...e })),
+      isDirty: true,
+    });
+  }, []);
+
+  // 同步快捷键回调到 ref（每次渲染更新，确保回调内读到最新值）
+  useEffect(() => {
+    undoRef.current = handleUndo;
+    redoRef.current = handleRedo;
+    handleDeleteRef.current = handleDelete;
+    fitViewRef.current = () => fitView({ padding: 0.2 });
+  });
+
+  // 键盘快捷键（ref 模式：useEffect 依赖空数组，只绑一次监听器，回调内读 ref.current）
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -232,16 +350,36 @@ export default function NodeCanvas() {
       }
 
       const isCtrl = e.ctrlKey || e.metaKey;
+      const isShift = e.shiftKey;
+
+      // Ctrl+Z 撤销
+      if (isCtrl && !isShift && (e.key === 'z' || e.key === 'Z') && !e.repeat) {
+        e.preventDefault();
+        undoRef.current();
+        return;
+      }
+
+      // Ctrl+Y 或 Ctrl+Shift+Z 重做
+      if (
+        (isCtrl && (e.key === 'y' || e.key === 'Y')) ||
+        (isCtrl && isShift && (e.key === 'z' || e.key === 'Z'))
+      ) {
+        if (!e.repeat) {
+          e.preventDefault();
+          redoRef.current();
+        }
+        return;
+      }
 
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
-        handleDelete();
+        handleDeleteRef.current();
         return;
       }
 
       if ((e.key === 'f' || e.key === 'F') && !isCtrl && !e.repeat) {
         e.preventDefault();
-        fitView({ padding: 0.2 });
+        fitViewRef.current();
         return;
       }
 
@@ -279,7 +417,72 @@ export default function NodeCanvas() {
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('blur', handleBlur);
     };
-  }, [handleDelete, fitView]);
+  }, []); // 空依赖：只绑一次监听器
+
+  // 自定义滚轮（Figma 式）：默认滚轮平移画布，Ctrl/Cmd+滚轮以鼠标为中心缩放
+  // 用 requestAnimationFrame 合并连续 wheel 事件，平滑应用
+  useEffect(() => {
+    const el = reactFlowWrapper.current;
+    if (!el) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const isZoom = e.ctrlKey || e.metaKey;
+
+      // 累积增量到 pendingWheelRef（合并同一帧内的多次 wheel 事件）
+      if (pendingWheelRef.current) {
+        pendingWheelRef.current.deltaX += e.deltaX;
+        pendingWheelRef.current.deltaY += e.deltaY;
+        pendingWheelRef.current.isZoom = pendingWheelRef.current.isZoom || isZoom;
+      } else {
+        pendingWheelRef.current = {
+          deltaX: e.deltaX,
+          deltaY: e.deltaY,
+          clientX: e.clientX,
+          clientY: e.clientY,
+          isZoom,
+        };
+      }
+
+      // 用 requestAnimationFrame 平滑应用
+      if (wheelRafRef.current !== null) return;
+      wheelRafRef.current = requestAnimationFrame(() => {
+        wheelRafRef.current = null;
+        const pending = pendingWheelRef.current;
+        pendingWheelRef.current = null;
+        if (!pending) return;
+
+        const vp = getViewport();
+        if (pending.isZoom) {
+          // 缩放模式：以鼠标位置为中心缩放
+          const zoomFactor = pending.deltaY > 0 ? 0.9 : 1.1;
+          const newZoom = Math.min(4, Math.max(0.1, vp.zoom * zoomFactor));
+          const rect = el.getBoundingClientRect();
+          const centerX = pending.clientX - rect.left;
+          const centerY = pending.clientY - rect.top;
+          const newX = centerX - (centerX - vp.x) * (newZoom / vp.zoom);
+          const newY = centerY - (centerY - vp.y) * (newZoom / vp.zoom);
+          rfSetViewport({ x: newX, y: newY, zoom: newZoom });
+        } else {
+          // 平移模式：滚轮上下/左右平移画布
+          rfSetViewport({
+            x: vp.x - pending.deltaX,
+            y: vp.y - pending.deltaY,
+            zoom: vp.zoom,
+          });
+        }
+      });
+    };
+
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', handleWheel);
+      if (wheelRafRef.current !== null) {
+        cancelAnimationFrame(wheelRafRef.current);
+        wheelRafRef.current = null;
+      }
+    };
+  }, [getViewport, rfSetViewport]);
 
   const handleFitView = useCallback(() => {
     fitView({ padding: 0.2 });
@@ -403,7 +606,7 @@ export default function NodeCanvas() {
         </div>
       </div>
 
-      <div className="flex-1 relative">
+      <div ref={reactFlowWrapper} className="flex-1 relative">
         <ReactFlow
           nodes={displayNodes}
           edges={displayEdges}
@@ -417,6 +620,8 @@ export default function NodeCanvas() {
           fitView
           defaultEdgeOptions={defaultEdgeOptions}
           deleteKeyCode={null}
+          zoomOnScroll={false}
+          panOnScroll={false}
           selectionOnDrag={!isHandMode}
           panOnDrag={isHandMode}
           multiSelectionKeyCode={['Shift']}
@@ -430,7 +635,7 @@ export default function NodeCanvas() {
             nodeColor={(n) => {
               const data = n.data as TurnNodeData | undefined;
               if (!data?.status) return '#ffffff';
-              return statusColorMap[data.status] ?? '#ffffff';
+              return getStatusColor(data.status);
             }}
             nodeStrokeColor="#94a3b8"
             className="!bg-white !border-slate-200 dark:!bg-slate-800 dark:!border-slate-700"

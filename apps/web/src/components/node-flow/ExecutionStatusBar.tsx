@@ -7,6 +7,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Sparkles, CheckCircle2, XCircle, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
 import { useDebugStore } from '@/lib/debug-store';
 import { useTranslation } from '@/components/I18nProvider';
 import { pickStatusMessage } from './marketing-messages';
@@ -18,8 +19,9 @@ const AUTO_HIDE_DELAY = 3000;
 export default function ExecutionStatusBar() {
   const { language, t } = useTranslation();
   // 扩展为 runningNodes 数组 selector（支持多 running 轮播）
+  // useShallow：避免 .filter() 每次返回新数组引用触发 useSyncExternalStore 无限循环
   const runningNodes = useDebugStore(
-    (s) => s.nodes.filter((n) => n.data.status === 'running'),
+    useShallow((s) => s.nodes.filter((n) => n.data.status === 'running')),
   );
   const abortRunningTurn = useDebugStore((s) => s.abortRunningTurn);
 

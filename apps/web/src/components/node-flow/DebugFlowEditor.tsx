@@ -6,10 +6,6 @@ import { Send, Settings, Sun, Moon, Laptop, Menu, HelpCircle, Network, Heart, Gl
 import { toast } from 'sonner';
 
 import NodeCanvas from './NodeCanvas';
-import NodeSidebar from './NodeSidebar';
-import NodeInspector from './NodeInspector';
-import { SettingsModal } from '@/components/SettingsModal';
-import { MemoryPanel } from '@/components/MemoryPanel';
 import { useTheme, resolveTheme } from '@/components/ThemeProvider';
 import { useDebugStore } from '@/lib/debug-store';
 import { streamTurnResponse } from '@/lib/network-engine';
@@ -25,6 +21,14 @@ import { on as onEvent, NODE_EVENTS } from './event-bus';
 const KeyboardShortcuts = lazy(() => import('./KeyboardShortcuts'));
 // 自动推演对话框懒加载，用户点击"自动推演"入口按钮后才渲染
 const AutoEvolutionDialog = lazy(() => import('./AutoEvolutionDialog'));
+// 模态框懒加载：用户点击设置/记忆按钮后才加载，避免首屏打包
+const SettingsModal = lazy(() => import('@/components/SettingsModal').then(m => ({ default: m.SettingsModal })));
+const MemoryPanel = lazy(() => import('@/components/MemoryPanel'));
+// 侧边栏/检查器懒加载：首屏只需画布，侧边栏/Inspector 延迟加载
+const NodeSidebar = lazy(() => import('./NodeSidebar'));
+const NodeInspector = lazy(() => import('./NodeInspector'));
+// Toaster 懒加载：用户可能根本看不到 toast，延迟加载 sonner 的 Toaster 组件
+const Toaster = lazy(() => import('sonner').then(m => ({ default: m.Toaster })));
 
 function TopNav({ onShowHelp }: { onShowHelp: () => void }) {
   const { t, toggleLanguage } = useTranslation();
@@ -350,7 +354,9 @@ function EditorInner() {
       </a>
       <TopNav onShowHelp={() => setShowShortcuts(true)} />
       <div className="flex-1 flex overflow-hidden relative">
-        <NodeSidebar />
+        <Suspense fallback={<div className="w-64 bg-slate-100 dark:bg-slate-900 animate-pulse" />}>
+          <NodeSidebar />
+        </Suspense>
         <div id="main-canvas" className="flex-1 relative overflow-hidden" tabIndex={-1}>
           <NodeCanvas />
           {isEmpty && (
@@ -359,7 +365,9 @@ function EditorInner() {
             </div>
           )}
         </div>
-        <NodeInspector />
+        <Suspense fallback={<div className="w-80 bg-white dark:bg-slate-900 animate-pulse" />}>
+          <NodeInspector />
+        </Suspense>
       </div>
       {/* 页面底部链接：GitHub 仓库 | 赞赏支持 | 阿乐一百六（样式与 web-text 保持一致） */}
       <footer className="flex items-center justify-center gap-4 px-4 py-1.5 border-t border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-900/50 text-xs text-slate-400">
@@ -398,8 +406,16 @@ function EditorInner() {
           <span>{t.ale160}</span>
         </a>
       </footer>
-      <SettingsModal open={showSettings} onClose={() => setShowSettings(false)} />
-      <MemoryPanel open={showMemoryPanel} onClose={() => setShowMemoryPanel(false)} />
+      {showSettings && (
+        <Suspense fallback={null}>
+          <SettingsModal open={showSettings} onClose={() => setShowSettings(false)} />
+        </Suspense>
+      )}
+      {showMemoryPanel && (
+        <Suspense fallback={null}>
+          <MemoryPanel open={showMemoryPanel} onClose={() => setShowMemoryPanel(false)} />
+        </Suspense>
+      )}
       <ExecutionStatusBar />
       {showShortcuts && (
         <Suspense fallback={null}>
@@ -411,6 +427,9 @@ function EditorInner() {
           <AutoEvolutionDialog onClose={() => setShowAutoEvolution(false)} />
         </Suspense>
       )}
+      <Suspense fallback={null}>
+        <Toaster position="top-center" richColors />
+      </Suspense>
     </div>
   );
 }

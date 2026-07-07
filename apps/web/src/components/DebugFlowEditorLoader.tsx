@@ -19,12 +19,31 @@ export default function DebugFlowEditorLoader({ lang }: { lang: Language }) {
 
   if (!mounted) {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-slate-100 dark:bg-slate-950">
-        <div className="flex flex-col items-center gap-3">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-300 border-t-violet-500" />
-          <span className="text-sm text-slate-500">
-            {lang === 'zh' ? '加载蛛网编辑器...' : 'Loading editor...'}
-          </span>
+      <div className="h-screen flex flex-col bg-slate-100 dark:bg-slate-950">
+        {/* 顶部导航栏骨架 */}
+        <div className="h-14 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 flex items-center px-4 shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="w-5 h-5 bg-slate-200 dark:bg-slate-700 rounded animate-pulse" />
+            <div className="h-4 w-20 bg-slate-200 dark:bg-slate-700 rounded animate-pulse" />
+          </div>
+          <div className="ml-auto flex gap-1">
+            <div className="w-8 h-8 bg-slate-100 dark:bg-slate-800 rounded animate-pulse" />
+            <div className="w-8 h-8 bg-slate-100 dark:bg-slate-800 rounded animate-pulse" />
+          </div>
+        </div>
+        {/* 内容区骨架：侧边栏 + 画布 spinner */}
+        <div className="flex-1 flex overflow-hidden">
+          <div className="w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 p-4 shrink-0">
+            <div className="h-6 w-32 bg-slate-100 dark:bg-slate-800 rounded animate-pulse mb-3" />
+            <div className="h-4 w-full bg-slate-100 dark:bg-slate-800 rounded animate-pulse mb-2" />
+            <div className="h-4 w-3/4 bg-slate-100 dark:bg-slate-800 rounded animate-pulse" />
+          </div>
+          <div className="flex-1 flex flex-col items-center justify-center gap-3">
+            <div className="h-6 w-6 border-2 border-slate-200 dark:border-slate-700 border-t-violet-500 rounded-full animate-spin" />
+            <span className="text-xs text-slate-400">
+              {lang === 'zh' ? '加载蛛网编辑器...' : 'Loading editor...'}
+            </span>
+          </div>
         </div>
       </div>
     );

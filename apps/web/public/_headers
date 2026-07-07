@@ -5,6 +5,18 @@
 /_next/static/*
   Cache-Control: public, max-age=31536000, immutable
 
-# 其余路由（含 HTML）—— 每次回源校验，避免静态导出更新被旧缓存遮蔽
+# HTML —— 边缘缓存 1 小时 + 后台异步更新
+# s-maxage 让 Cloudflare CDN 缓存，stale-while-revalidate 让用户立即拿到旧缓存同时后台刷新
+# max-age=0 保留：浏览器仍每次校验，确保用户拿到最新 HTML
 /*
-  Cache-Control: public, max-age=0, must-revalidate
+  Cache-Control: public, max-age=0, s-maxage=3600, stale-while-revalidate=86400
+
+# 静态图片资源
+/*.png
+  Cache-Control: public, max-age=86400
+/*.svg
+  Cache-Control: public, max-age=86400
+/*.ico
+  Cache-Control: public, max-age=86400
+/*.webp
+  Cache-Control: public, max-age=86400

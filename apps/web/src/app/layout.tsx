@@ -1,5 +1,4 @@
 import "./globals.css";
-import { Toaster } from "sonner";
 import React from "react";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { I18nProvider } from "@/components/I18nProvider";
@@ -21,7 +20,6 @@ export default function RootLayout({
         <ThemeProvider>
           <I18nProvider>
             {children}
-            <Toaster position="top-center" richColors />
           </I18nProvider>
         </ThemeProvider>
       </body>

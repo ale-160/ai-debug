@@ -436,7 +436,7 @@ export const useDebugStore = create<NetworkState>()(
     set((s) => ({
       nodes: s.nodes.map((n) =>
         n.id === nodeId
-          ? { ...n, data: { ...n.data, status: 'error', errorMessage: '用户取消' } }
+          ? { ...n, data: { ...n.data, status: 'error', errorMessage: 'aborted' } }
           : n,
       ),
       isDirty: true,

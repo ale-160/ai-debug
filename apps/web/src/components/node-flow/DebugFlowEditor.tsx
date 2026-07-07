@@ -36,6 +36,14 @@ function TopNav({ onShowHelp }: { onShowHelp: () => void }) {
   const setShowSettings = useDebugStore((s) => s.setShowSettings);
   const toggleMobileSidebar = useDebugStore((s) => s.toggleMobileSidebar);
 
+  // SSR/CSR 一致：初始值 'light'（与 resolveTheme('system') SSR 返回值一致），
+  // 客户端挂载后 useEffect 中重新 resolve 获取真实主题（可能为 'dark'）。
+  // 这样 title 属性在 hydration 首次渲染时与 SSR 输出一致，避免 hydration warning。
+  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('light');
+  useEffect(() => {
+    setResolvedTheme(resolveTheme(theme));
+  }, [theme]);
+
   const currentProject = projects.find((p) => p.id === currentProjectId);
   const projectLabel = currentProject?.name ?? t.noProjectSelected;
 
@@ -117,7 +125,7 @@ function TopNav({ onShowHelp }: { onShowHelp: () => void }) {
               ? t.darkMode
               : theme === 'dark'
                 ? t.systemMode
-                : resolveTheme(theme) === 'dark'
+                : resolvedTheme === 'dark'
                   ? t.lightMode
                   : t.darkMode
           }
@@ -229,7 +237,7 @@ function EmptyStateInput() {
     }
 
     setInput('');
-  }, [input, createTurnNode, updateTurnNode, appendAssistantChunk, createProject]);
+  }, [input, createTurnNode, updateTurnNode, appendAssistantChunk, createProject, t.pleaseConfigureApiKey]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {

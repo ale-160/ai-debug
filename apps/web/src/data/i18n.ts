@@ -182,6 +182,7 @@ export const STRINGS_ZH = {
   aiThinking: 'AI 思考中...',
   errorOccurred: '出错了：{message}',
   unknownError: '未知错误',
+  cancelled: '用户取消',
   waitingForGeneration: '等待生成...',
 
   conflictLabel: '冲突标注',
@@ -551,6 +552,7 @@ export const STRINGS_EN = {
   aiThinking: 'AI is thinking...',
   errorOccurred: 'Error: {message}',
   unknownError: 'Unknown error',
+  cancelled: 'Cancelled',
   waitingForGeneration: 'Waiting for generation...',
 
   conflictLabel: 'Conflict Label',

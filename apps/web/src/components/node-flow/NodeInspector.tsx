@@ -210,7 +210,7 @@ export default function NodeInspector() {
               </div>
             ) : status === 'error' ? (
               <div className="text-sm text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded p-2 break-words">
-                {tf('errorOccurred', { message: data.errorMessage ?? t.unknownError })}
+                {tf('errorOccurred', { message: data.errorMessage === 'aborted' ? t.cancelled : (data.errorMessage ?? t.unknownError) })}
               </div>
             ) : assistantMessage === '' ? (
               <div className="text-slate-400 dark:text-slate-500 text-sm italic">{t.waitingForGeneration}</div>

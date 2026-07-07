@@ -6,6 +6,7 @@
     "dev": "pnpm --filter @ai-debug/web dev",
     "build": "pnpm --filter @ai-debug/web build",
     "lint": "pnpm --filter @ai-debug/web lint",
+    "analyze": "pnpm --filter @ai-debug/web analyze",
     "clean": "pnpm --filter @ai-debug/web clean"
   },
   "engines": {

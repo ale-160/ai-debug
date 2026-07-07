@@ -20,10 +20,14 @@
 // ============================================================
 
 import nextConfig from 'eslint-config-next';
+import tseslint from 'typescript-eslint';
 
 const eslintConfig = [
   ...nextConfig,
   {
+    plugins: {
+      '@typescript-eslint': tseslint.plugin,
+    },
     rules: {
       // ===== TypeScript 严格规则 =====
       '@typescript-eslint/no-unused-vars': [
@@ -58,7 +62,7 @@ const eslintConfig = [
   },
   {
     // 额外忽略构建产物与配置文件
-    ignores: ['**/.next/**', '**/out/**', '**/node_modules/**', '**/*.config.js', '**/*.config.mjs'],
+    ignores: ['**/.next/**', '**/out/**', '**/node_modules/**', '**/*.config.js', '**/*.config.mts', '**/*.config.mjs'],
   },
 ];
 

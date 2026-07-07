@@ -1,0 +1,10 @@
+# Cloudflare Pages 缓存策略
+# Next.js 静态导出会把 public/_headers 复制到 out/，部署后由 Cloudflare 边缘节点读取
+
+# 构建产物（含 hash 文件名）—— 长缓存 + immutable
+/_next/static/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# 其余路由（含 HTML）—— 每次回源校验，避免静态导出更新被旧缓存遮蔽
+/*
+  Cache-Control: public, max-age=0, must-revalidate

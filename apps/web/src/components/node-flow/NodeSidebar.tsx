@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   Plus,
   Trash2,
@@ -13,6 +13,9 @@ import {
   Zap,
   PanelLeftClose,
   PanelLeftOpen,
+  Search,
+  Pin,
+  PinOff,
 } from 'lucide-react';
 import { useDebugStore } from '@/lib/debug-store';
 import {
@@ -69,12 +72,39 @@ export default function NodeSidebar() {
   const [pruningProjectId, setPruningProjectId] = useState<string | null>(null);
   // 三点菜单：同时仅打开一个，null 表示全部关闭
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  // 项目搜索关键字（匹配项目名 + root 节点 summary）
+  const [searchQuery, setSearchQuery] = useState('');
   const importFileRef = useRef<HTMLInputElement>(null);
 
-  const sortedProjects = React.useMemo(
-    () => [...projects].sort((a, b) => b.updatedAt - a.updatedAt),
-    [projects]
-  );
+  const togglePinProject = useDebugStore((s) => s.togglePinProject);
+
+  // 排序与搜索：置顶组在前（按 pinnedAt 降序），普通组在后（按 updatedAt 降序）。
+  // 搜索匹配规则：项目名 substring + root 节点（parentId 为 null 的节点）summary substring。
+  // summary 未生成（undefined / 空串）时按空字符串处理，仅匹配名称。
+  const { pinnedProjects, normalProjects, hasSearchResult } = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    const matchProject = (p: NetworkProject): boolean => {
+      if (!q) return true;
+      if (p.name.toLowerCase().includes(q)) return true;
+      // 找 root 节点（parentId 为 null），匹配其 summary
+      const root = p.nodes.find((n) => n.data.parentId === null);
+      const rootSummary = root?.data.summary ?? '';
+      if (rootSummary && rootSummary.toLowerCase().includes(q)) return true;
+      return false;
+    };
+    const filtered = projects.filter(matchProject);
+    const pinned = filtered
+      .filter((p) => typeof p.pinnedAt === 'number')
+      .sort((a, b) => (b.pinnedAt ?? 0) - (a.pinnedAt ?? 0));
+    const normal = filtered
+      .filter((p) => typeof p.pinnedAt !== 'number')
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+    return {
+      pinnedProjects: pinned,
+      normalProjects: normal,
+      hasSearchResult: pinned.length + normal.length > 0,
+    };
+  }, [projects, searchQuery]);
 
   // 点击菜单外部关闭菜单
   useEffect(() => {
@@ -217,6 +247,151 @@ export default function NodeSidebar() {
     setMobileSidebarOpen(false);
   };
 
+  // 切换置顶：调用 store action，再关闭菜单
+  const handleTogglePin = (e: React.MouseEvent, project: NetworkProject) => {
+    e.stopPropagation();
+    setMenuOpenId(null);
+    togglePinProject(project.id);
+  };
+
+  // 项目卡片渲染：搜索/置顶/排序由外层分组负责，本函数仅渲染单卡片。
+  // 三点菜单含"置顶/取消置顶"项，置于"重命名"之上。
+  const renderProjectCard = (project: NetworkProject) => {
+    const isActive = currentProjectId === project.id;
+    const isPinned = typeof project.pinnedAt === 'number';
+    return (
+      <div
+        key={project.id}
+        onClick={() => handleSelect(project.id)}
+        className={`group p-3 border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer flex items-center justify-between transition-colors ${
+          isActive
+            ? 'bg-blue-50 dark:bg-blue-900/30 border-l-4 border-l-blue-300 dark:border-l-blue-600'
+            : 'border-l-4 border-l-transparent'
+        }`}
+      >
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 min-w-0">
+            {project.projectType === 'derived-pruned' && (
+              <Scissors
+                size={12}
+                className="text-amber-500 flex-shrink-0"
+              />
+            )}
+            {isPinned && (
+              <Pin
+                size={10}
+                className="text-amber-500 flex-shrink-0"
+              />
+            )}
+            <div className="font-bold text-sm text-slate-800 dark:text-slate-100 truncate">
+              {project.name}
+            </div>
+          </div>
+          {project.projectType === 'derived-pruned' && (
+            <button
+              onClick={(e) =>
+                handleJumpToOriginal(e, project.originalProjectId)
+              }
+              className="mt-0.5 text-xs text-blue-500 hover:text-blue-700 hover:underline flex items-center gap-1 max-w-full"
+              title={t.jumpToOriginal}
+            >
+              <span className="truncate">
+                {tf('derivedFrom', {
+                  name:
+                    getProject(project.originalProjectId ?? '')
+                      ?.name ?? t.deleted,
+                })}
+              </span>
+            </button>
+          )}
+          <div className="text-xs text-slate-500 dark:text-slate-500 mt-1 flex items-center gap-2">
+            <span>{tf('nodesCount', { count: project.nodes.length })}</span>
+            <span>·</span>
+            <span>{formatTime(project.updatedAt)}</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {project.nodes.length >= 10 && (
+            <button
+              onClick={(e) => handlePruneNetwork(e, project)}
+              disabled={pruningProjectId === project.id}
+              className="md:opacity-0 md:group-hover:opacity-100 text-amber-500 hover:text-amber-700 disabled:opacity-50 transition-all p-1"
+              title={t.aiPruneNetwork}
+            >
+              {pruningProjectId === project.id ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Sparkles size={14} />
+              )}
+            </button>
+          )}
+          {/* 三点菜单：移动端始终可见，桌面端仅 hover 显示 */}
+          <div className="relative" data-project-menu>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setMenuOpenId((prev) =>
+                  prev === project.id ? null : project.id
+                );
+              }}
+              className="md:opacity-0 md:group-hover:opacity-100 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 rounded transition-all p-1"
+              title={t.moreActions}
+              aria-label={t.moreActions}
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+              >
+                <circle cx="12" cy="5" r="2" />
+                <circle cx="12" cy="12" r="2" />
+                <circle cx="12" cy="19" r="2" />
+              </svg>
+            </button>
+            {menuOpenId === project.id && (
+              <div className="absolute right-0 top-full mt-1 w-32 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-50 py-1" role="menu">
+                <button
+                  onClick={(e) => handleTogglePin(e, project)}
+                  className="w-full text-left px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-amber-50 dark:hover:bg-amber-900/30 flex items-center gap-2"
+                  role="menuitem"
+                >
+                  {isPinned ? <PinOff size={12} /> : <Pin size={12} />}
+                  {isPinned ? t.unpin : t.pin}
+                </button>
+                <button
+                  onClick={(e) => handleRename(e, project)}
+                  className="w-full text-left px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 flex items-center gap-2"
+                  role="menuitem"
+                >
+                  <Pencil size={12} />
+                  {t.rename}
+                </button>
+                <button
+                  onClick={(e) => handleExport(e, project)}
+                  className="w-full text-left px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-sky-50 dark:hover:bg-sky-900/30 flex items-center gap-2"
+                  role="menuitem"
+                >
+                  <Download size={12} />
+                  {t.export}
+                </button>
+                <div className="border-t border-slate-100 dark:border-slate-700 my-1" />
+                <button
+                  onClick={(e) => handleDelete(e, project)}
+                  className="w-full text-left px-3 py-1.5 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 flex items-center gap-2"
+                  role="menuitem"
+                >
+                  <Trash2 size={12} />
+                  {t.delete}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <>
       {mobileSidebarOpen && (
@@ -265,7 +440,7 @@ export default function NodeSidebar() {
           </button>
         </div>
 
-        <div className="p-3 border-b border-slate-100 dark:border-slate-700">
+        <div className="p-3 border-b border-slate-100 dark:border-slate-700 space-y-2">
           <button
             onClick={handleCreate}
             className="w-full bg-blue-500 text-white rounded-lg py-2 px-3 hover:bg-blue-600 flex items-center justify-center gap-2 transition-colors"
@@ -274,134 +449,54 @@ export default function NodeSidebar() {
             <Plus size={16} />
             <span className="text-sm font-medium">{t.newProject}</span>
           </button>
+          {/* 搜索框：匹配项目名 + root 节点 summary */}
+          <div className="relative">
+            <Search
+              size={12}
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+            />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={t.searchProjects}
+              className="w-full pl-7 pr-2 py-1.5 text-xs rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400"
+              aria-label={t.searchProjects}
+            />
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {sortedProjects.length === 0 ? (
+          {projects.length === 0 ? (
             <div className="px-4 py-8 text-center text-sm text-slate-400 dark:text-slate-500">
               {t.noProjects}
             </div>
+          ) : !hasSearchResult ? (
+            <div className="px-4 py-8 text-center text-sm text-slate-400 dark:text-slate-500">
+              {t.noSearchResult}
+            </div>
           ) : (
-            sortedProjects.map((project) => {
-              const isActive = currentProjectId === project.id;
-              return (
-                <div
-                  key={project.id}
-                  onClick={() => handleSelect(project.id)}
-                  className={`group p-3 border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer flex items-center justify-between transition-colors ${
-                    isActive
-                      ? 'bg-blue-50 dark:bg-blue-900/30 border-l-4 border-l-blue-300 dark:border-l-blue-600'
-                      : 'border-l-4 border-l-transparent'
-                  }`}
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      {project.projectType === 'derived-pruned' && (
-                        <Scissors
-                          size={12}
-                          className="text-amber-500 flex-shrink-0"
-                        />
-                      )}
-                      <div className="font-bold text-sm text-slate-800 dark:text-slate-100 truncate">
-                        {project.name}
-                      </div>
-                    </div>
-                    {project.projectType === 'derived-pruned' && (
-                      <button
-                        onClick={(e) =>
-                          handleJumpToOriginal(e, project.originalProjectId)
-                        }
-                        className="mt-0.5 text-xs text-blue-500 hover:text-blue-700 hover:underline flex items-center gap-1 max-w-full"
-                        title={t.jumpToOriginal}
-                      >
-                        <span className="truncate">
-                          {tf('derivedFrom', {
-                            name:
-                              getProject(project.originalProjectId ?? '')
-                                ?.name ?? t.deleted,
-                          })}
-                        </span>
-                      </button>
-                    )}
-                    <div className="text-xs text-slate-500 dark:text-slate-500 mt-1 flex items-center gap-2">
-                      <span>{tf('nodesCount', { count: project.nodes.length })}</span>
-                      <span>·</span>
-                      <span>{formatTime(project.updatedAt)}</span>
-                    </div>
+            <>
+              {pinnedProjects.length > 0 && (
+                <div>
+                  <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                    <Pin size={10} />
+                    {t.pinnedSection}
                   </div>
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    {project.nodes.length >= 10 && (
-                      <button
-                        onClick={(e) => handlePruneNetwork(e, project)}
-                        disabled={pruningProjectId === project.id}
-                        className="md:opacity-0 md:group-hover:opacity-100 text-amber-500 hover:text-amber-700 disabled:opacity-50 transition-all p-1"
-                        title={t.aiPruneNetwork}
-                      >
-                        {pruningProjectId === project.id ? (
-                          <Loader2 size={14} className="animate-spin" />
-                        ) : (
-                          <Sparkles size={14} />
-                        )}
-                      </button>
-                    )}
-                    {/* 三点菜单：移动端始终可见，桌面端仅 hover 显示 */}
-                    <div className="relative" data-project-menu>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setMenuOpenId((prev) =>
-                            prev === project.id ? null : project.id
-                          );
-                        }}
-                        className="md:opacity-0 md:group-hover:opacity-100 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 rounded transition-all p-1"
-                        title={t.moreActions}
-                        aria-label={t.moreActions}
-                      >
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 24 24"
-                          fill="currentColor"
-                        >
-                          <circle cx="12" cy="5" r="2" />
-                          <circle cx="12" cy="12" r="2" />
-                          <circle cx="12" cy="19" r="2" />
-                        </svg>
-                      </button>
-                      {menuOpenId === project.id && (
-                        <div className="absolute right-0 top-full mt-1 w-32 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-50 py-1" role="menu">
-                          <button
-                            onClick={(e) => handleRename(e, project)}
-                            className="w-full text-left px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 flex items-center gap-2"
-                            role="menuitem"
-                          >
-                            <Pencil size={12} />
-                            {t.rename}
-                          </button>
-                          <button
-                            onClick={(e) => handleExport(e, project)}
-                            className="w-full text-left px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-sky-50 dark:hover:bg-sky-900/30 flex items-center gap-2"
-                            role="menuitem"
-                          >
-                            <Download size={12} />
-                            {t.export}
-                          </button>
-                          <div className="border-t border-slate-100 dark:border-slate-700 my-1" />
-                          <button
-                            onClick={(e) => handleDelete(e, project)}
-                            className="w-full text-left px-3 py-1.5 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 flex items-center gap-2"
-                            role="menuitem"
-                          >
-                            <Trash2 size={12} />
-                            {t.delete}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                  {pinnedProjects.map((project) => renderProjectCard(project))}
                 </div>
-              );
-            })
+              )}
+              {normalProjects.length > 0 && (
+                <div>
+                  {pinnedProjects.length > 0 && (
+                    <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                      {t.projectsSection}
+                    </div>
+                  )}
+                  {normalProjects.map((project) => renderProjectCard(project))}
+                </div>
+              )}
+            </>
           )}
         </div>
 

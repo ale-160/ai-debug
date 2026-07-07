@@ -97,6 +97,7 @@ export default function NodeCanvas() {
   const { zoomIn, zoomOut, fitView, setViewport: rfSetViewport, getViewport } = useReactFlow();
 
   const abortRef = useRef<AbortController | null>(null);
+  const registerAbortController = useDebugStore((s) => s.registerAbortController);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
 
   const [editingName, setEditingName] = useState(false);
@@ -515,6 +516,8 @@ export default function NodeCanvas() {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+    // 注册到 store 供 ExecutionStatusBar 取消
+    registerAbortController(newId, controller);
     const result = await streamTurnResponse(
       newId,
       currentNodes,
@@ -533,7 +536,7 @@ export default function NodeCanvas() {
     } else {
       updateTurnNode(newId, { status: 'error', errorMessage: result.error });
     }
-  }, [createMergedNode, setSelectedNode, updateTurnNode, appendAssistantChunk, tf, t]);
+  }, [createMergedNode, setSelectedNode, updateTurnNode, appendAssistantChunk, registerAbortController, tf, t]);
 
   const { displayNodes, displayEdges } = useMemo(() => {
     if (!focusMode || !selectedNodeId) {
@@ -635,6 +638,9 @@ export default function NodeCanvas() {
           <Background color="#e2e8f0" gap={20} />
 
           <MiniMap
+            pannable
+            zoomable
+            ariaLabel={t.minimapLabel}
             nodeColor={(n) => {
               const data = n.data as TurnNodeData | undefined;
               if (!data?.status) return '#ffffff';

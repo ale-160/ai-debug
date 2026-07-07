@@ -6,7 +6,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Sparkles, CheckCircle2, XCircle } from 'lucide-react';
+import { Sparkles, CheckCircle2, XCircle, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useDebugStore } from '@/lib/debug-store';
 import { useTranslation } from '@/components/I18nProvider';
 import { pickStatusMessage } from './marketing-messages';
@@ -17,41 +17,55 @@ const AUTO_HIDE_DELAY = 3000;
 
 export default function ExecutionStatusBar() {
   const { language, t } = useTranslation();
-  // 找到当前正在运行的节点（同时拿到其 id 与流式文本）
-  const runningNode = useDebugStore(
-    (s) => s.nodes.find((n) => n.data.status === 'running') ?? null,
+  // 扩展为 runningNodes 数组 selector（支持多 running 轮播）
+  const runningNodes = useDebugStore(
+    (s) => s.nodes.filter((n) => n.data.status === 'running'),
   );
+  const abortRunningTurn = useDebugStore((s) => s.abortRunningTurn);
 
+  // 当前轮播索引（0-based），超过 runningNodes.length 时自动钳制
+  const [carouselIndex, setCarouselIndex] = useState(0);
   const [visible, setVisible] = useState(false);
   const [endState, setEndState] = useState<'success' | 'error' | null>(null);
   const [endLabel, setEndLabel] = useState('');
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const streamingRef = useRef<HTMLDivElement>(null);
-  // 记录上一次处于 running 的节点 id，用于在其结束时查询最终状态
-  const prevRunningIdRef = useRef<string | null>(null);
+  // 记录上一次处于 running 的节点 id 列表，用于在其结束时查询最终状态
+  const prevRunningIdsRef = useRef<string[]>([]);
+
+  // 钳制轮播索引：runningNodes 数量变化时确保索引合法
+  useEffect(() => {
+    if (carouselIndex >= runningNodes.length) {
+      setCarouselIndex(0);
+    }
+  }, [runningNodes.length, carouselIndex]);
+
+  // 当前轮播焦点节点
+  const currentRunning = runningNodes[carouselIndex] ?? runningNodes[0] ?? null;
 
   // 流式文本自动滚到底部
   useEffect(() => {
     if (streamingRef.current) {
       streamingRef.current.scrollTop = streamingRef.current.scrollHeight;
     }
-  }, [runningNode?.data.assistantMessage]);
+  }, [currentRunning?.data.assistantMessage]);
 
   // 监听 running 节点的出现/消失，结束时延迟自动隐藏
   useEffect(() => {
-    if (runningNode) {
+    if (runningNodes.length > 0) {
       setVisible(true);
       setEndState(null);
       if (hideTimerRef.current) {
         clearTimeout(hideTimerRef.current);
         hideTimerRef.current = null;
       }
-      prevRunningIdRef.current = runningNode.id;
+      prevRunningIdsRef.current = runningNodes.map((n) => n.id);
     } else {
-      const prevId = prevRunningIdRef.current;
-      if (prevId) {
-        // running 消失：查询该节点最终状态决定结束态配色
-        const prevNode = useDebugStore.getState().nodes.find((n) => n.id === prevId);
+      const prevIds = prevRunningIdsRef.current;
+      if (prevIds.length > 0) {
+        // running 全部消失：查询最后一个节点最终状态决定结束态配色
+        const lastId = prevIds[prevIds.length - 1];
+        const prevNode = useDebugStore.getState().nodes.find((n) => n.id === lastId);
         const st = prevNode?.data.status;
         if (st === 'success' || st === 'error') {
           setEndState(st);
@@ -64,7 +78,7 @@ export default function ExecutionStatusBar() {
         } else {
           setVisible(false);
         }
-        prevRunningIdRef.current = null;
+        prevRunningIdsRef.current = [];
       }
     }
     return () => {
@@ -72,16 +86,18 @@ export default function ExecutionStatusBar() {
         clearTimeout(hideTimerRef.current);
       }
     };
-  }, [runningNode, language, t.statusFailed]);
+  }, [runningNodes, language, t.statusFailed]);
 
   // 无内容时不渲染
-  if (!visible && !runningNode && !endState) {
+  if (!visible && runningNodes.length === 0 && !endState) {
     return null;
   }
 
-  const isRunning = !!runningNode;
-  const streamingText = runningNode?.data.assistantMessage ?? '';
+  const isRunning = runningNodes.length > 0;
+  const streamingText = currentRunning?.data.assistantMessage ?? '';
   const hasStreaming = isRunning && !!streamingText;
+  const runningCount = runningNodes.length;
+  const hasMultipleRunning = runningCount > 1;
 
   // 配色：运行中(蓝) / 失败(红) / 完成(绿)
   const containerCls = isRunning
@@ -90,7 +106,27 @@ export default function ExecutionStatusBar() {
     ? 'bg-red-50/95 border-red-200 text-red-700 dark:bg-red-900/40 dark:border-red-700 dark:text-red-300'
     : 'bg-emerald-50/95 border-emerald-200 text-emerald-700 dark:bg-emerald-900/40 dark:border-emerald-700 dark:text-emerald-300';
 
-  const label = isRunning ? pickStatusMessage('running', language) : endLabel;
+  // 标签：多 running 时显示计数，单 running 显示友好文案
+  const label = isRunning
+    ? hasMultipleRunning
+      ? tf(t.nodesRunning, { count: runningCount })
+      : pickStatusMessage('running', language)
+    : endLabel;
+
+  // 处理取消
+  const handleAbort = () => {
+    if (currentRunning) {
+      abortRunningTurn(currentRunning.id);
+    }
+  };
+
+  // 轮播切换
+  const handlePrev = () => {
+    setCarouselIndex((i) => (i - 1 + runningCount) % runningCount);
+  };
+  const handleNext = () => {
+    setCarouselIndex((i) => (i + 1) % runningCount);
+  };
 
   return (
     <div
@@ -104,7 +140,7 @@ export default function ExecutionStatusBar() {
       <div
         className={`flex flex-col gap-2 px-5 py-3 rounded-2xl shadow-lg backdrop-blur-md border transition-all duration-300 min-w-[300px] ${containerCls}`}
       >
-        {/* 顶部：图标 + 文案 */}
+        {/* 顶部：图标 + 文案 + 轮播 + 取消按钮 */}
         <div className="flex items-center gap-3">
           <div className="flex-shrink-0">
             {isRunning ? (
@@ -118,7 +154,44 @@ export default function ExecutionStatusBar() {
               <CheckCircle2 className="w-5 h-5 text-emerald-500" />
             )}
           </div>
-          <span className="text-sm font-medium truncate">{label}</span>
+          <span className="text-sm font-medium truncate flex-1">{label}</span>
+
+          {/* 多 running 轮播切换器 */}
+          {hasMultipleRunning && (
+            <div className="flex items-center gap-1 text-xs">
+              <button
+                onClick={handlePrev}
+                className="p-1 rounded hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors"
+                aria-label={t.previousNode}
+                disabled={!isRunning}
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <span className="font-mono tabular-nums">
+                {carouselIndex + 1}/{runningCount}
+              </span>
+              <button
+                onClick={handleNext}
+                className="p-1 rounded hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors"
+                aria-label={t.nextNode}
+                disabled={!isRunning}
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          )}
+
+          {/* 取消按钮：仅 running 态显示 */}
+          {isRunning && (
+            <button
+              onClick={handleAbort}
+              className="flex-shrink-0 p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/40 text-slate-400 hover:text-red-500 transition-colors"
+              aria-label={t.cancelRunning}
+              title={t.cancelRunning}
+            >
+              <X size={14} />
+            </button>
+          )}
         </div>
 
         {/* 流式内容展示区（截断 + 自动滚动） */}
@@ -134,4 +207,9 @@ export default function ExecutionStatusBar() {
       </div>
     </div>
   );
+}
+
+/** 简易模板替换：{count} → vars.count */
+function tf(template: string, vars: Record<string, string | number>): string {
+  return template.replace(/\{(\w+)\}/g, (_, key) => String(vars[key] ?? `{${key}}`));
 }

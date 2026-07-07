@@ -129,6 +129,7 @@ export const STRINGS_ZH = {
   skipToContent: '跳转到主内容',
   lightMode: '切换到亮色模式',
   darkMode: '切换到暗色模式',
+  systemMode: '切换到跟随系统',
   help: '帮助',
 
   notConfigured: '未配置 API Key',
@@ -168,6 +169,15 @@ export const STRINGS_ZH = {
   // 设置：可观测性开关
   observabilitySettings: '可观测性',
   hoverShowPathSummary: 'hover 节点时显示路径摘要（默认关闭）',
+  // 设置：上下文压缩配置区（T007）
+  contextCompression: '上下文压缩',
+  enableHybridMode: '启用混合模式（前段摘要 + 后段完整）',
+  pathLengthThreshold: '路径长度阈值（超过此节点数启用混合模式）',
+  recentKeepCount: '保留完整节点数（后段长度）',
+  summaryMaxLength: '摘要最大字数',
+  contextCompressionNote:
+    '不同模型上下文窗口差异大，按服务商预设默认值；8K 模型建议保守阈值，128K 模型可放宽，2M 上下文模型可关闭混合模式。',
+  contextCompressionCurrentPreset: '当前服务商预设',
 
   aiThinking: 'AI 思考中...',
   errorOccurred: '出错了：{message}',
@@ -274,7 +284,30 @@ export const STRINGS_ZH = {
   shortcutDescHand: '拖拽平移画布',
   shortcutDescFitView: '所有节点居中显示',
   shortcutTip: '按住空格键可以临时切换到抓手工具，快速平移画布。滚轮缩放会以鼠标位置为中心进行缩放。',
+  shortcutSearchPlaceholder: '搜索快捷键...',
+  shortcutNoMatch: '没有匹配的快捷键',
   statusFailed: '生成失败',
+  minimapLabel: '蛛网节点小地图',
+  nodesRunning: '{count} 个节点生成中',
+  previousNode: '上一个节点',
+  nextNode: '下一个节点',
+  cancelRunning: '取消生成',
+
+  // ========== 侧边栏与分支管理（T009） ==========
+  searchProjects: '搜索项目（名称 / 摘要）...',
+  pinnedSection: '已置顶',
+  projectsSection: '项目',
+  pin: '置顶',
+  unpin: '取消置顶',
+  noSearchResult: '无匹配项目',
+  forkFromHere: '从此处分叉',
+  forkHint: '下一条消息将作为此节点的新子分支',
+  branchCount: '{count} 个分支',
+  branchSwitcher: '分支切换',
+  prevBranch: '上一个分支',
+  nextBranch: '下一个分支',
+  branchIndex: '{index} / {total}',
+  mergedBadge: 'merged',
 
   // ========== 自动推演（AutoEvolution） ==========
   autoEvolutionTitle: '自动推演',
@@ -465,6 +498,7 @@ export const STRINGS_EN = {
   skipToContent: 'Skip to main content',
   lightMode: 'Switch to light mode',
   darkMode: 'Switch to dark mode',
+  systemMode: 'Switch to system theme',
   help: 'Help',
 
   notConfigured: 'API Key not configured',
@@ -504,6 +538,15 @@ export const STRINGS_EN = {
   // Settings: observability toggles
   observabilitySettings: 'Observability',
   hoverShowPathSummary: 'Show path summary on node hover (off by default)',
+  // Settings: context compression config (T007)
+  contextCompression: 'Context Compression',
+  enableHybridMode: 'Enable hybrid mode (front summary + recent full)',
+  pathLengthThreshold: 'Path length threshold (enable hybrid mode beyond this node count)',
+  recentKeepCount: 'Keep recent full nodes (rear length)',
+  summaryMaxLength: 'Summary max length (chars)',
+  contextCompressionNote:
+    'Model context windows vary; defaults are preset per provider. Conservative for 8K, relaxed for 128K, disable hybrid mode for 2M models.',
+  contextCompressionCurrentPreset: 'Current provider preset',
 
   aiThinking: 'AI is thinking...',
   errorOccurred: 'Error: {message}',
@@ -610,7 +653,30 @@ export const STRINGS_EN = {
   shortcutDescHand: 'Drag to pan',
   shortcutDescFitView: 'Center all nodes',
   shortcutTip: 'Hold Space to temporarily switch to the hand tool. Scroll to zoom around the mouse position.',
+  shortcutSearchPlaceholder: 'Search shortcuts...',
+  shortcutNoMatch: 'No matching shortcuts',
   statusFailed: 'Generation failed',
+  minimapLabel: 'Network node minimap',
+  nodesRunning: '{count} nodes generating',
+  previousNode: 'Previous node',
+  nextNode: 'Next node',
+  cancelRunning: 'Cancel generation',
+
+  // ========== Sidebar & Branch Management (T009) ==========
+  searchProjects: 'Search projects (name / summary)...',
+  pinnedSection: 'Pinned',
+  projectsSection: 'Projects',
+  pin: 'Pin',
+  unpin: 'Unpin',
+  noSearchResult: 'No matching projects',
+  forkFromHere: 'Fork from here',
+  forkHint: 'Next message will start a new child branch from this node',
+  branchCount: '{count} branches',
+  branchSwitcher: 'Switch branch',
+  prevBranch: 'Previous branch',
+  nextBranch: 'Next branch',
+  branchIndex: '{index} / {total}',
+  mergedBadge: 'merged',
 
   // ========== Auto Evolution ==========
   autoEvolutionTitle: 'Auto Evolution',

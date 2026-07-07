@@ -6,6 +6,7 @@
 // React Flow 的状态管理。
 // ============================================================
 import { create } from 'zustand';
+import { devtools } from 'zustand/middleware';
 import {
   applyNodeChanges,
   applyEdgeChanges,
@@ -104,6 +105,10 @@ interface NetworkState {
   appendAssistantChunk: (nodeId: string, delta: string) => void;
   /** 设置节点的 suggestions 列表 */
   setNodeSuggestions: (nodeId: string, suggestions: Suggestion[]) => void;
+  /** 注册节点的 AbortController（调用方发起流式请求时注册，供 abortRunningTurn 取消） */
+  registerAbortController: (nodeId: string, controller: AbortController) => void;
+  /** 取消指定 running 节点的流式请求：abort + 标记 error 状态 */
+  abortRunningTurn: (nodeId: string) => void;
   /** 删除节点及其下游子树（递归通过 parentId 找子节点）+ 相关 edges */
   deleteNode: (nodeId: string) => void;
   /**
@@ -145,6 +150,8 @@ interface NetworkState {
   flushCurrentProject: () => void;
   /** 删除项目 */
   deleteProject: (id: string) => void;
+  /** 切换项目置顶状态（已置顶 → 取消；未置顶 → 标记当前时间戳） */
+  togglePinProject: (id: string) => void;
   /** 从 storage 重新加载 projects 列表 */
   refreshProjects: () => void;
 
@@ -194,6 +201,8 @@ interface NetworkState {
   // ========== 自动推演 ==========
   /** 自动推演运行时状态（idle/running/paused/done + 进度计数） */
   autoEvolutionState: AutoEvolutionState;
+  /** AbortController 注册表（运行时态，不持久化）：nodeId → controller */
+  _abortControllers: Map<string, AbortController>;
   /** 启动推演：状态置 running，初始化进度计数 */
   startAutoEvolution: (maxSteps: number, activeBranches: number) => void;
   /** 暂停推演：状态置 paused（置信度低时由引擎触发） */
@@ -235,7 +244,9 @@ function collectDescendants(nodeId: string, nodes: Node<TurnNodeData>[]): Set<st
   return result;
 }
 
-export const useDebugStore = create<NetworkState>((set, get) => ({
+export const useDebugStore = create<NetworkState>()(
+  devtools(
+    (set, get) => ({
   // ========== 画布数据 ==========
   nodes: [],
   edges: [],
@@ -271,6 +282,10 @@ export const useDebugStore = create<NetworkState>((set, get) => ({
   // ========== 自动推演 ==========
   // 默认 idle，由引擎在 start/done 时切换
   autoEvolutionState: { status: 'idle', currentStep: 0, maxSteps: 0, activeBranches: 0 },
+
+  // ========== AbortController 注册表 ==========
+  // 调用方发起流式请求时注册，供 abortRunningTurn 取消。不持久化，不进 React 视图。
+  _abortControllers: new Map<string, AbortController>(),
 
   // ========== React Flow 集成 ==========
   // 选中变化不算 dirty，避免无谓的自动保存。
@@ -393,6 +408,36 @@ export const useDebugStore = create<NetworkState>((set, get) => ({
     set((state) => ({
       nodes: state.nodes.map((n) =>
         n.id === nodeId ? { ...n, data: { ...n.data, suggestions } } : n,
+      ),
+      isDirty: true,
+    }));
+  },
+
+  // 注册节点的 AbortController：调用方发起流式请求时调用，覆盖旧 controller
+  registerAbortController: (nodeId, controller) => {
+    const state = get();
+    const prev = state._abortControllers.get(nodeId);
+    if (prev && !prev.signal.aborted) {
+      // 覆盖前先 abort 旧的，避免悬挂请求
+      prev.abort();
+    }
+    state._abortControllers.set(nodeId, controller);
+    // 注册的 controller 不触发 set（不进 React 视图，避免无谓重渲染）
+  },
+
+  // 取消指定 running 节点的流式请求：abort controller + 标记节点 error 状态
+  abortRunningTurn: (nodeId) => {
+    const state = get();
+    const controller = state._abortControllers.get(nodeId);
+    if (controller && !controller.signal.aborted) {
+      controller.abort();
+    }
+    state._abortControllers.delete(nodeId);
+    set((s) => ({
+      nodes: s.nodes.map((n) =>
+        n.id === nodeId
+          ? { ...n, data: { ...n.data, status: 'error', errorMessage: '用户取消' } }
+          : n,
       ),
       isDirty: true,
     }));
@@ -599,6 +644,16 @@ export const useDebugStore = create<NetworkState>((set, get) => ({
     }));
   },
 
+  // 切换项目置顶：已置顶（pinnedAt 非空）→ 置空；未置顶 → 标记当前时间戳。
+  // 直接持久化到 storage 再刷新 store 列表，保持与 deleteProject 一致的处理模式。
+  togglePinProject: (id) => {
+    const project = getProject(id);
+    if (!project) return;
+    const nextPinnedAt = project.pinnedAt ? undefined : Date.now();
+    updateProjectStorage(id, { pinnedAt: nextPinnedAt });
+    set({ projects: loadProjects() });
+  },
+
   refreshProjects: () => set({ projects: loadProjects() }),
 
   // ========== 记忆操作 ==========
@@ -774,4 +829,11 @@ export const useDebugStore = create<NetworkState>((set, get) => ({
         activeBranches: count,
       },
     })),
-}));
+  }),
+    // devtools 中间件配置：仅开发环境启用，生产构建 tree-shaking 移除
+    {
+      name: 'ai-debug-store',
+      enabled: process.env.NODE_ENV !== 'production',
+    },
+  ),
+);

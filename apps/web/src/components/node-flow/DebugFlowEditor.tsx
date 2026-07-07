@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
 import { ReactFlowProvider } from 'reactflow';
-import { Send, Settings, Sun, Moon, Menu, HelpCircle, Network, Heart, Globe } from 'lucide-react';
+import { Send, Settings, Sun, Moon, Laptop, Menu, HelpCircle, Network, Heart, Globe } from 'lucide-react';
 import { toast } from 'sonner';
 
 import NodeCanvas from './NodeCanvas';
@@ -10,7 +10,7 @@ import NodeSidebar from './NodeSidebar';
 import NodeInspector from './NodeInspector';
 import { SettingsModal } from '@/components/SettingsModal';
 import { MemoryPanel } from '@/components/MemoryPanel';
-import { useTheme } from '@/components/ThemeProvider';
+import { useTheme, resolveTheme } from '@/components/ThemeProvider';
 import { useDebugStore } from '@/lib/debug-store';
 import { streamTurnResponse } from '@/lib/network-engine';
 import { buildMemoryContext } from '@/lib/memory-engine';
@@ -111,11 +111,25 @@ function TopNav({ onShowHelp }: { onShowHelp: () => void }) {
         )}
         <button
           onClick={toggleTheme}
-          className="p-1.5 text-slate-400 hover:text-amber-500 hover:bg-amber-50 rounded transition-colors dark:hover:bg-slate-800"
-          title={theme === 'dark' ? t.lightMode : t.darkMode}
+          className="p-1.5 text-slate-400 hover:text-amber-500 hover:bg-amber-50 rounded transition-colors dark:hover:bg-slate-800 active:bg-amber-100 dark:active:bg-slate-700"
+          title={
+            theme === 'light'
+              ? t.darkMode
+              : theme === 'dark'
+                ? t.systemMode
+                : resolveTheme(theme) === 'dark'
+                  ? t.lightMode
+                  : t.darkMode
+          }
           aria-label={t.toggleTheme}
         >
-          {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+          {theme === 'light' ? (
+            <Sun size={16} />
+          ) : theme === 'dark' ? (
+            <Moon size={16} />
+          ) : (
+            <Laptop size={16} />
+          )}
         </button>
         <button
           onClick={handleToggleLanguage}

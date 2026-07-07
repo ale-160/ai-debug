@@ -1,7 +1,7 @@
 'use client';
-import React, { memo, useMemo } from 'react';
+import React, { memo, useMemo, useState } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
-import { Loader2, GitMerge, AlertTriangle, Zap } from 'lucide-react';
+import { Loader2, GitMerge, AlertTriangle, Zap, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { TurnNodeData } from '../types';
 import { statusColors, truncateStreamingText } from './node-utils';
 import { pickStatusMessage } from '../marketing-messages';
@@ -15,7 +15,7 @@ function truncate(text: string, n: number): string {
 
 type TurnNodeProps = NodeProps<TurnNodeData>;
 
-function TurnNodeComponent({ data, selected }: TurnNodeProps) {
+function TurnNodeComponent({ id, data, selected }: TurnNodeProps) {
   const { t, tf, language } = useTranslation();
   const {
     parentId,
@@ -62,6 +62,46 @@ function TurnNodeComponent({ data, selected }: TurnNodeProps) {
         confidence: evolutionMeta.confidence.toFixed(2),
       })
     : '';
+
+  // 分支切换器：订阅当前节点的子节点 id 列表（csv 字符串避免数组引用变化）。
+  // 仅当子节点数 > 1 时显示分支徽标；点击展开 `< 1/N >` 切换器，
+  // 切换时调用 setSelectedNode 切到对应子节点。
+  const setSelectedNode = useDebugStore((s) => s.setSelectedNode);
+  const childIdsCsv = useDebugStore((s) =>
+    s.nodes
+      .filter((n) => n.data.parentId === id)
+      .map((n) => n.id)
+      .join(',')
+  );
+  const childIds = useMemo(
+    () => (childIdsCsv ? childIdsCsv.split(',') : []),
+    [childIdsCsv]
+  );
+  const hasMultipleBranches = childIds.length > 1;
+  const [branchSwitcherOpen, setBranchSwitcherOpen] = useState(false);
+  // 切换器当前索引：默认指向当前 selectedNode 在 childIds 中的位置，无则 0
+  const selectedNodeId = useDebugStore((s) => s.selectedNodeId);
+  const currentBranchIndex = useMemo(() => {
+    const idx = childIds.indexOf(selectedNodeId ?? '');
+    return idx === -1 ? 0 : idx;
+  }, [childIds, selectedNodeId]);
+
+  const handleBranchBadgeClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setBranchSwitcherOpen((v) => !v);
+  };
+  const handlePrevBranch = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (childIds.length === 0) return;
+    const next = (currentBranchIndex - 1 + childIds.length) % childIds.length;
+    setSelectedNode(childIds[next]);
+  };
+  const handleNextBranch = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (childIds.length === 0) return;
+    const next = (currentBranchIndex + 1) % childIds.length;
+    setSelectedNode(childIds[next]);
+  };
 
   // 渲染状态指示器（圆点 / 旋转图标）：配色统一取自 statusColors，与 MiniMap 一致
   const renderStatusIndicator = (
@@ -122,6 +162,70 @@ function TurnNodeComponent({ data, selected }: TurnNodeProps) {
         className="!w-3 !h-3 !bg-slate-400 !border-2 !border-white hover:opacity-80"
         style={{ top: '50%', transform: 'translate(50%, -50%)' }}
       />
+
+      {/* 合并节点左上角 merged 角标：绝对定位，仅 isMerged 时显示 */}
+      {isMerged && (
+        <div
+          className="absolute -top-2 -left-2 px-1.5 py-0.5 rounded bg-violet-500 text-white text-[10px] font-semibold tracking-wide shadow-sm"
+          aria-label={t.mergedBadge}
+          title={t.mergedBadge}
+        >
+          {t.mergedBadge}
+        </div>
+      )}
+
+      {/* 右下角分支数徽标：仅当子分支 > 1 时显示。
+          点击徽标展开分支切换器（ChatGPT 风格 `< 1/N >`）。 */}
+      {hasMultipleBranches && (
+        <div className="absolute -bottom-2 right-1 flex items-center gap-0.5 z-10">
+          {!branchSwitcherOpen ? (
+            <button
+              onClick={handleBranchBadgeClick}
+              className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-blue-500 hover:bg-blue-600 text-white text-[10px] font-semibold shadow-sm transition-colors"
+              title={tf('branchCount', { count: childIds.length })}
+              aria-label={t.branchSwitcher}
+            >
+              {childIds.length}
+            </button>
+          ) : (
+            <div className="inline-flex items-center gap-0.5 rounded-full bg-blue-500 text-white shadow-sm">
+              <button
+                onClick={handlePrevBranch}
+                className="inline-flex items-center justify-center w-5 h-5 hover:bg-blue-600 rounded-l-full transition-colors"
+                aria-label={t.prevBranch}
+                title={t.prevBranch}
+              >
+                <ChevronLeft size={10} />
+              </button>
+              <span className="text-[10px] font-semibold px-0.5 select-none">
+                {tf('branchIndex', {
+                  index: currentBranchIndex + 1,
+                  total: childIds.length,
+                })}
+              </span>
+              <button
+                onClick={handleNextBranch}
+                className="inline-flex items-center justify-center w-5 h-5 hover:bg-blue-600 rounded-r-full transition-colors"
+                aria-label={t.nextBranch}
+                title={t.nextBranch}
+              >
+                <ChevronRight size={10} />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setBranchSwitcherOpen(false);
+                }}
+                className="inline-flex items-center justify-center w-5 h-5 hover:bg-blue-600 rounded-full transition-colors ml-0.5"
+                aria-label={t.cancel}
+                title={t.cancel}
+              >
+                ×
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 顶部：状态指示器 + 类型标签（合并节点显示 GitMerge 图标） */}
       <div className="flex items-center gap-1.5 mb-2">

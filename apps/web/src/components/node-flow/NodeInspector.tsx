@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Loader2, MessageSquare, GitBranch, Wrench } from 'lucide-react';
+import { Loader2, MessageSquare, GitBranch, Wrench, GitFork } from 'lucide-react';
 import { useDebugStore } from '@/lib/debug-store';
 import { useTranslation } from '@/components/I18nProvider';
 import type { Node } from 'reactflow';
@@ -67,6 +67,8 @@ export default function NodeInspector() {
   const currentProjectId = useDebugStore((s) => s.currentProjectId);
 
   const [activeTab, setActiveTab] = useState<InspectorTab>('conversation');
+  /** fork 提示态：true 时高亮"从此处分叉"按钮 + 展示提示 banner */
+  const [forkHintVisible, setForkHintVisible] = useState(false);
 
   const selectedNode = useMemo(
     () => (selectedNodeId ? nodes.find((n) => n.id === selectedNodeId) ?? null : null),
@@ -135,6 +137,30 @@ export default function NodeInspector() {
         onSelect={setSelectedNode}
         onClose={() => setSelectedNode(null)}
       />
+
+      {/* 显式 fork 入口：点击后高亮提示"下一条消息将作为此节点的新子分支"。
+          复用现有 createChildAndStream 逻辑（提交消息时自动以当前选中节点为 parentId 创建子节点），
+          此按钮仅为 UI 提示，不改变 store 状态。 */}
+      <div className="px-3 pt-2 flex-shrink-0">
+        <button
+          onClick={() => setForkHintVisible((v) => !v)}
+          className={`w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
+            forkHintVisible
+              ? 'bg-violet-50 dark:bg-violet-900/30 border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-300'
+              : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-violet-300 dark:hover:border-violet-700 hover:text-violet-600 dark:hover:text-violet-400'
+          }`}
+          aria-pressed={forkHintVisible}
+          title={t.forkHint}
+        >
+          <GitFork size={12} />
+          {t.forkFromHere}
+        </button>
+        {forkHintVisible && (
+          <div className="mt-1.5 px-2.5 py-1.5 rounded bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-700/60 text-[11px] text-violet-700 dark:text-violet-300 leading-relaxed">
+            {t.forkHint}
+          </div>
+        )}
+      </div>
 
       {/* Tab 切换栏：底部下划线高亮 active Tab */}
       <div className="flex border-b border-slate-200 dark:border-slate-700 flex-shrink-0">

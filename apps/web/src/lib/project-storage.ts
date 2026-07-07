@@ -22,7 +22,7 @@ export function loadProjects(): NetworkProject[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw) as NetworkProject[];
     if (!Array.isArray(parsed)) return [];
-    // 兼容旧数据：无 projectType 字段按 'normal' 处理，originalProjectId 保持 undefined
+    // 兼容旧数据：无 projectType 字段按 'normal' 处理，originalProjectId/pinnedAt 保持 undefined
     return parsed.map((p) => ({
       ...p,
       projectType: p.projectType ?? 'normal',

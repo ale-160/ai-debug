@@ -3,6 +3,8 @@
 // 管理 LLM Provider 配置（API Key、Base URL、Model）的持久化与脱敏
 // ============================================================
 
+import type { PathSummaryConfig } from '@/components/node-flow/types';
+
 /** 支持的 LLM 服务商 */
 export type LLMProvider = 'mimo' | 'volcengine' | 'openrouter' | 'deepseek' | 'openai' | 'custom';
 
@@ -14,7 +16,7 @@ export interface LLMConfig {
   model: string;
 }
 
-/** 各 Provider 默认配置（baseUrl / model / 显示名 / 官方文档链接） */
+/** 各 Provider 默认配置（baseUrl / model / 显示名 / 官方文档链接 / pathSummary 预设） */
 export const PROVIDER_PRESETS: Record<
   LLMProvider,
   {
@@ -25,6 +27,13 @@ export const PROVIDER_PRESETS: Record<
     docsUrl: string;
     /** 文档链接的显示文案 */
     docsLabel: string;
+    /**
+     * 路径摘要（pathSummary）混合模式预设。
+     * 按模型上下文窗口推荐：8K 模型 threshold=4/recentKeep=3/maxLength=800；
+     * 128K 模型 threshold=10/recentKeep=6/maxLength=1500；2M 模型可关闭混合模式（enabled=false）。
+     * 用户可在设置面板覆盖此预设。
+     */
+    pathSummary: PathSummaryConfig;
   }
 > = {
   mimo: {
@@ -33,6 +42,8 @@ export const PROVIDER_PRESETS: Record<
     label: 'Xiaomi MiMo',
     docsUrl: 'https://platform.xiaomimimo.com?ref=HVJJGY',
     docsLabel: '前往 Xiaomi MiMo 开放平台获取 API Key',
+    // MiMo v2.5 上下文 8K：保守阈值
+    pathSummary: { enabled: true, threshold: 4, recentKeep: 3, maxLength: 800 },
   },
   volcengine: {
     baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
@@ -40,6 +51,8 @@ export const PROVIDER_PRESETS: Record<
     label: '火山方舟',
     docsUrl: 'https://volcengine.com/L/uH3ewWuCZDw/',
     docsLabel: '立即订阅方舟 Coding Plan（邀请码 K42LBHZY，9.5折优惠）',
+    // Doubao Seed 2.0 上下文 128K：标准阈值
+    pathSummary: { enabled: true, threshold: 10, recentKeep: 6, maxLength: 1500 },
   },
   openrouter: {
     baseUrl: 'https://openrouter.ai/api/v1',
@@ -47,6 +60,8 @@ export const PROVIDER_PRESETS: Record<
     label: 'OpenRouter',
     docsUrl: 'https://openrouter.ai/keys',
     docsLabel: '前往 OpenRouter 获取 API Key',
+    // OpenRouter 模型多样，默认走 128K 阈值
+    pathSummary: { enabled: true, threshold: 10, recentKeep: 6, maxLength: 1500 },
   },
   deepseek: {
     baseUrl: 'https://api.deepseek.com/v1',
@@ -54,6 +69,8 @@ export const PROVIDER_PRESETS: Record<
     label: 'DeepSeek',
     docsUrl: 'https://platform.deepseek.com/api_keys',
     docsLabel: '前往 DeepSeek 获取 API Key',
+    // DeepSeek V4-Flash 上下文 128K：标准阈值
+    pathSummary: { enabled: true, threshold: 10, recentKeep: 6, maxLength: 1500 },
   },
   openai: {
     baseUrl: 'https://api.openai.com/v1',
@@ -61,6 +78,8 @@ export const PROVIDER_PRESETS: Record<
     label: 'OpenAI',
     docsUrl: 'https://platform.openai.com/api-keys',
     docsLabel: '前往 OpenAI 获取 API Key',
+    // GPT-4o-mini 上下文 128K：标准阈值
+    pathSummary: { enabled: true, threshold: 10, recentKeep: 6, maxLength: 1500 },
   },
   custom: {
     baseUrl: '',
@@ -68,8 +87,23 @@ export const PROVIDER_PRESETS: Record<
     label: '自定义',
     docsUrl: '',
     docsLabel: '',
+    // 自定义 provider 默认走 128K 阈值，用户可按实际模型调整
+    pathSummary: { enabled: true, threshold: 10, recentKeep: 6, maxLength: 1500 },
   },
 };
+
+/**
+ * 获取生效的 pathSummary 配置：用户覆盖 > provider 预设 > 默认值。
+ * 调用方传入 AppSettings.pathSummaryConfig（用户覆盖）与 provider，
+ * 返回实际生效的配置。
+ */
+export function getEffectivePathSummaryConfig(
+  userOverride: PathSummaryConfig | undefined,
+  provider: LLMProvider,
+): PathSummaryConfig {
+  if (userOverride) return userOverride;
+  return PROVIDER_PRESETS[provider].pathSummary;
+}
 
 /** localStorage 存储键 */
 export const LLM_CONFIG_KEY = 'ai-debug:llm-config';

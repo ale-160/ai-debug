@@ -1,7 +1,7 @@
 import type { Node } from 'reactflow';
 import type { TurnNodeData, Suggestion, TurnStatus } from '@/components/node-flow/types';
 import { quickCallLLM, buildVisionMessage } from './llm-helpers';
-import type { LLMMessage } from './llm-client';
+import { type LLMMessage, RequestPoolError } from './llm-client';
 import { describeError } from './request';
 import { createTurnNodeData } from '@/components/node-flow/node-definitions';
 import { SUMMARY_THRESHOLD, RECENT_KEEP } from './context-config';
@@ -370,12 +370,18 @@ export async function streamTurnResponse(
   signal?: AbortSignal,
   onSummary?: (summary: string) => void,
   extraContext?: string,
-  onPathSummary?: (summary: string) => void,
+  onPathSummary?: (summary: string, cacheKey?: string) => void,
 ): Promise<{
   success: boolean;
   text?: string;
   suggestions?: Suggestion[];
   error?: string;
+  /**
+   * 是否为"重试耗尽失败"。当 LLM 调用经并发池重试达到上限仍失败时为 true。
+   * 调用方（如 auto-evolution-engine）可据此区分"重试耗尽" vs "用户主动取消"。
+   * 其他失败（取消/不可重试错误）不设置此字段（undefined 视为 false）。
+   */
+  failed?: boolean;
 }> {
   try {
     const contextPath = collectContextPath(nodeId, nodes);
@@ -416,12 +422,16 @@ export async function streamTurnResponse(
               parentPathSummary = parentNode?.data.pathSummary;
             }
           }
-          const pathSummary = await generatePathSummary(
+          // generatePathSummary 返回 { summary, cacheKey }：cacheKey 用于节点字段持久化，
+          // 命中缓存时跳过 LLM 调用（哈希缓存逻辑在 path-summary-engine 内部）
+          const result = await generatePathSummary(
             updatedNode,
             parentPathSummary,
             nodes,
           );
-          if (pathSummary) onPathSummary(pathSummary);
+          if (result.summary) {
+            onPathSummary(result.summary, result.cacheKey);
+          }
         } catch {
           // 路径摘要生成失败，静默跳过
         }
@@ -430,7 +440,9 @@ export async function streamTurnResponse(
     return { success: true, text: fullText, suggestions };
   } catch (err) {
     // 复用 request.ts 的 describeError 归一化错误信息
-    return { success: false, error: describeError(err) };
+    // 若 err 为 RequestPoolError（并发池重试耗尽），标记 failed: true 供调用方区分
+    const failed = err instanceof RequestPoolError;
+    return { success: false, error: describeError(err), failed };
   }
 }
 

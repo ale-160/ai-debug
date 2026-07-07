@@ -27,7 +27,7 @@ import { testLLMConnection } from "@/lib/llm-client";
 import { useDebugStore } from "@/lib/debug-store";
 import { StorageManager } from "./StorageManager";
 import { useTranslation } from "@/components/I18nProvider";
-import type { AppSettings } from "./node-flow/types";
+import type { AppSettings, PathSummaryConfig } from "./node-flow/types";
 import { emit, NODE_EVENTS } from "./node-flow/event-bus";
 
 interface SettingsModalProps {
@@ -117,6 +117,21 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     // 切换 provider 后清空旧的测试结果
     setTestResult(null);
     setShowModelHelp(false);
+  };
+
+  // 当前生效的 pathSummary 配置：用户覆盖 > provider 预设
+  // settingsDraft.pathSummaryConfig 为 undefined 时显示 provider 预设（向后兼容老数据）
+  const activePathSummaryConfig: PathSummaryConfig =
+    settingsDraft.pathSummaryConfig ?? PROVIDER_PRESETS[provider].pathSummary;
+
+  // 更新 pathSummaryConfig 字段：首次编辑时从 provider 预设 materialize 为显式对象
+  const updatePathSummaryConfig = (patch: Partial<PathSummaryConfig>) => {
+    const base =
+      settingsDraft.pathSummaryConfig ?? PROVIDER_PRESETS[provider].pathSummary;
+    setSettingsDraft({
+      ...settingsDraft,
+      pathSummaryConfig: { ...base, ...patch },
+    });
   };
 
   // 测试连接
@@ -543,6 +558,86 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                   />
                   {t.hoverShowPathSummary}
                 </label>
+              </div>
+
+              {/* 上下文压缩：pathSummary 混合模式参数（T007） */}
+              <div className="space-y-2">
+                <div className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                  {t.contextCompression}
+                </div>
+                <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={activePathSummaryConfig.enabled}
+                    onChange={(e) =>
+                      updatePathSummaryConfig({ enabled: e.target.checked })
+                    }
+                    className="rounded"
+                  />
+                  {t.enableHybridMode}
+                </label>
+                {activePathSummaryConfig.enabled && (
+                  <div className="space-y-2 pl-4">
+                    <div>
+                      <label className="mb-1 block text-[11px] text-slate-500 dark:text-slate-400">
+                        {t.pathLengthThreshold}
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={50}
+                        value={activePathSummaryConfig.threshold}
+                        onChange={(e) =>
+                          updatePathSummaryConfig({
+                            threshold: Math.max(1, Number(e.target.value) || 1),
+                          })
+                        }
+                        className="w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-violet-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[11px] text-slate-500 dark:text-slate-400">
+                        {t.recentKeepCount}
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={20}
+                        value={activePathSummaryConfig.recentKeep}
+                        onChange={(e) =>
+                          updatePathSummaryConfig({
+                            recentKeep: Math.max(1, Number(e.target.value) || 1),
+                          })
+                        }
+                        className="w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-violet-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[11px] text-slate-500 dark:text-slate-400">
+                        {t.summaryMaxLength}
+                      </label>
+                      <input
+                        type="number"
+                        min={100}
+                        max={10000}
+                        step={100}
+                        value={activePathSummaryConfig.maxLength}
+                        onChange={(e) =>
+                          updatePathSummaryConfig({
+                            maxLength: Math.max(100, Number(e.target.value) || 100),
+                          })
+                        }
+                        className="w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-violet-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+                      />
+                    </div>
+                  </div>
+                )}
+                <p className="text-[10px] leading-relaxed text-slate-400">
+                  {t.contextCompressionNote}
+                </p>
+                <p className="text-[10px] text-slate-400">
+                  {t.contextCompressionCurrentPreset}：{PROVIDER_PRESETS[provider].pathSummary.threshold} / {PROVIDER_PRESETS[provider].pathSummary.recentKeep} / {PROVIDER_PRESETS[provider].pathSummary.maxLength}
+                </p>
               </div>
 
               {/* 打开记忆管理面板 */}

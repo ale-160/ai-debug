@@ -45,6 +45,28 @@ export interface AppSettings {
   globalRules: string;
   /** 是否在 hover 节点时显示路径摘要（默认关闭，用户主动开启后才显示） */
   hoverShowPathSummary: boolean;
+  /**
+   * 路径摘要（pathSummary）混合模式参数（用户可覆盖 provider 预设）。
+   * - undefined：使用 provider 预设默认值（向后兼容，老数据无此字段）
+   * - 显式对象：覆盖 provider 预设
+   * 用户可在设置面板"上下文压缩"区调整，持久化到 localStorage。
+   */
+  pathSummaryConfig?: PathSummaryConfig;
+}
+
+/**
+ * 路径摘要（rolling summary）混合模式参数。
+ * 不同模型上下文窗口差异大，按 provider 预设默认值，用户可覆盖。
+ */
+export interface PathSummaryConfig {
+  /** 是否启用混合模式（前段摘要 + 后段完整）。默认 true；2M 上下文模型可关闭 */
+  enabled: boolean;
+  /** 路径长度阈值：超过此节点数启用混合模式。8K 模型建议 4，128K 建议 10 */
+  threshold: number;
+  /** 混合模式下保留完整内容的最近节点数。8K 模型建议 3，128K 建议 6 */
+  recentKeep: number;
+  /** 路径摘要最大字数。8K 模型建议 800，128K 建议 1500 */
+  maxLength: number;
 }
 
 /** 对话节点数据（存储在 node.data 中） */
@@ -69,6 +91,12 @@ export interface TurnNodeData {
    * 既有节点无此字段时按 undefined 处理，触发首次生成时回填，向后兼容。
    */
   pathSummary?: string;
+  /**
+   * pathSummary 的哈希缓存键。缓存键 = hash(parentPathSummary + userMessage + assistantMessage)。
+   * 节点内容未变时复用 pathSummary，跳过 LLM 调用；内容变更时失效（键变化即重新生成）。
+   * 既有节点无此字段时按 undefined 处理，触发首次生成时回填。
+   */
+  pathSummaryCacheKey?: string;
   /** 合并来源节点 ID 列表：非空表示此节点由多个分支合并而来（合并节点 parentId 为 null） */
   mergedFromIds?: string[];
   /** 图片附件 base64 列表（用户消息可含图片） */
@@ -110,6 +138,8 @@ export interface NetworkProject {
   memory?: MemoryEntry[];
   /** 本项目已完成的 AI 回答轮数（用于按频率决定是否提取记忆/检测冲突），随项目持久化 */
   turnCounter?: number;
+  /** 置顶时间戳：非空表示项目被置顶（侧边栏置顶分组内按此时间倒序）。undefined 表示未置顶 */
+  pinnedAt?: number;
 }
 
 /** 从节点 data 中提取 TurnNodeData 的类型守卫 */

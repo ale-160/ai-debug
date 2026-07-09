@@ -89,6 +89,14 @@ interface NetworkState {
   /** 节点显示模式：detailed 详细（默认，显示用户消息+AI回答摘要）/ compact 紧凑（仅摘要标题+状态） */
   nodeDisplayMode: 'detailed' | 'compact';
 
+  // ========== 路径回放高亮（UI 临时态，不持久化） ==========
+  /** 当前高亮的路径节点 ID 列表（从根到目标节点的 parentId 链） */
+  highlightedPathIds: string[];
+  /** 设置高亮路径（点击面包屑时触发） */
+  setHighlightedPath: (nodeIds: string[]) => void;
+  /** 清除高亮（3 秒自动清除或切换项目时） */
+  clearHighlightedPath: () => void;
+
   // ========== React Flow 集成 ==========
   onNodesChange: (changes: NodeChange[]) => void;
   onEdgesChange: (changes: EdgeChange[]) => void;
@@ -278,6 +286,12 @@ export const useDebugStore = create<NetworkState>()(
   showMemoryPanel: false,
   turnCounter: 0,
   nodeDisplayMode: 'detailed',
+
+  // ========== 路径回放高亮 ==========
+  // 默认空数组，不持久化，切换项目时清空
+  highlightedPathIds: [],
+  setHighlightedPath: (nodeIds) => set({ highlightedPathIds: nodeIds }),
+  clearHighlightedPath: () => set({ highlightedPathIds: [] }),
 
   // ========== 自动推演 ==========
   // 默认 idle，由引擎在 start/done 时切换
@@ -593,6 +607,8 @@ export const useDebugStore = create<NetworkState>()(
       isDirty: false,
       // 新建草稿态：计数器归零
       turnCounter: 0,
+      // 清空路径高亮（UI 临时态不跨项目）
+      highlightedPathIds: [],
     });
   },
 
@@ -612,6 +628,8 @@ export const useDebugStore = create<NetworkState>()(
       isDirty: false,
       // 切换项目：恢复该项目的轮数计数器（未持久化时回退到 0）
       turnCounter: project.turnCounter ?? 0,
+      // 清空路径高亮（UI 临时态不跨项目）
+      highlightedPathIds: [],
     });
   },
 

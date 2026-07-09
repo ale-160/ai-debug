@@ -2,6 +2,7 @@
 import React, { memo, useMemo, useState } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
 import { Loader2, GitMerge, AlertTriangle, Zap, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
 import type { TurnNodeData } from '../types';
 import { statusColors, truncateStreamingText } from './node-utils';
 import { pickStatusMessage } from '../marketing-messages';
@@ -32,6 +33,11 @@ function TurnNodeComponent({ id, data, selected }: TurnNodeProps) {
   } = data;
   const nodeDisplayMode = useDebugStore((s) => s.nodeDisplayMode);
   const isCompact = nodeDisplayMode === 'compact';
+  // 路径回放高亮：用 useShallow 避免 Set 每次新引用触发无限循环
+  // （参考 ExecutionStatusBar 的 useShallow 模式）
+  const isOnHighlightedPath = useDebugStore(
+    useShallow((s) => s.highlightedPathIds.includes(id)),
+  );
   // hover 显示路径摘要开关（默认关闭，用户主动开启后才显示）
   const hoverShowPathSummary = useDebugStore((s) => s.appSettings.hoverShowPathSummary);
   // 仅在开启开关且 pathSummary 非空时显示 hover 卡片
@@ -136,14 +142,17 @@ function TurnNodeComponent({ id, data, selected }: TurnNodeProps) {
 
   return (
     <div
-      className={`group relative rounded-lg bg-white dark:bg-slate-800 shadow-sm transition-all duration-200 p-3 ${
+      className={`group relative rounded-lg bg-white dark:bg-slate-800 shadow-sm transition-all duration-300 p-3 ${
         isCompact ? 'w-[180px]' : 'w-[240px]'
       } ${
         // 合并节点：双色边框（violet 加粗）；普通节点：灰色细边框
         isMerged ? 'border-2 border-violet-400 dark:border-violet-500' : 'border border-slate-200 dark:border-slate-600'
       } ${selected ? 'ring-2 ring-blue-400 ring-offset-1' : ''} ${isAbandoned ? 'opacity-50' : ''} ${isIgnored ? 'border-amber-300 dark:border-amber-500 border-dashed opacity-70' : ''} ${
         hasConflict ? 'border-red-400 dark:border-red-500' : ''
-      } ${isEvolution && !isMerged && !hasConflict ? 'border-violet-300 dark:border-violet-600' : ''}`}
+      } ${isEvolution && !isMerged && !hasConflict ? 'border-violet-300 dark:border-violet-600' : ''} ${
+        // 路径回放高亮：蓝色加粗边框 + 阴影，3 秒后自动淡出（transition-all duration-300）
+        isOnHighlightedPath ? 'border-2 border-blue-400 shadow-lg' : ''
+      }`}
     >
       {/* 左侧输入端口：仅非根节点显示（合并节点 parentId 为 null，不显示） */}
       {parentId !== null && (

@@ -1,6 +1,6 @@
 'use client';
 
-import { Loader2, Send, Ban, RotateCcw, RefreshCw, EyeOff, ScanSearch } from 'lucide-react';
+import { Loader2, Send, RefreshCw, ScanSearch } from 'lucide-react';
 import { useTranslation } from '@/components/I18nProvider';
 
 interface MessageInputProps {
@@ -28,19 +28,12 @@ interface MessageInputProps {
   onContinueQuestion: () => void;
   /** 重新生成 */
   onRegenerate: () => void;
-  /** 弃用支线 */
-  onAbandon: () => void;
-  /** 恢复支线 */
-  onReactivate: () => void;
-  /** 忽略节点 */
-  onIgnore: () => void;
-  /** 取消忽略 */
-  onUnignore: () => void;
   /** 手动检测冲突 */
   onCheckConflict: () => void;
 }
 
-/** 底部输入区 + 操作按钮：继续追问 / 重新生成 / 弃用·恢复 / 忽略·取消忽略 / 冲突检测 */
+/** 底部输入区 + 操作按钮：继续追问 / 重新生成 / 检测冲突
+ *  T025 剥离了放弃/恢复/忽略/取消忽略按钮（已迁移到 T024 浮动工具条/右键菜单） */
 export default function MessageInput({
   input,
   onInputChange,
@@ -54,10 +47,6 @@ export default function MessageInput({
   hasMergeSources,
   onContinueQuestion,
   onRegenerate,
-  onAbandon,
-  onReactivate,
-  onIgnore,
-  onUnignore,
   onCheckConflict,
 }: MessageInputProps) {
   const { t } = useTranslation();
@@ -95,48 +84,6 @@ export default function MessageInput({
           <RefreshCw size={14} />
           {t.regenerate}
         </button>
-        {isAbandoned ? (
-          <button
-            onClick={onReactivate}
-            className="flex-1 inline-flex items-center justify-center gap-1 bg-emerald-500 text-white text-sm px-3 py-1.5 rounded-md hover:bg-emerald-600 transition-colors"
-            title={t.restoreBranch}
-          >
-            <RotateCcw size={14} />
-            {t.restoreBranch}
-          </button>
-        ) : (
-          <button
-            onClick={onAbandon}
-            className="flex-1 inline-flex items-center justify-center gap-1 bg-red-500 text-white text-sm px-3 py-1.5 rounded-md hover:bg-red-600 transition-colors"
-            title={t.abandonThisBranch}
-          >
-            <Ban size={14} />
-            {t.abandonThisBranch}
-          </button>
-        )}
-      </div>
-      {/* 忽略节点按钮：与支线操作独立，仅作用于当前节点 */}
-      <div className="flex gap-2 mt-2">
-        {isIgnored ? (
-          <button
-            onClick={onUnignore}
-            className="flex-1 inline-flex items-center justify-center gap-1 bg-amber-500 text-white text-sm px-3 py-1.5 rounded-md hover:bg-amber-600 transition-colors"
-            title={t.unignore}
-          >
-            <RotateCcw size={14} />
-            {t.unignore}
-          </button>
-        ) : (
-          <button
-            onClick={onIgnore}
-            disabled={isRunning || isAbandoned}
-            className="flex-1 inline-flex items-center justify-center gap-1 bg-amber-100 text-amber-700 text-sm px-3 py-1.5 rounded-md hover:bg-amber-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            title={t.ignoreThisNode}
-          >
-            <EyeOff size={14} />
-            {t.ignoreThisNode}
-          </button>
-        )}
         {/* 手动检测当前支线冲突。
             合并节点（mergedFromIds 非空）仅检测 parentId 主干路径，
             不展开 mergedFromIds 多路 —— 此为已知限制。 */}

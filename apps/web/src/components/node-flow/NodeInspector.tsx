@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Loader2, MessageSquare, GitBranch, Wrench, GitFork } from 'lucide-react';
+import { Loader2, GitFork } from 'lucide-react';
 import { useDebugStore } from '@/lib/debug-store';
 import { useTranslation } from '@/components/I18nProvider';
 import type { Node } from 'reactflow';
@@ -63,8 +63,6 @@ const mdComponents: Components = {
   ),
 };
 
-type InspectorTab = 'conversation' | 'context' | 'actions';
-
 export default function NodeInspector() {
   const { t, tf } = useTranslation();
   const selectedNodeId = useDebugStore((s) => s.selectedNodeId);
@@ -75,7 +73,6 @@ export default function NodeInspector() {
   const projects = useDebugStore((s) => s.projects);
   const currentProjectId = useDebugStore((s) => s.currentProjectId);
 
-  const [activeTab, setActiveTab] = useState<InspectorTab>('conversation');
   /** fork 提示态：true 时高亮"从此处分叉"按钮 + 展示提示 banner */
   const [forkHintVisible, setForkHintVisible] = useState(false);
 
@@ -145,12 +142,6 @@ export default function NodeInspector() {
   const injectedProjectMemory = appSettings.enableProjectMemory ? projectMem : [];
   const hasInjectedMemory = injectedGlobalMemory.length > 0 || injectedProjectMemory.length > 0;
 
-  const tabs: { key: InspectorTab; label: string; icon: React.ReactNode }[] = [
-    { key: 'conversation', label: t.inspectorTabConversation, icon: <MessageSquare size={14} /> },
-    { key: 'context', label: t.inspectorTabContext, icon: <GitBranch size={14} /> },
-    { key: 'actions', label: t.inspectorTabActions, icon: <Wrench size={14} /> },
-  ];
-
   return (
     <div
       id="inspector"
@@ -190,175 +181,138 @@ export default function NodeInspector() {
         )}
       </div>
 
-      {/* Tab 切换栏：底部下划线高亮 active Tab */}
-      <div className="flex border-b border-slate-200 dark:border-slate-700 flex-shrink-0">
-        {tabs.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium transition-colors border-b-2 ${
-              activeTab === tab.key
-                ? 'text-blue-600 border-blue-500 bg-blue-50/50 dark:bg-blue-900/20 dark:text-blue-400'
-                : 'text-slate-500 dark:text-slate-400 border-transparent hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
-            }`}
-          >
-            {tab.icon}
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Tab 1: 对话 —— 用户消息 + AI 回答（Markdown） */}
-      {activeTab === 'conversation' && (
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {/* 用户消息 */}
-          <div className="flex flex-col items-end gap-2">
-            <div className="max-w-[85%] rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-2 text-slate-800 dark:text-slate-200 text-sm shadow-sm whitespace-pre-wrap break-words">
-              {data.userMessage}
+      {/* 单页流式内容区（T025：取消三 Tab，合并对话/上下文/操作到一个可滚动区域） */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* ① 用户消息 + 图片 */}
+        <div className="flex flex-col items-end gap-2">
+          <div className="max-w-[85%] rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-2 text-slate-800 dark:text-slate-200 text-sm shadow-sm whitespace-pre-wrap break-words">
+            {data.userMessage}
+          </div>
+          {data.images && data.images.length > 0 && (
+            <div className="flex flex-wrap gap-2 justify-end">
+              {data.images.map((src, i) => (
+                <img
+                  key={i}
+                  src={src}
+                  alt={tf('attachmentN', { n: i + 1 })}
+                  className="max-w-32 rounded border border-slate-200 dark:border-slate-700"
+                />
+              ))}
             </div>
-            {data.images && data.images.length > 0 && (
-              <div className="flex flex-wrap gap-2 justify-end">
-                {data.images.map((src, i) => (
-                  <img
-                    key={i}
-                    src={src}
-                    alt={tf('attachmentN', { n: i + 1 })}
-                    className="max-w-32 rounded border border-slate-200 dark:border-slate-700"
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-          {/* AI 回答 */}
-          <div className="rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 p-3">
-            {isRunning && assistantMessage === '' ? (
-              <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400 text-sm">
-                <Loader2 className="animate-spin" size={14} />
-                {t.aiThinking}
-              </div>
-            ) : status === 'error' ? (
-              <div className="text-sm text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded p-2 break-words">
-                {tf('errorOccurred', {
-                  message:
-                    data.errorMessage === 'aborted'
-                      ? t.cancelled
-                      : (data.errorMessage ?? t.unknownError),
-                })}
-              </div>
-            ) : assistantMessage === '' ? (
-              <div className="text-slate-400 dark:text-slate-500 text-sm italic">
-                {t.waitingForGeneration}
-              </div>
-            ) : (
-              <div className="text-sm text-slate-700 dark:text-slate-300 break-words">
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-                  {displayMessage}
-                </ReactMarkdown>
-              </div>
-            )}
-          </div>
+          )}
         </div>
-      )}
 
-      {/* Tab 2: 上下文 —— 路径摘要 + 推演元数据 + 合并来源 + 冲突标注 + 注入的记忆条目 */}
-      {activeTab === 'context' && (
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {/* 路径摘要（rolling summary）：从根到当前节点的聚合结论 */}
-          <PathSummaryCard pathSummary={data.pathSummary} pathLength={breadcrumb.length} />
-          {/* 推演元数据：自动推演产生的节点显示 step/confidence/startNodeId/reasoning + 清除按钮 */}
-          {data.evolutionMeta && (
-            <EvolutionMetaCard
-              evolutionMeta={data.evolutionMeta}
-              nodes={nodes}
-              onClear={actions.handleClearEvolutionMeta}
-            />
+        {/* ② AI 回答（Markdown 渲染） */}
+        <div className="rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 p-3">
+          {isRunning && assistantMessage === '' ? (
+            <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400 text-sm">
+              <Loader2 className="animate-spin" size={14} />
+              {t.aiThinking}
+            </div>
+          ) : status === 'error' ? (
+            <div className="text-sm text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded p-2 break-words">
+              {tf('errorOccurred', {
+                message:
+                  data.errorMessage === 'aborted'
+                    ? t.cancelled
+                    : (data.errorMessage ?? t.unknownError),
+              })}
+            </div>
+          ) : assistantMessage === '' ? (
+            <div className="text-slate-400 dark:text-slate-500 text-sm italic">
+              {t.waitingForGeneration}
+            </div>
+          ) : (
+            <div className="text-sm text-slate-700 dark:text-slate-300 break-words">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                {displayMessage}
+              </ReactMarkdown>
+            </div>
           )}
-          {conflictNote && (
-            <ConflictCard
-              conflictNote={conflictNote}
-              isAbandoned={isAbandoned}
-              isIgnored={isIgnored}
-              onAbandon={actions.handleAbandon}
-              onPrune={actions.handlePruneNode}
-              onIgnore={actions.handleIgnore}
-              onClear={actions.handleClearConflict}
-            />
-          )}
-          {mergedFromIds && mergedFromIds.length > 0 && (
-            <MergeSourcesList
-              mergedFromIds={mergedFromIds}
-              nodes={nodes}
-              onSelect={setSelectedNode}
-            />
-          )}
-          {/* 注入的记忆条目：依据全局/项目记忆开关 */}
-          <div className="space-y-2">
-            <h4 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-              {t.pathMemoryTitle}
-            </h4>
-            {hasInjectedMemory ? (
-              <div className="space-y-1.5">
-                {injectedGlobalMemory.map((m) => (
-                  <div
-                    key={m.id}
-                    className="rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-2 text-xs text-slate-600 dark:text-slate-300 break-words"
-                  >
-                    <span className="text-[10px] text-blue-500 mr-1">[{t.globalMemory}]</span>
-                    {m.content}
-                  </div>
-                ))}
-                {injectedProjectMemory.map((m) => (
-                  <div
-                    key={m.id}
-                    className="rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-2 text-xs text-slate-600 dark:text-slate-300 break-words"
-                  >
-                    <span className="text-[10px] text-violet-500 mr-1">[{t.projectMemory}]</span>
-                    {m.content}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-xs text-slate-400 dark:text-slate-500 italic">
-                {t.noPathMemory}
-              </div>
-            )}
-          </div>
         </div>
-      )}
 
-      {/* Tab 3: 操作 —— 建议方向 + 输入框 + 操作按钮 */}
-      {activeTab === 'actions' && (
-        <>
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {suggestions.length > 0 && (
-              <SuggestionsList
-                suggestions={suggestions}
-                disabled={isRunning || isAbandoned || isIgnored}
-                onSuggestionClick={actions.handleSuggestionClick}
-              />
-            )}
-          </div>
-          <MessageInput
-            input={actions.input}
-            onInputChange={actions.setInput}
-            onKeyDown={actions.handleKeyDown}
+        {/* ③ 建议方向（如果有） */}
+        {suggestions.length > 0 && (
+          <SuggestionsList
+            suggestions={suggestions}
+            disabled={isRunning || isAbandoned || isIgnored}
+            onSuggestionClick={actions.handleSuggestionClick}
+          />
+        )}
+
+        {/* ④ 上下文信息：路径摘要 / 推演元数据 / 冲突标注 / 合并来源 / 注入记忆 */}
+        <PathSummaryCard pathSummary={data.pathSummary} pathLength={breadcrumb.length} />
+        {data.evolutionMeta && (
+          <EvolutionMetaCard
+            evolutionMeta={data.evolutionMeta}
+            nodes={nodes}
+            onClear={actions.handleClearEvolutionMeta}
+          />
+        )}
+        {conflictNote && (
+          <ConflictCard
+            conflictNote={conflictNote}
             isAbandoned={isAbandoned}
             isIgnored={isIgnored}
-            isRunning={isRunning}
-            actionDisabled={actionDisabled}
-            regenerateDisabled={regenerateDisabled}
-            checkingConflict={actions.checkingConflict}
-            hasMergeSources={!!mergedFromIds && mergedFromIds.length > 0}
-            onContinueQuestion={actions.handleContinueQuestion}
-            onRegenerate={actions.handleRegenerate}
             onAbandon={actions.handleAbandon}
-            onReactivate={actions.handleReactivate}
+            onPrune={actions.handlePruneNode}
             onIgnore={actions.handleIgnore}
-            onUnignore={actions.handleUnignore}
-            onCheckConflict={actions.handleCheckConflict}
+            onClear={actions.handleClearConflict}
           />
-        </>
-      )}
+        )}
+        {mergedFromIds && mergedFromIds.length > 0 && (
+          <MergeSourcesList mergedFromIds={mergedFromIds} nodes={nodes} onSelect={setSelectedNode} />
+        )}
+        {/* 注入的记忆条目：依据全局/项目记忆开关 */}
+        <div className="space-y-2">
+          <h4 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+            {t.pathMemoryTitle}
+          </h4>
+          {hasInjectedMemory ? (
+            <div className="space-y-1.5">
+              {injectedGlobalMemory.map((m) => (
+                <div
+                  key={m.id}
+                  className="rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-2 text-xs text-slate-600 dark:text-slate-300 break-words"
+                >
+                  <span className="text-[10px] text-blue-500 mr-1">[{t.globalMemory}]</span>
+                  {m.content}
+                </div>
+              ))}
+              {injectedProjectMemory.map((m) => (
+                <div
+                  key={m.id}
+                  className="rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-2 text-xs text-slate-600 dark:text-slate-300 break-words"
+                >
+                  <span className="text-[10px] text-violet-500 mr-1">[{t.projectMemory}]</span>
+                  {m.content}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-xs text-slate-400 dark:text-slate-500 italic">
+              {t.noPathMemory}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ⑤ 底部固定区：操作按钮 + 输入框（T025：剥离放弃/忽略按钮，保留继续追问/重新生成/检测冲突） */}
+      <MessageInput
+        input={actions.input}
+        onInputChange={actions.setInput}
+        onKeyDown={actions.handleKeyDown}
+        isAbandoned={isAbandoned}
+        isIgnored={isIgnored}
+        isRunning={isRunning}
+        actionDisabled={actionDisabled}
+        regenerateDisabled={regenerateDisabled}
+        checkingConflict={actions.checkingConflict}
+        hasMergeSources={!!mergedFromIds && mergedFromIds.length > 0}
+        onContinueQuestion={actions.handleContinueQuestion}
+        onRegenerate={actions.handleRegenerate}
+        onCheckConflict={actions.handleCheckConflict}
+      />
     </div>
   );
 }

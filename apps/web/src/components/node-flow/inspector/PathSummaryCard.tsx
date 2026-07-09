@@ -15,10 +15,7 @@ interface PathSummaryCardProps {
  * 路径摘要卡片：在 Inspector 的"上下文"Tab 顶部展示当前节点的 pathSummary
  * 与混合模式状态。无 pathSummary 时显示"尚未生成"占位。
  */
-export default function PathSummaryCard({
-  pathSummary,
-  pathLength,
-}: PathSummaryCardProps) {
+export default function PathSummaryCard({ pathSummary, pathLength }: PathSummaryCardProps) {
   const { t, tf } = useTranslation();
   const hasSummary = typeof pathSummary === 'string' && pathSummary.trim().length > 0;
   // 路径长度 > SUMMARY_THRESHOLD 时启用混合模式
@@ -47,9 +44,7 @@ export default function PathSummaryCard({
         </span>
       </div>
       {/* 描述 + 摘要正文 / 空态 */}
-      <div className="text-[11px] text-slate-400 dark:text-slate-500">
-        {t.pathSummaryDesc}
-      </div>
+      <div className="text-[11px] text-slate-400 dark:text-slate-500">{t.pathSummaryDesc}</div>
       {hasSummary ? (
         <div className="rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-2 text-xs text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto">
           {pathSummary}

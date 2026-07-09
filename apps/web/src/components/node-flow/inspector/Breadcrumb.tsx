@@ -67,10 +67,7 @@ export default function Breadcrumb({
               {n.data.summary ? n.data.summary : summarize(n.data.userMessage)}
             </button>
             {idx < breadcrumb.length - 1 && (
-              <span
-                className="text-slate-300 dark:text-slate-600 text-xs"
-                aria-hidden="true"
-              >
+              <span className="text-slate-300 dark:text-slate-600 text-xs" aria-hidden="true">
                 &gt;
               </span>
             )}

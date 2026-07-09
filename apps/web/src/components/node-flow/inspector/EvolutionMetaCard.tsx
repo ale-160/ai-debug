@@ -32,9 +32,7 @@ export default function EvolutionMetaCard({
   // 查找推演起点节点（用于显示其摘要，便于用户识别）
   const startNode = nodes.find((n) => n.id === evolutionMeta.startNodeId);
   const startNodeLabel = startNode
-    ? startNode.data.summary?.trim() ||
-      startNode.data.userMessage.slice(0, 30) ||
-      '—'
+    ? startNode.data.summary?.trim() || startNode.data.userMessage.slice(0, 30) || '—'
     : '—';
 
   return (
@@ -70,9 +68,7 @@ export default function EvolutionMetaCard({
 
         {/* 推演起点 */}
         <div className="text-xs">
-          <span className="text-slate-500 dark:text-slate-400">
-            {t.autoEvolutionStartNode}：
-          </span>
+          <span className="text-slate-500 dark:text-slate-400">{t.autoEvolutionStartNode}：</span>
           <span className="text-slate-700 dark:text-slate-200 ml-1 break-words">
             {startNodeLabel}
           </span>

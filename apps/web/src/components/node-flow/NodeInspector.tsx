@@ -22,13 +22,20 @@ import { useInspectorActions } from './inspector/useInspectorActions';
 const mdComponents: Components = {
   p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
   h1: ({ children }) => <h1 className="text-base font-bold mt-3 mb-2 first:mt-0">{children}</h1>,
-  h2: ({ children }) => <h2 className="text-base font-semibold mt-3 mb-2 first:mt-0">{children}</h2>,
+  h2: ({ children }) => (
+    <h2 className="text-base font-semibold mt-3 mb-2 first:mt-0">{children}</h2>
+  ),
   h3: ({ children }) => <h3 className="text-sm font-semibold mt-2 mb-1 first:mt-0">{children}</h3>,
   ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul>,
   ol: ({ children }) => <ol className="list-decimal list-inside mb-2 space-y-1">{children}</ol>,
   li: ({ children }) => <li className="leading-relaxed">{children}</li>,
   a: ({ children, href }) => (
-    <a href={href} target="_blank" rel="noreferrer" className="text-blue-600 dark:text-blue-400 underline break-all">
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="text-blue-600 dark:text-blue-400 underline break-all"
+    >
       {children}
     </a>
   ),
@@ -50,7 +57,9 @@ const mdComponents: Components = {
     );
   },
   pre: ({ children }) => (
-    <pre className="bg-slate-800 text-slate-100 p-2 rounded mb-2 overflow-x-auto text-xs">{children}</pre>
+    <pre className="bg-slate-800 text-slate-100 p-2 rounded mb-2 overflow-x-auto text-xs">
+      {children}
+    </pre>
   ),
 };
 
@@ -71,7 +80,7 @@ export default function NodeInspector() {
   const [forkHintVisible, setForkHintVisible] = useState(false);
 
   const selectedNode = useMemo(
-    () => (selectedNodeId ? nodes.find((n) => n.id === selectedNodeId) ?? null : null),
+    () => (selectedNodeId ? (nodes.find((n) => n.id === selectedNodeId) ?? null) : null),
     [nodes, selectedNodeId],
   );
 
@@ -210,10 +219,17 @@ export default function NodeInspector() {
               </div>
             ) : status === 'error' ? (
               <div className="text-sm text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded p-2 break-words">
-                {tf('errorOccurred', { message: data.errorMessage === 'aborted' ? t.cancelled : (data.errorMessage ?? t.unknownError) })}
+                {tf('errorOccurred', {
+                  message:
+                    data.errorMessage === 'aborted'
+                      ? t.cancelled
+                      : (data.errorMessage ?? t.unknownError),
+                })}
               </div>
             ) : assistantMessage === '' ? (
-              <div className="text-slate-400 dark:text-slate-500 text-sm italic">{t.waitingForGeneration}</div>
+              <div className="text-slate-400 dark:text-slate-500 text-sm italic">
+                {t.waitingForGeneration}
+              </div>
             ) : (
               <div className="text-sm text-slate-700 dark:text-slate-300 break-words">
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
@@ -229,10 +245,7 @@ export default function NodeInspector() {
       {activeTab === 'context' && (
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {/* 路径摘要（rolling summary）：从根到当前节点的聚合结论 */}
-          <PathSummaryCard
-            pathSummary={data.pathSummary}
-            pathLength={breadcrumb.length}
-          />
+          <PathSummaryCard pathSummary={data.pathSummary} pathLength={breadcrumb.length} />
           {/* 推演元数据：自动推演产生的节点显示 step/confidence/startNodeId/reasoning + 清除按钮 */}
           {data.evolutionMeta && (
             <EvolutionMetaCard
@@ -253,7 +266,11 @@ export default function NodeInspector() {
             />
           )}
           {mergedFromIds && mergedFromIds.length > 0 && (
-            <MergeSourcesList mergedFromIds={mergedFromIds} nodes={nodes} onSelect={setSelectedNode} />
+            <MergeSourcesList
+              mergedFromIds={mergedFromIds}
+              nodes={nodes}
+              onSelect={setSelectedNode}
+            />
           )}
           {/* 注入的记忆条目：依据全局/项目记忆开关 */}
           <div className="space-y-2">
@@ -282,7 +299,9 @@ export default function NodeInspector() {
                 ))}
               </div>
             ) : (
-              <div className="text-xs text-slate-400 dark:text-slate-500 italic">{t.noPathMemory}</div>
+              <div className="text-xs text-slate-400 dark:text-slate-500 italic">
+                {t.noPathMemory}
+              </div>
             )}
           </div>
         </div>

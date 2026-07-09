@@ -32,23 +32,36 @@ interface ShortcutGroup {
  */
 function buildShortcutGroups(t: Strings, platform: Platform): ShortcutGroup[] {
   // 修饰键映射：Mac 显示符号，Win 保持字面量
-  const mod = platform === 'mac'
-    ? (key: string): string => {
-        if (key === 'Ctrl') return '⌘';
-        if (key === 'Shift') return '⇧';
-        if (key === 'Alt') return '⌥';
-        return key;
-      }
-    : (key: string): string => key;
+  const mod =
+    platform === 'mac'
+      ? (key: string): string => {
+          if (key === 'Ctrl') return '⌘';
+          if (key === 'Shift') return '⇧';
+          if (key === 'Alt') return '⌥';
+          return key;
+        }
+      : (key: string): string => key;
 
   return [
     {
       title: t.shortcutGroupCanvas,
       icon: <Move size={14} />,
       items: [
-        { action: t.shortcutActionZoomIn, keys: [mod('Ctrl'), '滚轮↑'], description: t.shortcutDescZoom },
-        { action: t.shortcutActionZoomOut, keys: [mod('Ctrl'), '滚轮↓'], description: t.shortcutDescZoom },
-        { action: t.shortcutActionHandDrag, keys: ['Space', '拖拽'], description: t.shortcutDescHandDrag },
+        {
+          action: t.shortcutActionZoomIn,
+          keys: [mod('Ctrl'), '滚轮↑'],
+          description: t.shortcutDescZoom,
+        },
+        {
+          action: t.shortcutActionZoomOut,
+          keys: [mod('Ctrl'), '滚轮↓'],
+          description: t.shortcutDescZoom,
+        },
+        {
+          action: t.shortcutActionHandDrag,
+          keys: ['Space', '拖拽'],
+          description: t.shortcutDescHandDrag,
+        },
         { action: t.shortcutActionFitView, keys: ['F'], description: t.shortcutDescFitView },
       ],
     },
@@ -67,7 +80,11 @@ function buildShortcutGroups(t: Strings, platform: Platform): ShortcutGroup[] {
       items: [
         { action: t.shortcutActionClickSelect, keys: ['点击'] },
         { action: t.shortcutActionMultiSelect, keys: [mod('Shift'), '点击'] },
-        { action: t.shortcutActionDeleteNode, keys: ['Delete', 'Backspace'], description: t.shortcutDescDelete },
+        {
+          action: t.shortcutActionDeleteNode,
+          keys: ['Delete', 'Backspace'],
+          description: t.shortcutDescDelete,
+        },
       ],
     },
   ];
@@ -113,11 +130,14 @@ function KeyboardShortcuts({ onClose }: KeyboardShortcutsProps) {
   const shortcutGroups = useMemo(() => filterGroups(allGroups, query), [allGroups, query]);
 
   // 背景点击关闭：仅当点击的是遮罩本身而非内部内容时关闭
-  const handleBackdropClick = useCallback((e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
-  }, [onClose]);
+  const handleBackdropClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (e.target === e.currentTarget) {
+        onClose();
+      }
+    },
+    [onClose],
+  );
 
   return (
     <div
@@ -132,7 +152,9 @@ function KeyboardShortcuts({ onClose }: KeyboardShortcutsProps) {
               <span className="text-white text-sm">⌨️</span>
             </div>
             <div>
-              <h2 className="font-semibold text-slate-800 text-sm dark:text-slate-100">{t.shortcutTitle}</h2>
+              <h2 className="font-semibold text-slate-800 text-sm dark:text-slate-100">
+                {t.shortcutTitle}
+              </h2>
               <p className="text-[11px] text-slate-400 dark:text-slate-500">{t.shortcutSubtitle}</p>
             </div>
           </div>
@@ -148,7 +170,10 @@ function KeyboardShortcuts({ onClose }: KeyboardShortcutsProps) {
         {/* 搜索框 */}
         <div className="px-5 py-3 border-b border-slate-100 dark:border-slate-700">
           <div className="relative">
-            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search
+              size={14}
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"
+            />
             <input
               type="text"
               value={query}
@@ -166,44 +191,53 @@ function KeyboardShortcuts({ onClose }: KeyboardShortcutsProps) {
             <div className="text-center text-xs text-slate-400 py-8">{t.shortcutNoMatch}</div>
           ) : (
             shortcutGroups.map((group, gi) => (
-            <div key={gi}>
-              <div className="flex items-center gap-2 mb-2.5">
-                <span className="text-violet-500">{group.icon}</span>
-                <h3 className="text-xs font-semibold text-slate-700 dark:text-slate-200">{group.title}</h3>
-              </div>
-              <div className="space-y-1.5 pl-6">
-                {group.items.map((item, ii) => (
-                  <div
-                    key={ii}
-                    className="flex items-center justify-between py-1.5 px-2.5 rounded-md hover:bg-slate-50 transition-colors dark:hover:bg-slate-700/50"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-[12px] text-slate-600 dark:text-slate-300">{item.action}</span>
-                      {item.description && (
-                        <span className="text-[10px] text-slate-400 dark:text-slate-500">{item.description}</span>
-                      )}
+              <div key={gi}>
+                <div className="flex items-center gap-2 mb-2.5">
+                  <span className="text-violet-500">{group.icon}</span>
+                  <h3 className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                    {group.title}
+                  </h3>
+                </div>
+                <div className="space-y-1.5 pl-6">
+                  {group.items.map((item, ii) => (
+                    <div
+                      key={ii}
+                      className="flex items-center justify-between py-1.5 px-2.5 rounded-md hover:bg-slate-50 transition-colors dark:hover:bg-slate-700/50"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-[12px] text-slate-600 dark:text-slate-300">
+                          {item.action}
+                        </span>
+                        {item.description && (
+                          <span className="text-[10px] text-slate-400 dark:text-slate-500">
+                            {item.description}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {item.keys.map((key, ki) => (
+                          <kbd
+                            key={ki}
+                            className="px-1.5 py-0.5 text-[10px] font-mono text-slate-600 bg-slate-100 border border-slate-200 rounded shadow-sm dark:text-slate-300 dark:bg-slate-700 dark:border-slate-600"
+                          >
+                            {key}
+                          </kbd>
+                        ))}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1">
-                      {item.keys.map((key, ki) => (
-                        <kbd
-                          key={ki}
-                          className="px-1.5 py-0.5 text-[10px] font-mono text-slate-600 bg-slate-100 border border-slate-200 rounded shadow-sm dark:text-slate-300 dark:bg-slate-700 dark:border-slate-600"
-                        >
-                          {key}
-                        </kbd>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
-          ))
+            ))
           )}
 
           {/* 提示 */}
           <div className="mt-6 p-3 bg-gradient-to-r from-violet-50 to-sky-50 rounded-lg border border-violet-100 dark:from-violet-900/30 dark:to-sky-900/30 dark:border-violet-800">
             <p className="text-[11px] text-slate-600 leading-relaxed dark:text-slate-300">
-              💡 <span className="font-medium text-violet-700 dark:text-violet-300">{t.shortcutTip}</span>
+              💡{' '}
+              <span className="font-medium text-violet-700 dark:text-violet-300">
+                {t.shortcutTip}
+              </span>
             </p>
           </div>
         </div>

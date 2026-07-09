@@ -15,10 +15,7 @@ export interface LLMMessage {
   role: 'system' | 'user' | 'assistant';
   content:
     | string
-    | Array<
-        | { type: 'text'; text: string }
-        | { type: 'image_url'; image_url: { url: string } }
-      >;
+    | Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }>;
 }
 
 /** 调用 LLM 的参数 */
@@ -55,9 +52,7 @@ function llmApiErrorMessage(status: number, errorText: string): string {
  * 例如 'https://api.openai.com/v1' -> 'https://api.openai.com/v1/chat/completions'
  */
 function buildEndpoint(baseUrl: string): string {
-  const normalized = baseUrl.endsWith('/')
-    ? baseUrl.slice(0, -1)
-    : baseUrl;
+  const normalized = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
   return `${normalized}/chat/completions`;
 }
 
@@ -80,10 +75,7 @@ function buildHeaders(config: LLMConfig): Record<string, string> {
 /**
  * 构造请求体（不含 stream 字段，由调用方决定）。
  */
-function buildBody(
-  options: CallLLMOptions,
-  stream: boolean,
-): Record<string, unknown> {
+function buildBody(options: CallLLMOptions, stream: boolean): Record<string, unknown> {
   return {
     model: options.config.model,
     messages: options.messages,
@@ -115,25 +107,28 @@ export async function callLLM(options: CallLLMOptions): Promise<string> {
 
   let response: Response;
   try {
-    response = await pool.run(async () => {
-      // 直接 fetch（而非 request()），以便捕获 Retry-After 头
-      const res = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-        signal,
-      });
-      if (!res.ok) {
-        const errorText = await res.text().catch(() => '');
-        const retryAfterMs = parseRetryAfterMs(res.headers.get('retry-after'));
-        throw new LLMHttpError(
-          llmApiErrorMessage(res.status, errorText),
-          res.status,
-          retryAfterMs,
-        );
-      }
-      return res;
-    }, { signal });
+    response = await pool.run(
+      async () => {
+        // 直接 fetch（而非 request()），以便捕获 Retry-After 头
+        const res = await fetch(url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body),
+          signal,
+        });
+        if (!res.ok) {
+          const errorText = await res.text().catch(() => '');
+          const retryAfterMs = parseRetryAfterMs(res.headers.get('retry-after'));
+          throw new LLMHttpError(
+            llmApiErrorMessage(res.status, errorText),
+            res.status,
+            retryAfterMs,
+          );
+        }
+        return res;
+      },
+      { signal },
+    );
   } catch (err) {
     // 保留原有错误文案约定：HTTP 错误已包成 LLMHttpError；其他错误（网络/超时/取消）原样抛出
     if (err instanceof RequestPoolError) throw err;
@@ -162,19 +157,14 @@ export async function callLLM(options: CallLLMOptions): Promise<string> {
  *
  * 复用 streaming.ts 的 openAICompatibleStream 进行 SSE 解析。
  */
-export async function* callLLMStream(
-  options: CallLLMOptions,
-): AsyncGenerator<string> {
+export async function* callLLMStream(options: CallLLMOptions): AsyncGenerator<string> {
   const { config, signal } = options;
   const url = buildEndpoint(config.baseUrl);
   const headers = buildHeaders(config);
   const body = buildBody(options, true);
   const pool = getRequestPool(config.provider);
 
-  yield* pool.runStream(
-    () => openAICompatibleStream({ url, headers, body, signal }),
-    { signal },
-  );
+  yield* pool.runStream(() => openAICompatibleStream({ url, headers, body, signal }), { signal });
 }
 
 /**

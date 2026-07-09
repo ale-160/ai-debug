@@ -105,8 +105,8 @@ export default function ExecutionStatusBar() {
   const containerCls = isRunning
     ? 'bg-white/95 border-blue-200 text-slate-700 dark:bg-slate-800/95 dark:border-blue-800 dark:text-slate-200'
     : endState === 'error'
-    ? 'bg-red-50/95 border-red-200 text-red-700 dark:bg-red-900/40 dark:border-red-700 dark:text-red-300'
-    : 'bg-emerald-50/95 border-emerald-200 text-emerald-700 dark:bg-emerald-900/40 dark:border-emerald-700 dark:text-emerald-300';
+      ? 'bg-red-50/95 border-red-200 text-red-700 dark:bg-red-900/40 dark:border-red-700 dark:text-red-300'
+      : 'bg-emerald-50/95 border-emerald-200 text-emerald-700 dark:bg-emerald-900/40 dark:border-emerald-700 dark:text-emerald-300';
 
   // 标签：多 running 时显示计数，单 running 显示友好文案
   const label = isRunning

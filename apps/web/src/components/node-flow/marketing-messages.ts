@@ -30,10 +30,7 @@ function pickRandom<T>(arr: T[]): T {
 }
 
 /** 按语言与状态返回随机友好文案 */
-export function pickStatusMessage(
-  status: 'running' | 'complete',
-  lang: Language = 'zh',
-): string {
+export function pickStatusMessage(status: 'running' | 'complete', lang: Language = 'zh'): string {
   if (status === 'running') {
     return pickRandom(lang === 'en' ? RUNNING_MESSAGES_EN : RUNNING_MESSAGES_ZH);
   }

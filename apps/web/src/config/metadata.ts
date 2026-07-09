@@ -4,7 +4,8 @@ const SITE_URL = 'https://ai-debug.ale160.com';
 
 export const METADATA_ZH = {
   title: '蛛网 · AI Debug —— 蛛网式上下文管理工具',
-  description: '把 AI 对话从线性列表变成 git 仓库式的蛛网结构。每个分支独立维护自己的上下文路径，支持分叉、合并、放弃、恢复，让复杂问题的排查不再被无关历史污染。',
+  description:
+    '把 AI 对话从线性列表变成 git 仓库式的蛛网结构。每个分支独立维护自己的上下文路径，支持分叉、合并、放弃、恢复，让复杂问题的排查不再被无关历史污染。',
   keywords: [
     'AI Debug',
     '蛛网式对话',
@@ -60,7 +61,8 @@ export const METADATA_ZH = {
 
 export const METADATA_EN = {
   title: 'Spider Web · AI Debug — Web-style Context Management Tool',
-  description: 'Transform AI conversations from linear lists into a git-repository-like web structure. Each branch maintains its own context path independently, with forking, merging, abandoning, and restoring.',
+  description:
+    'Transform AI conversations from linear lists into a git-repository-like web structure. Each branch maintains its own context path independently, with forking, merging, abandoning, and restoring.',
   keywords: [
     'AI Debug',
     'web-style conversation',
@@ -84,7 +86,8 @@ export const METADATA_EN = {
   publisher: 'Ale',
   openGraph: {
     title: 'Spider Web · AI Debug — Web-style Context Management Tool',
-    description: 'Transform AI conversations from linear lists into a git-repository-like web structure with forking, merging, abandoning, and restoring.',
+    description:
+      'Transform AI conversations from linear lists into a git-repository-like web structure with forking, merging, abandoning, and restoring.',
     url: `${SITE_URL}/`,
     siteName: 'Spider Web · AI Debug',
     locale: 'en_US',
@@ -101,7 +104,8 @@ export const METADATA_EN = {
   twitter: {
     card: 'summary_large_image',
     title: 'Spider Web · AI Debug — Web-style Context Management Tool',
-    description: 'Transform AI conversations from linear lists into a git-repository-like web structure with forking, merging, abandoning, and restoring.',
+    description:
+      'Transform AI conversations from linear lists into a git-repository-like web structure with forking, merging, abandoning, and restoring.',
     images: ['https://ale160.com/og-image.png'],
     creator: '@ale160',
   },

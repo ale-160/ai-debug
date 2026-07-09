@@ -105,10 +105,7 @@ function placeChildren(
  * 中心辐射状全量布局：根节点居中，子节点沿父节点外侧扇形分布，形成蛛网形态。
  * 优先用 node.data.parentId 构建父子关系；edges 仅作参考。
  */
-export function layoutRadial(
-  nodes: LayoutableNode[],
-  _edges: Edge[],
-): LayoutableNode[] {
+export function layoutRadial(nodes: LayoutableNode[], _edges: Edge[]): LayoutableNode[] {
   // 找到根节点（parentId 为 null）；若无则返回原数组
   const root = nodes.find((n) => n.data.parentId === null);
   if (!root) return nodes;
@@ -165,9 +162,7 @@ export function incrementalLayout(
 
   // 新增节点为根节点：定位 (0, 0)
   if (newNode.data.parentId === null) {
-    return nodes.map((n) =>
-      n.id === newNodeId ? { ...n, position: { x: 0, y: 0 } } : n,
-    );
+    return nodes.map((n) => (n.id === newNodeId ? { ...n, position: { x: 0, y: 0 } } : n));
   }
 
   const parentId = newNode.data.parentId;

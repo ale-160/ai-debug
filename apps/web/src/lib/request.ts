@@ -45,20 +45,13 @@ export interface RequestOptions {
  * @param options  method / headers / body / signal
  * @returns        原始 Response（已校验 ok）
  */
-export async function request(
-  url: string,
-  options: RequestOptions = {},
-): Promise<Response> {
+export async function request(url: string, options: RequestOptions = {}): Promise<Response> {
   const { method = 'GET', headers, body, signal } = options;
   try {
     const res = await fetch(url, { method, headers, body, signal });
     if (!res.ok) {
       const errorText = await res.text().catch(() => '');
-      throw new RequestError(
-        `${res.status} - ${errorText.slice(0, 500)}`,
-        res.status,
-        'http',
-      );
+      throw new RequestError(`${res.status} - ${errorText.slice(0, 500)}`, res.status, 'http');
     }
     return res;
   } catch (err) {
@@ -72,11 +65,7 @@ export async function request(
       throw err;
     }
     // 其他网络错误（TypeError 等）
-    throw new RequestError(
-      err instanceof Error ? err.message : String(err),
-      0,
-      'network',
-    );
+    throw new RequestError(err instanceof Error ? err.message : String(err), 0, 'network');
   }
 }
 

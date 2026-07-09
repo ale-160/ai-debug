@@ -90,8 +90,7 @@ function AutoEvolutionDialog({ onClose }: AutoEvolutionDialogProps) {
   /** 本次推演的起点叶节点 id 列表（用于"删除本次推演"按 startNodeId 批量删除） */
   const [runStartIds, setRunStartIds] = useState<string[]>([]);
   /** 低置信度弹窗（onLowConfidence 触发时填入，用户决策后置空） */
-  const [lowConfidencePrompt, setLowConfidencePrompt] =
-    useState<LowConfidencePrompt | null>(null);
+  const [lowConfidencePrompt, setLowConfidencePrompt] = useState<LowConfidencePrompt | null>(null);
   /** "换一个方向"输入框 */
   const [newDirection, setNewDirection] = useState('');
   /** 推演是否正在运行（含 paused） */
@@ -111,10 +110,8 @@ function AutoEvolutionDialog({ onClose }: AutoEvolutionDialogProps) {
   const producedNodeCount = useMemo(() => {
     if (runStartIds.length === 0) return 0;
     const idSet = new Set(runStartIds);
-    return nodes.filter(
-      (n) =>
-        n.data.evolutionMeta && idSet.has(n.data.evolutionMeta.startNodeId),
-    ).length;
+    return nodes.filter((n) => n.data.evolutionMeta && idSet.has(n.data.evolutionMeta.startNodeId))
+      .length;
   }, [nodes, runStartIds]);
 
   /** 完成时按 startNodeId 分组统计每路节点数 */
@@ -183,16 +180,14 @@ function AutoEvolutionDialog({ onClose }: AutoEvolutionDialogProps) {
           },
           onLowConfidence: (nodeId, confidence, reasoning) => {
             // 弹窗询问用户，返回 Promise 等待决策
-            return new Promise<'continue' | 'stop' | { newDirection: string }>(
-              (resolve) => {
-                setLowConfidencePrompt({
-                  nodeId,
-                  confidence,
-                  reasoning,
-                  resolveRef: resolve,
-                });
-              },
-            );
+            return new Promise<'continue' | 'stop' | { newDirection: string }>((resolve) => {
+              setLowConfidencePrompt({
+                nodeId,
+                confidence,
+                reasoning,
+                resolveRef: resolve,
+              });
+            });
           },
         },
         controller.signal,
@@ -266,10 +261,7 @@ function AutoEvolutionDialog({ onClose }: AutoEvolutionDialogProps) {
       let totalCount = 0;
       const idSet = new Set(idsToDelete);
       for (const n of nodes) {
-        if (
-          n.data.evolutionMeta &&
-          idSet.has(n.data.evolutionMeta.startNodeId)
-        ) {
+        if (n.data.evolutionMeta && idSet.has(n.data.evolutionMeta.startNodeId)) {
           totalCount++;
         }
       }
@@ -335,8 +327,7 @@ function AutoEvolutionDialog({ onClose }: AutoEvolutionDialogProps) {
   const lowConfidenceNodeSummary = useMemo(() => {
     if (!lowConfidenceNode) return '';
     return (
-      lowConfidenceNode.data.summary?.trim() ||
-      lowConfidenceNode.data.userMessage.slice(0, 100)
+      lowConfidenceNode.data.summary?.trim() || lowConfidenceNode.data.userMessage.slice(0, 100)
     );
   }, [lowConfidenceNode]);
 
@@ -495,8 +486,8 @@ function AutoEvolutionDialog({ onClose }: AutoEvolutionDialogProps) {
                       ? t.autoEvolutionPaused
                       : t.autoEvolutionRunning
                     : autoEvolutionState.status === 'done'
-                    ? t.autoEvolutionDone
-                    : t.autoEvolutionStopped}
+                      ? t.autoEvolutionDone
+                      : t.autoEvolutionStopped}
                 </h3>
               </div>
 
@@ -540,9 +531,7 @@ function AutoEvolutionDialog({ onClose }: AutoEvolutionDialogProps) {
                       style={{
                         width: `${Math.min(
                           100,
-                          (autoEvolutionState.currentStep /
-                            autoEvolutionState.maxSteps) *
-                            100,
+                          (autoEvolutionState.currentStep / autoEvolutionState.maxSteps) * 100,
                         )}%`,
                       }}
                     />

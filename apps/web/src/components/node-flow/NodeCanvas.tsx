@@ -342,11 +342,7 @@ export default function NodeCanvas() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
-      if (
-        target.tagName === 'INPUT' ||
-        target.tagName === 'TEXTAREA' ||
-        target.isContentEditable
-      ) {
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
         return;
       }
 
@@ -498,10 +494,7 @@ export default function NodeCanvas() {
     if (picked.length < 2) return;
     const ids = picked.map((n) => n.id);
 
-    const intent = window.prompt(
-      tf('mergePrompt', { n: ids.length }),
-      t.mergeDefaultIntent,
-    );
+    const intent = window.prompt(tf('mergePrompt', { n: ids.length }), t.mergeDefaultIntent);
     if (!intent || !intent.trim()) return;
 
     if (!isConfigured()) {
@@ -536,7 +529,15 @@ export default function NodeCanvas() {
     } else {
       updateTurnNode(newId, { status: 'error', errorMessage: result.error });
     }
-  }, [createMergedNode, setSelectedNode, updateTurnNode, appendAssistantChunk, registerAbortController, tf, t]);
+  }, [
+    createMergedNode,
+    setSelectedNode,
+    updateTurnNode,
+    appendAssistantChunk,
+    registerAbortController,
+    tf,
+    t,
+  ]);
 
   const { displayNodes, displayEdges } = useMemo(() => {
     if (!focusMode || !selectedNodeId) {
@@ -546,9 +547,7 @@ export default function NodeCanvas() {
     if (!visibleIds) {
       return { displayNodes: nodes, displayEdges: edges };
     }
-    const displayNodes = nodes.filter(
-      (n) => visibleIds.has(n.id) || n.data.status !== 'abandoned',
-    );
+    const displayNodes = nodes.filter((n) => visibleIds.has(n.id) || n.data.status !== 'abandoned');
     const displayedNodeIds = new Set(displayNodes.map((n) => n.id));
     const displayEdges = edges.filter(
       (e) => displayedNodeIds.has(e.source) && displayedNodeIds.has(e.target),
@@ -562,7 +561,11 @@ export default function NodeCanvas() {
   const hasProject = !!currentProjectId;
 
   return (
-    <div className="flex-1 h-full flex flex-col bg-slate-50 dark:bg-slate-900" role="main" aria-label={t.projectName}>
+    <div
+      className="flex-1 h-full flex flex-col bg-slate-50 dark:bg-slate-900"
+      role="main"
+      aria-label={t.projectName}
+    >
       <div className="h-12 px-4 bg-white border-b border-slate-200 dark:bg-slate-900 dark:border-slate-700 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           {editingName ? (
@@ -600,11 +603,7 @@ export default function NodeCanvas() {
                 ? 'text-sky-600 bg-sky-50 hover:bg-sky-100 dark:text-sky-400 dark:bg-sky-900/30 dark:hover:bg-sky-900/50'
                 : 'text-slate-600 hover:text-sky-600 hover:bg-sky-50 dark:text-slate-300 dark:hover:text-sky-400 dark:hover:bg-sky-900/30'
             }`}
-            title={
-              focusMode
-                ? t.focusModeOnHint
-                : t.focusModeOffHint
-            }
+            title={focusMode ? t.focusModeOnHint : t.focusModeOffHint}
             aria-pressed={focusMode}
           >
             {focusMode ? t.showAll : t.focusCurrent}
@@ -678,7 +677,11 @@ export default function NodeCanvas() {
         )}
 
         {isEmpty && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none" role="status" aria-live="polite">
+          <div
+            className="absolute inset-0 flex items-center justify-center pointer-events-none"
+            role="status"
+            aria-live="polite"
+          >
             <div className="text-center">
               <div className="text-slate-400 text-base">{t.inputPlaceholder}</div>
             </div>

@@ -39,9 +39,7 @@ export default function ConflictCard({
           <div className="text-xs font-semibold text-red-700 dark:text-red-300 uppercase tracking-wide mb-1">
             {t.conflictLabel}
           </div>
-          <div className="text-sm text-red-700 dark:text-red-300 break-words">
-            {conflictNote}
-          </div>
+          <div className="text-sm text-red-700 dark:text-red-300 break-words">{conflictNote}</div>
         </div>
       </div>
       <div className="flex flex-wrap gap-1.5 pt-1">

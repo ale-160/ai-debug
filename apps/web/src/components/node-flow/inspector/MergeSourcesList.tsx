@@ -58,9 +58,7 @@ export default function MergeSourcesList({
               </span>
             </div>
             <div className="text-sm text-slate-700 dark:text-slate-300 mt-0.5 truncate">
-              {src.data.summary
-                ? src.data.summary
-                : summarize(src.data.userMessage)}
+              {src.data.summary ? src.data.summary : summarize(src.data.userMessage)}
             </div>
           </button>
         );

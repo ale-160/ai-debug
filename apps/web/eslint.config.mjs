@@ -21,6 +21,7 @@
 
 import nextConfig from 'eslint-config-next';
 import tseslint from 'typescript-eslint';
+import prettierConfig from 'eslint-config-prettier';
 
 const eslintConfig = [
   ...nextConfig,
@@ -62,8 +63,17 @@ const eslintConfig = [
   },
   {
     // 额外忽略构建产物与配置文件
-    ignores: ['**/.next/**', '**/out/**', '**/node_modules/**', '**/*.config.js', '**/*.config.mts', '**/*.config.mjs'],
+    ignores: [
+      '**/.next/**',
+      '**/out/**',
+      '**/node_modules/**',
+      '**/*.config.js',
+      '**/*.config.mts',
+      '**/*.config.mjs',
+    ],
   },
+  // eslint-config-prettier：关闭与 Prettier 冲突的格式化规则（放最后，覆盖前面的格式规则）
+  prettierConfig,
 ];
 
 export default eslintConfig;

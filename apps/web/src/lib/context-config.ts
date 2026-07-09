@@ -49,11 +49,7 @@ export function getActivePathSummaryConfig(): PathSummaryConfig | undefined {
   const config = loadConfig();
   if (!config) return undefined;
   const settings = loadSettings();
-  const effective = getEffectivePathSummaryConfig(
-    settings.pathSummaryConfig,
-    config.provider,
-  );
+  const effective = getEffectivePathSummaryConfig(settings.pathSummaryConfig, config.provider);
   // 用户显式关闭混合模式：返回带 enabled=false 的配置，调用方按需处理
   return effective;
 }
-

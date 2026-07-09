@@ -270,9 +270,7 @@ export function MemoryPanel({ open, onClose }: MemoryPanelProps) {
                       <MemoryItem
                         key={entry.id}
                         entry={entry}
-                        onUpdate={(content) =>
-                          updateProjectMemory(entry.id, content)
-                        }
+                        onUpdate={(content) => updateProjectMemory(entry.id, content)}
                         onDelete={() => deleteProjectMemory(entry.id)}
                       />
                     ))

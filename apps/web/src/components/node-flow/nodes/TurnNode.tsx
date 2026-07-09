@@ -35,16 +35,12 @@ function TurnNodeComponent({ id, data, selected }: TurnNodeProps) {
   const isCompact = nodeDisplayMode === 'compact';
   // 路径回放高亮：用 useShallow 避免 Set 每次新引用触发无限循环
   // （参考 ExecutionStatusBar 的 useShallow 模式）
-  const isOnHighlightedPath = useDebugStore(
-    useShallow((s) => s.highlightedPathIds.includes(id)),
-  );
+  const isOnHighlightedPath = useDebugStore(useShallow((s) => s.highlightedPathIds.includes(id)));
   // hover 显示路径摘要开关（默认关闭，用户主动开启后才显示）
   const hoverShowPathSummary = useDebugStore((s) => s.appSettings.hoverShowPathSummary);
   // 仅在开启开关且 pathSummary 非空时显示 hover 卡片
   const showHoverSummary =
-    hoverShowPathSummary &&
-    typeof pathSummary === 'string' &&
-    pathSummary.trim().length > 0;
+    hoverShowPathSummary && typeof pathSummary === 'string' && pathSummary.trim().length > 0;
 
   const isAbandoned = status === 'abandoned';
   const isIgnored = status === 'ignored';
@@ -82,12 +78,9 @@ function TurnNodeComponent({ id, data, selected }: TurnNodeProps) {
       .filter((n) => n.data.parentId === id)
       .sort((a, b) => (a.data.createdAt ?? 0) - (b.data.createdAt ?? 0))
       .map((n) => n.id)
-      .join(',')
+      .join(','),
   );
-  const childIds = useMemo(
-    () => (childIdsCsv ? childIdsCsv.split(',') : []),
-    [childIdsCsv]
-  );
+  const childIds = useMemo(() => (childIdsCsv ? childIdsCsv.split(',') : []), [childIdsCsv]);
   const hasMultipleBranches = childIds.length > 1;
   const [branchSwitcherOpen, setBranchSwitcherOpen] = useState(false);
   // 切换器当前索引：基于 selectedChildIdMap[id]，无则默认 0（第一个分支）
@@ -127,19 +120,9 @@ function TurnNodeComponent({ id, data, selected }: TurnNodeProps) {
       case 'running':
         return <Loader2 size={12} className={`animate-spin ${colors.text}`} />;
       case 'error':
-        return (
-          <span
-            className={`w-2 h-2 rounded-full ${colors.dot}`}
-            title={errorMessage}
-          />
-        );
+        return <span className={`w-2 h-2 rounded-full ${colors.dot}`} title={errorMessage} />;
       case 'ignored':
-        return (
-          <span
-            className={`w-2 h-2 rounded-full ${colors.dot}`}
-            title={t.ignored}
-          />
-        );
+        return <span className={`w-2 h-2 rounded-full ${colors.dot}`} title={t.ignored} />;
       case 'success':
       case 'idle':
       case 'abandoned':
@@ -154,7 +137,9 @@ function TurnNodeComponent({ id, data, selected }: TurnNodeProps) {
         isCompact ? 'w-[180px]' : 'w-[240px]'
       } ${
         // 合并节点：双色边框（violet 加粗）；普通节点：灰色细边框
-        isMerged ? 'border-2 border-violet-400 dark:border-violet-500' : 'border border-slate-200 dark:border-slate-600'
+        isMerged
+          ? 'border-2 border-violet-400 dark:border-violet-500'
+          : 'border border-slate-200 dark:border-slate-600'
       } ${selected ? 'ring-2 ring-blue-400 ring-offset-1' : ''} ${isAbandoned ? 'opacity-50' : ''} ${isIgnored ? 'border-amber-300 dark:border-amber-500 border-dashed opacity-70' : ''} ${
         hasConflict ? 'border-red-400 dark:border-red-500' : ''
       } ${isEvolution && !isMerged && !hasConflict ? 'border-violet-300 dark:border-violet-600' : ''} ${
@@ -262,9 +247,7 @@ function TurnNodeComponent({ id, data, selected }: TurnNodeProps) {
           {isMerged ? t.merge : t.conversation}
         </span>
         {isIgnored && (
-          <span className="text-[11px] font-medium text-amber-500 ml-auto">
-            {t.ignored}
-          </span>
+          <span className="text-[11px] font-medium text-amber-500 ml-auto">{t.ignored}</span>
         )}
         {isMerged && mergedFromIds && (
           <span className="text-[11px] text-violet-400 ml-auto">
@@ -278,10 +261,12 @@ function TurnNodeComponent({ id, data, selected }: TurnNodeProps) {
         <div className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-1 truncate">
           {summary}
         </div>
-      ) : isCompact && (
-        <div className="text-sm font-medium text-slate-700 dark:text-slate-200 mb-1 truncate">
-          {truncate(userMessage, 20)}
-        </div>
+      ) : (
+        isCompact && (
+          <div className="text-sm font-medium text-slate-700 dark:text-slate-200 mb-1 truncate">
+            {truncate(userMessage, 20)}
+          </div>
+        )
       )}
 
       {/* 详细模式：用户消息 + AI 回答摘要 */}
@@ -308,7 +293,9 @@ function TurnNodeComponent({ id, data, selected }: TurnNodeProps) {
                 {runningLabel}
               </span>
             ) : (
-              <>{t.ai}：{truncate(assistantMessage, 50)}</>
+              <>
+                {t.ai}：{truncate(assistantMessage, 50)}
+              </>
             )}
           </div>
         </>
@@ -318,7 +305,10 @@ function TurnNodeComponent({ id, data, selected }: TurnNodeProps) {
       {isStreaming && (
         <div className="mt-1 text-xs leading-relaxed font-mono text-blue-600 dark:text-blue-300 bg-blue-50/60 dark:bg-blue-900/30 rounded px-1.5 py-1 max-h-[100px] overflow-hidden whitespace-pre-wrap break-words">
           {streamingPreview}
-          <span className="inline-block w-1.5 h-3 bg-blue-500 animate-pulse ml-0.5 align-text-bottom" aria-hidden="true" />
+          <span
+            className="inline-block w-1.5 h-3 bg-blue-500 animate-pulse ml-0.5 align-text-bottom"
+            aria-hidden="true"
+          />
         </div>
       )}
 

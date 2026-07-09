@@ -2,7 +2,18 @@
 
 import React, { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
 import { ReactFlowProvider } from 'reactflow';
-import { Send, Settings, Sun, Moon, Laptop, Menu, HelpCircle, Network, Heart, Globe } from 'lucide-react';
+import {
+  Send,
+  Settings,
+  Sun,
+  Moon,
+  Laptop,
+  Menu,
+  HelpCircle,
+  Network,
+  Heart,
+  Globe,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 import NodeCanvas from './NodeCanvas';
@@ -22,13 +33,15 @@ const KeyboardShortcuts = lazy(() => import('./KeyboardShortcuts'));
 // 自动推演对话框懒加载，用户点击"自动推演"入口按钮后才渲染
 const AutoEvolutionDialog = lazy(() => import('./AutoEvolutionDialog'));
 // 模态框懒加载：用户点击设置/记忆按钮后才加载，避免首屏打包
-const SettingsModal = lazy(() => import('@/components/SettingsModal').then(m => ({ default: m.SettingsModal })));
+const SettingsModal = lazy(() =>
+  import('@/components/SettingsModal').then((m) => ({ default: m.SettingsModal })),
+);
 const MemoryPanel = lazy(() => import('@/components/MemoryPanel'));
 // 侧边栏/检查器懒加载：首屏只需画布，侧边栏/Inspector 延迟加载
 const NodeSidebar = lazy(() => import('./NodeSidebar'));
 const NodeInspector = lazy(() => import('./NodeInspector'));
 // Toaster 懒加载：用户可能根本看不到 toast，延迟加载 sonner 的 Toaster 组件
-const Toaster = lazy(() => import('sonner').then(m => ({ default: m.Toaster })));
+const Toaster = lazy(() => import('sonner').then((m) => ({ default: m.Toaster })));
 
 function TopNav({ onShowHelp }: { onShowHelp: () => void }) {
   const { t, toggleLanguage } = useTranslation();
@@ -51,11 +64,7 @@ function TopNav({ onShowHelp }: { onShowHelp: () => void }) {
   const currentProject = projects.find((p) => p.id === currentProjectId);
   const projectLabel = currentProject?.name ?? t.noProjectSelected;
 
-  const configured =
-    !!llmConfig &&
-    !!llmConfig.apiKey &&
-    !!llmConfig.baseUrl &&
-    !!llmConfig.model;
+  const configured = !!llmConfig && !!llmConfig.apiKey && !!llmConfig.baseUrl && !!llmConfig.model;
   const maskedKey = llmConfig ? maskKey(llmConfig.apiKey) : '';
 
   const handleHelp = () => {
@@ -87,17 +96,13 @@ function TopNav({ onShowHelp }: { onShowHelp: () => void }) {
         </button>
         <div className="flex items-center gap-2">
           <Network className="w-5 h-5 text-violet-600" />
-          <span className="font-bold text-slate-800 text-base dark:text-slate-100">
-            AI Debug
-          </span>
+          <span className="font-bold text-slate-800 text-base dark:text-slate-100">AI Debug</span>
         </div>
       </div>
 
       {/* 中间：当前项目名 */}
       <div className="absolute left-1/2 -translate-x-1/2 hidden sm:block max-w-[40%] truncate">
-        <span className="text-sm text-slate-500 dark:text-slate-300">
-          {projectLabel}
-        </span>
+        <span className="text-sm text-slate-500 dark:text-slate-300">{projectLabel}</span>
       </div>
 
       {/* 右侧：API Key 徽章 + 主题切换 + 帮助 */}
@@ -210,7 +215,8 @@ function EmptyStateInput() {
       state.appSettings.enableProjectMemory && state.currentProjectId
         ? (state.projects.find((p) => p.id === state.currentProjectId)?.memory ?? [])
         : [];
-    const extraContext = buildMemoryContext(state.appSettings.globalRules, globalMem, projectMem) || undefined;
+    const extraContext =
+      buildMemoryContext(state.appSettings.globalRules, globalMem, projectMem) || undefined;
 
     // 取消前一次流式请求（如有），再发起新请求
     abortRef.current?.abort();
@@ -241,7 +247,14 @@ function EmptyStateInput() {
     }
 
     setInput('');
-  }, [input, createTurnNode, updateTurnNode, appendAssistantChunk, createProject, t.pleaseConfigureApiKey]);
+  }, [
+    input,
+    createTurnNode,
+    updateTurnNode,
+    appendAssistantChunk,
+    createProject,
+    t.pleaseConfigureApiKey,
+  ]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -254,12 +267,8 @@ function EmptyStateInput() {
     <div className="pointer-events-auto w-[560px] max-w-[90%] flex flex-col items-center gap-4">
       <div className="text-center">
         <Network className="w-10 h-10 text-violet-500 mx-auto mb-3" />
-        <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">
-          {t.startYourDebug}
-        </h2>
-        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-          {t.startYourDebugDesc}
-        </p>
+        <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">{t.startYourDebug}</h2>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{t.startYourDebugDesc}</p>
       </div>
       <div className="w-full bg-white rounded-xl shadow-lg border border-slate-200 p-3 flex items-end gap-2 dark:bg-slate-800 dark:border-slate-700">
         <textarea
@@ -379,11 +388,13 @@ function EditorInner() {
           title={t.githubRepo}
         >
           <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
           </svg>
           <span>{t.githubRepo}</span>
         </a>
-        <span className="text-slate-300 dark:text-slate-600" aria-hidden="true">|</span>
+        <span className="text-slate-300 dark:text-slate-600" aria-hidden="true">
+          |
+        </span>
         <a
           href="https://ale160.com/sponsor"
           target="_blank"
@@ -394,7 +405,9 @@ function EditorInner() {
           <Heart className="w-3.5 h-3.5" />
           <span>{t.sponsor}</span>
         </a>
-        <span className="text-slate-300 dark:text-slate-600" aria-hidden="true">|</span>
+        <span className="text-slate-300 dark:text-slate-600" aria-hidden="true">
+          |
+        </span>
         <a
           href="https://ale160.com"
           target="_blank"

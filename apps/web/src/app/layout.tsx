@@ -1,8 +1,8 @@
-import "./globals.css";
-import React from "react";
-import { ThemeProvider } from "@/components/ThemeProvider";
-import { I18nProvider } from "@/components/I18nProvider";
-import { viewport } from "@/config/metadata";
+import './globals.css';
+import React from 'react';
+import { ThemeProvider } from '@/components/ThemeProvider';
+import { I18nProvider } from '@/components/I18nProvider';
+import { viewport } from '@/config/metadata';
 
 export { viewport };
 
@@ -18,9 +18,7 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen antialiased">
         <ThemeProvider>
-          <I18nProvider>
-            {children}
-          </I18nProvider>
+          <I18nProvider>{children}</I18nProvider>
         </ThemeProvider>
       </body>
     </html>

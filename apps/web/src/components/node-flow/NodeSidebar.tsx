@@ -18,11 +18,7 @@ import {
   PinOff,
 } from 'lucide-react';
 import { useDebugStore } from '@/lib/debug-store';
-import {
-  getProject,
-  updateProject,
-  importProject,
-} from '@/lib/project-storage';
+import { getProject, updateProject, importProject } from '@/lib/project-storage';
 import { analyzeNetwork, derivePrunedProject } from '@/lib/network-pruner';
 import { useTranslation } from '@/components/I18nProvider';
 import type { NetworkProject } from './types';
@@ -65,7 +61,7 @@ export default function NodeSidebar() {
       const day = String(d.getDate()).padStart(2, '0');
       return `${y}-${m}-${day}`;
     },
-    [t, tf]
+    [t, tf],
   );
 
   // 正在执行 AI 清理蛛网的项目 id（用于按钮 loading + 禁用）
@@ -204,14 +200,11 @@ export default function NodeSidebar() {
       reader.readAsText(file);
       e.target.value = '';
     },
-    [refreshProjects, loadProject, setMobileSidebarOpen, t]
+    [refreshProjects, loadProject, setMobileSidebarOpen, t],
   );
 
   // AI 清理蛛网：分析当前项目 → 派生精简项目 → 刷新列表 → 切换到新项目
-  const handlePruneNetwork = async (
-    e: React.MouseEvent,
-    project: NetworkProject,
-  ) => {
+  const handlePruneNetwork = async (e: React.MouseEvent, project: NetworkProject) => {
     e.stopPropagation();
     if (pruningProjectId) return;
     setPruningProjectId(project.id);
@@ -230,10 +223,7 @@ export default function NodeSidebar() {
   };
 
   // 点击派生标记跳转到原项目
-  const handleJumpToOriginal = (
-    e: React.MouseEvent,
-    originalProjectId?: string,
-  ) => {
+  const handleJumpToOriginal = (e: React.MouseEvent, originalProjectId?: string) => {
     e.stopPropagation();
     if (!originalProjectId) return;
     loadProject(originalProjectId);
@@ -272,34 +262,22 @@ export default function NodeSidebar() {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 min-w-0">
             {project.projectType === 'derived-pruned' && (
-              <Scissors
-                size={12}
-                className="text-amber-500 flex-shrink-0"
-              />
+              <Scissors size={12} className="text-amber-500 flex-shrink-0" />
             )}
-            {isPinned && (
-              <Pin
-                size={10}
-                className="text-amber-500 flex-shrink-0"
-              />
-            )}
+            {isPinned && <Pin size={10} className="text-amber-500 flex-shrink-0" />}
             <div className="font-bold text-sm text-slate-800 dark:text-slate-100 truncate">
               {project.name}
             </div>
           </div>
           {project.projectType === 'derived-pruned' && (
             <button
-              onClick={(e) =>
-                handleJumpToOriginal(e, project.originalProjectId)
-              }
+              onClick={(e) => handleJumpToOriginal(e, project.originalProjectId)}
               className="mt-0.5 text-xs text-blue-500 hover:text-blue-700 hover:underline flex items-center gap-1 max-w-full"
               title={t.jumpToOriginal}
             >
               <span className="truncate">
                 {tf('derivedFrom', {
-                  name:
-                    getProject(project.originalProjectId ?? '')
-                      ?.name ?? t.deleted,
+                  name: getProject(project.originalProjectId ?? '')?.name ?? t.deleted,
                 })}
               </span>
             </button>
@@ -330,27 +308,23 @@ export default function NodeSidebar() {
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                setMenuOpenId((prev) =>
-                  prev === project.id ? null : project.id
-                );
+                setMenuOpenId((prev) => (prev === project.id ? null : project.id));
               }}
               className="md:opacity-0 md:group-hover:opacity-100 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 rounded transition-all p-1"
               title={t.moreActions}
               aria-label={t.moreActions}
             >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-              >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                 <circle cx="12" cy="5" r="2" />
                 <circle cx="12" cy="12" r="2" />
                 <circle cx="12" cy="19" r="2" />
               </svg>
             </button>
             {menuOpenId === project.id && (
-              <div className="absolute right-0 top-full mt-1 w-32 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-50 py-1" role="menu">
+              <div
+                className="absolute right-0 top-full mt-1 w-32 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-50 py-1"
+                role="menu"
+              >
                 <button
                   onClick={(e) => handleTogglePin(e, project)}
                   className="w-full text-left px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-amber-50 dark:hover:bg-amber-900/30 flex items-center gap-2"
@@ -419,7 +393,9 @@ export default function NodeSidebar() {
           mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'
         } ${
           // 桌面端收纳：translate 隐藏 + 宽度归零避免占位
-          sidebarCollapsed ? 'md:-translate-x-full md:w-0 md:border-0 md:overflow-hidden' : 'md:translate-x-0'
+          sidebarCollapsed
+            ? 'md:-translate-x-full md:w-0 md:border-0 md:overflow-hidden'
+            : 'md:translate-x-0'
         }`}
         role="navigation"
         aria-label={t.projectList}

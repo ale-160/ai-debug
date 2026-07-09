@@ -59,11 +59,7 @@ export function useInspectorActions(selectedNode: Node<TurnNodeData> | null) {
    * 回答成功后的旁路钩子：按频率触发记忆提取 + 冲突自动检测。
    * 全部非阻塞，失败静默。异步回调内会校验项目是否变化，避免竞态写入错项目。
    */
-  const runPostTurnSidecars = (
-    nodeId: string,
-    userMsg: string,
-    assistantMsg: string,
-  ) => {
+  const runPostTurnSidecars = (nodeId: string, userMsg: string, assistantMsg: string) => {
     const projectIdAtCall = currentProjectId;
     const newCount = turnCounter + 1;
     incrementTurnCounter();
@@ -76,8 +72,7 @@ export function useInspectorActions(selectedNode: Node<TurnNodeData> | null) {
       void (async () => {
         const contents = await extractMemory(userMsg, assistantMsg);
         if (contents.length === 0) return;
-        const stillSameProject =
-          useDebugStore.getState().currentProjectId === projectIdAtCall;
+        const stillSameProject = useDebugStore.getState().currentProjectId === projectIdAtCall;
         if (appSettings.enableGlobalMemory) {
           for (const c of contents) addGlobalMemory(c, 'auto');
         }

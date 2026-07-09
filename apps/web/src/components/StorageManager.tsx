@@ -9,10 +9,7 @@ import { useEffect, useState } from 'react';
 import { Trash2, RefreshCw, AlertTriangle, Database } from 'lucide-react';
 import { useTranslation } from '@/components/I18nProvider';
 import { useDebugStore } from '@/lib/debug-store';
-import {
-  saveProjects,
-  PROJECTS_KEY,
-} from '@/lib/project-storage';
+import { saveProjects, PROJECTS_KEY } from '@/lib/project-storage';
 import {
   clearGlobalMemory,
   GLOBAL_MEMORY_KEY,
@@ -71,12 +68,7 @@ export function StorageManager() {
     setTotalSize(getTotalLocalStorageSize());
     if (typeof window === 'undefined') return;
     const sizes: { key: string; size: number }[] = [];
-    const keysToCheck = [
-      PROJECTS_KEY,
-      GLOBAL_MEMORY_KEY,
-      APP_SETTINGS_KEY,
-      LLM_CONFIG_KEY,
-    ];
+    const keysToCheck = [PROJECTS_KEY, GLOBAL_MEMORY_KEY, APP_SETTINGS_KEY, LLM_CONFIG_KEY];
     for (const key of keysToCheck) {
       const value = window.localStorage.getItem(key);
       const size = value ? (key.length + value.length) * 2 : 0;
@@ -231,9 +223,7 @@ export function StorageManager() {
           </div>
           <div className="h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
             <div
-              className={`h-full transition-all ${
-                isWarning ? 'bg-amber-500' : 'bg-violet-500'
-              }`}
+              className={`h-full transition-all ${isWarning ? 'bg-amber-500' : 'bg-violet-500'}`}
               style={{ width: `${usagePercent}%` }}
             />
           </div>
@@ -250,11 +240,7 @@ export function StorageManager() {
           className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 text-sm bg-red-50 text-red-600 border border-red-200 rounded-md hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors dark:bg-red-900/20 dark:text-red-400 dark:border-red-800 dark:hover:bg-red-900/30"
           aria-label={t.clearAllData}
         >
-          {clearing ? (
-            <RefreshCw size={14} className="animate-spin" />
-          ) : (
-            <Trash2 size={14} />
-          )}
+          {clearing ? <RefreshCw size={14} className="animate-spin" /> : <Trash2 size={14} />}
           {clearing ? t.clearing : t.clearAllData}
         </button>
         {clearedKey === '__all__' && (
@@ -283,9 +269,7 @@ export function StorageManager() {
                   <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
                     {info.label}
                   </span>
-                  <span className="text-xs text-slate-500">
-                    {formatBytes(size)}
-                  </span>
+                  <span className="text-xs text-slate-500">{formatBytes(size)}</span>
                 </div>
                 <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
                   {info.description}
@@ -314,9 +298,7 @@ export function StorageManager() {
         })}
       </div>
 
-      <p className="text-xs text-slate-500 dark:text-slate-500">
-        {t.storageTip}
-      </p>
+      <p className="text-xs text-slate-500 dark:text-slate-500">{t.storageTip}</p>
     </div>
   );
 }

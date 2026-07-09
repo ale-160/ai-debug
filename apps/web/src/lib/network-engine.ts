@@ -70,11 +70,7 @@ function collectContextPathRecursive(
     const segments: ContextPathItem[][] = [];
     for (const sourceId of mergedFromIds) {
       // 每个来源用 visited 副本独立收集，公共祖先可重复，分支内仍防环
-      const subSegments = collectContextPathRecursive(
-        sourceId,
-        nodeMap,
-        new Set(visited),
-      );
+      const subSegments = collectContextPathRecursive(sourceId, nodeMap, new Set(visited));
       segments.push(...subSegments);
     }
     // 合并节点自身作为最后一段（userMessage 为合并意图，assistantMessage 为空）
@@ -88,11 +84,7 @@ function collectContextPathRecursive(
   }
 
   // 普通非根节点：递归收集父节点路径，把当前节点追加到最后一段末尾
-  const parentSegments = collectContextPathRecursive(
-    currentNode.data.parentId,
-    nodeMap,
-    visited,
-  );
+  const parentSegments = collectContextPathRecursive(currentNode.data.parentId, nodeMap, visited);
   if (parentSegments.length === 0) {
     return [[toContextPathItem(currentNode)]];
   }
@@ -151,10 +143,7 @@ export interface BuildLLMMessagesResult {
  */
 function getMessageContentLength(content: LLMMessage['content']): number {
   if (typeof content === 'string') return content.length;
-  return content.reduce(
-    (sum, part) => sum + (part.type === 'text' ? part.text.length : 0),
-    0,
-  );
+  return content.reduce((sum, part) => sum + (part.type === 'text' ? part.text.length : 0), 0);
 }
 
 /**
@@ -162,10 +151,7 @@ function getMessageContentLength(content: LLMMessage['content']): number {
  * 粗略估算，供 UI 显示与调试观测，不作为精确计费依据。
  */
 function estimateTokens(messages: LLMMessage[]): number {
-  const totalChars = messages.reduce(
-    (sum, m) => sum + getMessageContentLength(m.content),
-    0,
-  );
+  const totalChars = messages.reduce((sum, m) => sum + getMessageContentLength(m.content), 0);
   return Math.ceil(totalChars / 3);
 }
 
@@ -204,10 +190,7 @@ function pushItemMessages(item: ContextPathItem): LLMMessage[] {
  *
  * 注意：ignored 节点的 pathSummary 仍可用于前段摘要（其子节点路径摘要已包含 ignored 节点信息）。
  */
-function findNearestSummaryInFront(
-  segment: ContextPathItem[],
-  splitPoint: number,
-): number {
+function findNearestSummaryInFront(segment: ContextPathItem[], splitPoint: number): number {
   for (let i = splitPoint - 1; i >= 0; i--) {
     const s = segment[i]?.pathSummary;
     if (typeof s === 'string' && s.trim().length > 0) {
@@ -248,17 +231,14 @@ export function buildLLMMessages(
   extraContext?: string,
   options?: BuildLLMMessagesOptions,
 ): BuildLLMMessagesResult {
-  const systemContent = extraContext
-    ? `${SYSTEM_PROMPT}\n\n${extraContext}`
-    : SYSTEM_PROMPT;
+  const systemContent = extraContext ? `${SYSTEM_PROMPT}\n\n${extraContext}` : SYSTEM_PROMPT;
   const messages: LLMMessage[] = [{ role: 'system', content: systemContent }];
 
   // 计算路径总长度与 recentKeep（带默认值）
   const totalLength = options?.pathLength ?? computeTotalPathLength(segments);
   const recentKeep = options?.recentKeep ?? RECENT_KEEP;
   const optionsSummary = options?.pathSummary;
-  const hasOptionsSummary =
-    typeof optionsSummary === 'string' && optionsSummary.trim().length > 0;
+  const hasOptionsSummary = typeof optionsSummary === 'string' && optionsSummary.trim().length > 0;
 
   // 判断是否启用混合模式：路径超过阈值 且（有 options.pathSummary 或 可能存在前段节点 pathSummary）
   const enableHybrid = totalLength > SUMMARY_THRESHOLD;
@@ -277,8 +257,7 @@ export function buildLLMMessages(
         messages.push({ role: 'system', content: `--- 分支 ${idx + 1} ---` });
       }
       // 该段超过 recentKeep 时只发后 recentKeep 个节点；否则全发（每段独立应用规则）
-      const startIdx =
-        segment.length > recentKeep ? segment.length - recentKeep : 0;
+      const startIdx = segment.length > recentKeep ? segment.length - recentKeep : 0;
       // 前段被压缩的节点数（0..startIdx-1 被摘要替代）
       compressedCount += startIdx;
       for (let i = startIdx; i < segment.length; i++) {
@@ -481,11 +460,7 @@ export async function streamTurnResponse(
           }
           // generatePathSummary 返回 { summary, cacheKey }：cacheKey 用于节点字段持久化，
           // 命中缓存时跳过 LLM 调用（哈希缓存逻辑在 path-summary-engine 内部）
-          const result = await generatePathSummary(
-            updatedNode,
-            parentPathSummary,
-            nodes,
-          );
+          const result = await generatePathSummary(updatedNode, parentPathSummary, nodes);
           if (result.summary) {
             onPathSummary(result.summary, result.cacheKey);
           }
@@ -504,10 +479,7 @@ export async function streamTurnResponse(
 }
 
 /** 基于父节点分叉出新分支，返回新节点的 data（不直接操作 store） */
-export function forkBranch(
-  parentNodeId: string,
-  userMessage: string,
-): TurnNodeData {
+export function forkBranch(parentNodeId: string, userMessage: string): TurnNodeData {
   return createTurnNodeData(userMessage, parentNodeId);
 }
 

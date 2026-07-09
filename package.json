@@ -8,7 +8,9 @@
     "lint": "pnpm --filter @ai-debug/web lint",
     "type-check": "pnpm --filter @ai-debug/web exec tsc --noEmit",
     "analyze": "pnpm --filter @ai-debug/web analyze",
-    "clean": "pnpm --filter @ai-debug/web clean"
+    "clean": "pnpm --filter @ai-debug/web clean",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "engines": {
     "node": ">=22",

@@ -99,13 +99,15 @@ export async function detectConflicts(
     }
     pathIds.reverse();
 
-    const contextLines = pathIds.map((id) => {
-      const n = nodeMap.get(id);
-      if (!n) return `- id:${id} (节点丢失)`;
-      const user = n.data.userMessage.slice(0, 200);
-      const assistant = n.data.assistantMessage.slice(0, 500);
-      return `- id:${id}\n  用户: ${user}\n  AI: ${assistant}`;
-    }).join('\n');
+    const contextLines = pathIds
+      .map((id) => {
+        const n = nodeMap.get(id);
+        if (!n) return `- id:${id} (节点丢失)`;
+        const user = n.data.userMessage.slice(0, 200);
+        const assistant = n.data.assistantMessage.slice(0, 500);
+        return `- id:${id}\n  用户: ${user}\n  AI: ${assistant}`;
+      })
+      .join('\n');
 
     const userPrompt = `以下是一条对话支线（从根到当前节点，按时间顺序），每个节点带 id：\n\n${contextLines}\n\n请分析其中是否存在前后矛盾的结论，按 System 约定的 JSON 格式输出。无冲突则输出空数组 []。`;
 

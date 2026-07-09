@@ -4,13 +4,7 @@ import type { Node, Edge } from 'reactflow';
  * - ignored: 用户主动忽略，构建 LLM 上下文时跳过该节点（user+assistant 都不传），
  *   子节点照常运行，路径上视为"断点"。不影响节点本身的存在与展示。
  */
-export type TurnStatus =
-  | 'idle'
-  | 'running'
-  | 'success'
-  | 'error'
-  | 'abandoned'
-  | 'ignored';
+export type TurnStatus = 'idle' | 'running' | 'success' | 'error' | 'abandoned' | 'ignored';
 
 /** AI 给出的建议方向 */
 export interface Suggestion {

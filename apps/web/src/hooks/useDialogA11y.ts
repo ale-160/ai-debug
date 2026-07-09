@@ -13,10 +13,7 @@ import { useEffect, useRef, useCallback } from 'react';
  * @param onClose  关闭回调
  * @returns 需要绑定到弹窗容器 div 的 ref
  */
-export function useDialogA11y(
-  open: boolean,
-  onClose: () => void,
-) {
+export function useDialogA11y(open: boolean, onClose: () => void) {
   const containerRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
@@ -27,7 +24,7 @@ export function useDialogA11y(
     const selector =
       'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
     return Array.from(container.querySelectorAll<HTMLElement>(selector)).filter(
-      (el) => el.offsetParent !== null || el === document.activeElement
+      (el) => el.offsetParent !== null || el === document.activeElement,
     );
   }, []);
 

@@ -38,9 +38,7 @@ describe('project-storage - 序列化往返', () => {
       createdAt: 1000,
       updatedAt: 2000,
       projectType: 'normal',
-      memory: [
-        { id: 'mem-1', content: '记忆条目', createdAt: 3000, source: 'manual' },
-      ],
+      memory: [{ id: 'mem-1', content: '记忆条目', createdAt: 3000, source: 'manual' }],
       turnCounter: 5,
     };
     saveProjects([project]);
@@ -102,7 +100,9 @@ describe('project-storage - 损坏数据兜底', () => {
     // 模拟旧数据：无 projectType 字段
     window.localStorage.setItem(
       PROJECTS_KEY,
-      JSON.stringify([{ id: 'old', name: '旧', nodes: [], edges: [], viewport: null, createdAt: 1, updatedAt: 1 }]),
+      JSON.stringify([
+        { id: 'old', name: '旧', nodes: [], edges: [], viewport: null, createdAt: 1, updatedAt: 1 },
+      ]),
     );
     const loaded = loadProjects();
     expect(loaded).toHaveLength(1);
@@ -218,9 +218,7 @@ describe('project-storage - importProject', () => {
   });
 
   it('导入时附带项目级 memory', () => {
-    const memory = [
-      { id: 'mem-1', content: '记忆', createdAt: 1, source: 'manual' as const },
-    ];
+    const memory = [{ id: 'mem-1', content: '记忆', createdAt: 1, source: 'manual' as const }];
     const project = importProject('含记忆', [], [], null, memory);
     expect(project.memory).toEqual(memory);
     expect(getProject(project.id)?.memory).toEqual(memory);
@@ -233,24 +231,24 @@ describe('project-storage - 容量超限 QuotaExceededError', () => {
   });
 
   it('saveProjects 在 setItem 抛 QuotaExceededError 时静默忽略，不抛异常', () => {
-    const spy = vi
-      .spyOn(Storage.prototype, 'setItem')
-      .mockImplementation(() => {
-        const err = new DOMException('quota exceeded', 'QuotaExceededError');
-        throw err;
-      });
+    const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      const err = new DOMException('quota exceeded', 'QuotaExceededError');
+      throw err;
+    });
 
-    expect(() => saveProjects([{ id: 'x', name: 'x', nodes: [], edges: [], viewport: null, createdAt: 1, updatedAt: 1 }])).not.toThrow();
+    expect(() =>
+      saveProjects([
+        { id: 'x', name: 'x', nodes: [], edges: [], viewport: null, createdAt: 1, updatedAt: 1 },
+      ]),
+    ).not.toThrow();
     spy.mockRestore();
   });
 
   it('saveSettings 同样吞 QuotaExceededError（验证 settings-storage 容错模式一致）', async () => {
     const { saveSettings } = await import('../settings-storage');
-    const spy = vi
-      .spyOn(Storage.prototype, 'setItem')
-      .mockImplementation(() => {
-        throw new DOMException('quota exceeded', 'QuotaExceededError');
-      });
+    const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota exceeded', 'QuotaExceededError');
+    });
     expect(() =>
       saveSettings({
         enableGlobalMemory: false,

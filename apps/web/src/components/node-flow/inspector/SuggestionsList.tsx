@@ -32,12 +32,8 @@ export default function SuggestionsList({
           disabled={disabled}
           className="w-full text-left rounded-lg border border-slate-200 dark:border-slate-700 hover:border-violet-300 hover:bg-violet-50 dark:hover:bg-violet-900/20 p-3 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white dark:disabled:hover:bg-slate-800 disabled:hover:border-slate-200 dark:disabled:hover:border-slate-700"
         >
-          <div className="font-semibold text-sm text-slate-800 dark:text-slate-200">
-            {s.title}
-          </div>
-          <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            {s.description}
-          </div>
+          <div className="font-semibold text-sm text-slate-800 dark:text-slate-200">{s.title}</div>
+          <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">{s.description}</div>
         </button>
       ))}
     </div>

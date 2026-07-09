@@ -81,10 +81,7 @@ export class RequestPool {
    * @param task     任务函数（应抛含 status 字段的对象以触发重试）
    * @param options  signal 可选
    */
-  async run<T>(
-    task: () => Promise<T>,
-    options: { signal?: AbortSignal } = {},
-  ): Promise<T> {
+  async run<T>(task: () => Promise<T>, options: { signal?: AbortSignal } = {}): Promise<T> {
     const signal = options.signal;
 
     // 1. 等待并发槽
@@ -115,12 +112,7 @@ export class RequestPool {
             throw err;
           }
           // 可重试且未耗尽：退避等待后重试
-          const delay = computeBackoff(
-            attempt,
-            err,
-            this.backoffBaseMs,
-            this.backoffMaxMs,
-          );
+          const delay = computeBackoff(attempt, err, this.backoffBaseMs, this.backoffMaxMs);
           await sleep(delay, signal);
           attempt++;
         }
@@ -238,12 +230,7 @@ function getErrorStatus(err: unknown): number {
  * 计算退避时间。基数 × 2^attempt，上限 backoffMaxMs。
  * 若错误对象含 retryAfterMs（来自 Retry-After 头），取 max(计算值, retryAfterMs)。
  */
-function computeBackoff(
-  attempt: number,
-  err: unknown,
-  baseMs: number,
-  maxMs: number,
-): number {
+function computeBackoff(attempt: number, err: unknown, baseMs: number, maxMs: number): number {
   let delay = baseMs * Math.pow(2, attempt);
   if (err && typeof err === 'object' && 'retryAfterMs' in err) {
     const v = (err as { retryAfterMs?: unknown }).retryAfterMs;

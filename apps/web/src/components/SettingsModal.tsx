@@ -1,7 +1,7 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { useDialogA11y } from "@/hooks/useDialogA11y";
+import { useEffect, useState } from 'react';
+import { useDialogA11y } from '@/hooks/useDialogA11y';
 import {
   AlertCircle,
   Check,
@@ -14,21 +14,21 @@ import {
   Brain,
   Key,
   Database,
-} from "lucide-react";
-import { toast } from "sonner";
+} from 'lucide-react';
+import { toast } from 'sonner';
 import {
   loadConfig,
   saveConfig,
   PROVIDER_PRESETS,
   type LLMConfig,
   type LLMProvider,
-} from "@/lib/llm-config";
-import { testLLMConnection } from "@/lib/llm-client";
-import { useDebugStore } from "@/lib/debug-store";
-import { StorageManager } from "./StorageManager";
-import { useTranslation } from "@/components/I18nProvider";
-import type { AppSettings, PathSummaryConfig } from "./node-flow/types";
-import { emit, NODE_EVENTS } from "./node-flow/event-bus";
+} from '@/lib/llm-config';
+import { testLLMConnection } from '@/lib/llm-client';
+import { useDebugStore } from '@/lib/debug-store';
+import { StorageManager } from './StorageManager';
+import { useTranslation } from '@/components/I18nProvider';
+import type { AppSettings, PathSummaryConfig } from './node-flow/types';
+import { emit, NODE_EVENTS } from './node-flow/event-bus';
 
 interface SettingsModalProps {
   open: boolean;
@@ -41,19 +41,19 @@ interface TestResult {
   message: string;
 }
 
-type SettingsTab = "api" | "memory" | "data";
+type SettingsTab = 'api' | 'memory' | 'data';
 
 export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const { t, tf } = useTranslation();
 
   // 当前 Tab
-  const [activeTab, setActiveTab] = useState<SettingsTab>("api");
+  const [activeTab, setActiveTab] = useState<SettingsTab>('api');
 
   // 表单字段
-  const [provider, setProvider] = useState<LLMProvider>("mimo");
-  const [apiKey, setApiKey] = useState("");
-  const [baseUrl, setBaseUrl] = useState("");
-  const [model, setModel] = useState("");
+  const [provider, setProvider] = useState<LLMProvider>('mimo');
+  const [apiKey, setApiKey] = useState('');
+  const [baseUrl, setBaseUrl] = useState('');
+  const [model, setModel] = useState('');
 
   // UI 状态
   const [showKey, setShowKey] = useState(false);
@@ -79,8 +79,8 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     } else {
       // 无配置时使用 mimo preset 作为默认值（mimo 为首选服务商）
       const preset = PROVIDER_PRESETS.mimo;
-      setProvider("mimo");
-      setApiKey("");
+      setProvider('mimo');
+      setApiKey('');
       setBaseUrl(preset.baseUrl);
       setModel(preset.model);
     }
@@ -95,10 +95,10 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   useEffect(() => {
     if (!open) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === 'Escape') onClose();
     };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, [open, onClose]);
 
   // 切换 Provider：若当前 baseUrl/model 为空或等于上一个 preset，则自动填充新 preset
@@ -126,8 +126,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
 
   // 更新 pathSummaryConfig 字段：首次编辑时从 provider 预设 materialize 为显式对象
   const updatePathSummaryConfig = (patch: Partial<PathSummaryConfig>) => {
-    const base =
-      settingsDraft.pathSummaryConfig ?? PROVIDER_PRESETS[provider].pathSummary;
+    const base = settingsDraft.pathSummaryConfig ?? PROVIDER_PRESETS[provider].pathSummary;
     setSettingsDraft({
       ...settingsDraft,
       pathSummaryConfig: { ...base, ...patch },
@@ -202,9 +201,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
       >
         {/* 标题栏 */}
         <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4 dark:border-slate-700">
-          <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">
-            {t.settings}
-          </h2>
+          <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">{t.settings}</h2>
           <button
             type="button"
             onClick={onClose}
@@ -219,11 +216,11 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
         <div className="flex border-b border-slate-100 dark:border-slate-700">
           <button
             type="button"
-            onClick={() => setActiveTab("api")}
+            onClick={() => setActiveTab('api')}
             className={`flex items-center gap-1.5 px-6 py-2.5 text-sm font-medium transition-colors ${
-              activeTab === "api"
-                ? "border-b-2 border-violet-500 text-violet-600 dark:text-violet-300"
-                : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+              activeTab === 'api'
+                ? 'border-b-2 border-violet-500 text-violet-600 dark:text-violet-300'
+                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
             }`}
           >
             <Key className="h-4 w-4" />
@@ -231,11 +228,11 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           </button>
           <button
             type="button"
-            onClick={() => setActiveTab("memory")}
+            onClick={() => setActiveTab('memory')}
             className={`flex items-center gap-1.5 px-6 py-2.5 text-sm font-medium transition-colors ${
-              activeTab === "memory"
-                ? "border-b-2 border-violet-500 text-violet-600 dark:text-violet-300"
-                : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+              activeTab === 'memory'
+                ? 'border-b-2 border-violet-500 text-violet-600 dark:text-violet-300'
+                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
             }`}
           >
             <Brain className="h-4 w-4" />
@@ -246,11 +243,11 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           </button>
           <button
             type="button"
-            onClick={() => setActiveTab("data")}
+            onClick={() => setActiveTab('data')}
             className={`flex items-center gap-1.5 px-6 py-2.5 text-sm font-medium transition-colors ${
-              activeTab === "data"
-                ? "border-b-2 border-cyan-500 text-cyan-600 dark:text-cyan-300"
-                : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+              activeTab === 'data'
+                ? 'border-b-2 border-cyan-500 text-cyan-600 dark:text-cyan-300'
+                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
             }`}
           >
             <Database className="h-4 w-4" />
@@ -260,7 +257,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
 
         {/* Tab 内容 */}
         <div className="px-6 py-4">
-          {activeTab === "api" && (
+          {activeTab === 'api' && (
             <div className="space-y-4">
               {/* Provider 选择 */}
               <div>
@@ -269,9 +266,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 </label>
                 <select
                   value={provider}
-                  onChange={(e) =>
-                    handleProviderChange(e.target.value as LLMProvider)
-                  }
+                  onChange={(e) => handleProviderChange(e.target.value as LLMProvider)}
                   className="w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
                 >
                   {(Object.keys(PROVIDER_PRESETS) as LLMProvider[]).map((key) => (
@@ -289,7 +284,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 </label>
                 <div className="relative">
                   <input
-                    type={showKey ? "text" : "password"}
+                    type={showKey ? 'text' : 'password'}
                     value={apiKey}
                     onChange={(e) => {
                       setApiKey(e.target.value);
@@ -305,11 +300,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                     className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
                     aria-label={showKey ? t.hideApiKey : t.showApiKey}
                   >
-                    {showKey ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
+                    {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
               </div>
@@ -338,7 +329,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
                     {t.modelName}
                   </label>
-                  {provider !== "custom" && (
+                  {provider !== 'custom' && (
                     <button
                       type="button"
                       onClick={() => setShowModelHelp((v) => !v)}
@@ -362,7 +353,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                   autoComplete="off"
                 />
                 {/* 官方文档链接提示 */}
-                {showModelHelp && provider !== "custom" && (
+                {showModelHelp && provider !== 'custom' && (
                   <div className="mt-2 rounded border border-violet-200 bg-violet-50 px-3 py-2 text-xs dark:border-violet-800 dark:bg-violet-900/30">
                     <div className="mb-1 font-medium text-violet-800 dark:text-violet-200">
                       {t.officialGuide}
@@ -393,8 +384,8 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 <div
                   className={`flex items-start gap-2 rounded px-3 py-2 text-xs ${
                     testResult.success
-                      ? "bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-200"
-                      : "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-200"
+                      ? 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-200'
+                      : 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-200'
                   }`}
                 >
                   {testResult.success ? (
@@ -419,7 +410,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
             </div>
           )}
 
-          {activeTab === "memory" && (
+          {activeTab === 'memory' && (
             <div className="space-y-4">
               {/* 记忆开关 */}
               <div className="space-y-2">
@@ -534,9 +525,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                   rows={3}
                   className="w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-violet-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
                 />
-                <p className="mt-1 text-[10px] text-slate-400">
-                  {t.userRulesNote}
-                </p>
+                <p className="mt-1 text-[10px] text-slate-400">{t.userRulesNote}</p>
               </div>
 
               {/* 可观测性：hover 节点显示路径摘要（默认关闭） */}
@@ -569,9 +558,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                   <input
                     type="checkbox"
                     checked={activePathSummaryConfig.enabled}
-                    onChange={(e) =>
-                      updatePathSummaryConfig({ enabled: e.target.checked })
-                    }
+                    onChange={(e) => updatePathSummaryConfig({ enabled: e.target.checked })}
                     className="rounded"
                   />
                   {t.enableHybridMode}
@@ -636,7 +623,10 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                   {t.contextCompressionNote}
                 </p>
                 <p className="text-[10px] text-slate-400">
-                  {t.contextCompressionCurrentPreset}：{PROVIDER_PRESETS[provider].pathSummary.threshold} / {PROVIDER_PRESETS[provider].pathSummary.recentKeep} / {PROVIDER_PRESETS[provider].pathSummary.maxLength}
+                  {t.contextCompressionCurrentPreset}：
+                  {PROVIDER_PRESETS[provider].pathSummary.threshold} /{' '}
+                  {PROVIDER_PRESETS[provider].pathSummary.recentKeep} /{' '}
+                  {PROVIDER_PRESETS[provider].pathSummary.maxLength}
                 </p>
               </div>
 
@@ -655,7 +645,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           )}
 
           {/* 数据管理 Tab */}
-          {activeTab === "data" && (
+          {activeTab === 'data' && (
             <div className="space-y-4">
               <StorageManager />
             </div>
@@ -663,7 +653,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
         </div>
 
         {/* 操作按钮：仅 API/记忆 Tab 显示保存取消，数据管理 Tab 内部自带操作 */}
-        {activeTab !== "data" && (
+        {activeTab !== 'data' && (
           <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-6 py-4 dark:border-slate-700">
             <button
               type="button"

@@ -102,9 +102,7 @@ function buildMergePrompt(
   sourceSummaries: string[],
   maxLength: number,
 ): string {
-  const branchBlocks = sourceSummaries
-    .map((s, i) => `分支 ${i + 1} 摘要：\n${s}`)
-    .join('\n\n');
+  const branchBlocks = sourceSummaries.map((s, i) => `分支 ${i + 1} 摘要：\n${s}`).join('\n\n');
 
   return `你是一位对话路径摘要助手。以下是多路分支的结论摘要，请聚合为统一的路径摘要。
 

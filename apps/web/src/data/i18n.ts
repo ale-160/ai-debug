@@ -3,7 +3,8 @@ export type Language = 'zh' | 'en';
 export const STRINGS_ZH = {
   appName: '蛛网 · AI Debug',
   appTitle: '蛛网 · AI Debug —— 蛛网式上下文管理工具',
-  appDescription: '把 AI 对话从线性列表变成 git 仓库式的蛛网结构。每个分支独立维护自己的上下文路径，支持分叉、合并、放弃、恢复，让复杂问题的排查不再被无关历史污染。',
+  appDescription:
+    '把 AI 对话从线性列表变成 git 仓库式的蛛网结构。每个分支独立维护自己的上下文路径，支持分叉、合并、放弃、恢复，让复杂问题的排查不再被无关历史污染。',
 
   projectList: '项目列表',
   newProject: '新建项目',
@@ -54,7 +55,8 @@ export const STRINGS_ZH = {
   officialGuide: '官方获取方法',
   goToProviderConsole: '前往 {provider} 官方控制台创建 API Key，并在模型列表中查看可用的模型名。',
 
-  apiKeySecurityNote: 'API Key 仅存储在当前浏览器 localStorage，不会上传到任何服务器（除你配置的 LLM 服务商外）',
+  apiKeySecurityNote:
+    'API Key 仅存储在当前浏览器 localStorage，不会上传到任何服务器（除你配置的 LLM 服务商外）',
 
   pleaseFillApiKey: '请先填写 API Key',
   pleaseFillBaseUrl: '请先填写 Base URL',
@@ -117,11 +119,14 @@ export const STRINGS_ZH = {
   cleared: '已清理',
   clear: '清理',
   confirmClearCategory: '确定清理「{label}」吗？此操作不可恢复，建议先导出备份。',
-  confirmClearAll: '确定清空全部本地数据吗？\n\n此操作将删除：\n• 所有项目与节点\n• 全局/项目记忆\n• 应用设置\n• API 配置\n\n删除后无法恢复，建议先导出备份。',
+  confirmClearAll:
+    '确定清空全部本地数据吗？\n\n此操作将删除：\n• 所有项目与节点\n• 全局/项目记忆\n• 应用设置\n• API 配置\n\n删除后无法恢复，建议先导出备份。',
   reloadingPage: '即将刷新页面...',
-  storageTip: '提示：浏览器 localStorage 单域名配额约 5MB，适合中小型项目。大型项目建议定期导出备份后清理，避免保存失败。',
+  storageTip:
+    '提示：浏览器 localStorage 单域名配额约 5MB，适合中小型项目。大型项目建议定期导出备份后清理，避免保存失败。',
 
-  helpTooltip: '输入问题 → AI 给出建议方向 → 点击方向卡片可补充后继续追问 → 不满意可重新生成 → 可随时回退到任意节点换方向',
+  helpTooltip:
+    '输入问题 → AI 给出建议方向 → 点击方向卡片可补充后继续追问 → 不满意可重新生成 → 可随时回退到任意节点换方向',
   toggleSidebar: '切换侧边栏',
   collapseSidebar: '收起侧边栏',
   expandSidebar: '展开侧边栏',
@@ -284,7 +289,8 @@ export const STRINGS_ZH = {
   shortcutDescSelect: '默认，可框选节点',
   shortcutDescHand: '拖拽平移画布',
   shortcutDescFitView: '所有节点居中显示',
-  shortcutTip: '按住空格键可以临时切换到抓手工具，快速平移画布。滚轮缩放会以鼠标位置为中心进行缩放。',
+  shortcutTip:
+    '按住空格键可以临时切换到抓手工具，快速平移画布。滚轮缩放会以鼠标位置为中心进行缩放。',
   shortcutSearchPlaceholder: '搜索快捷键...',
   shortcutNoMatch: '没有匹配的快捷键',
   statusFailed: '生成失败',
@@ -373,7 +379,8 @@ export const STRINGS_ZH = {
 export const STRINGS_EN = {
   appName: 'Spider Web · AI Debug',
   appTitle: 'Spider Web · AI Debug — Web-style Context Management Tool',
-  appDescription: 'Transform AI conversations from linear lists into a git-repository-like web structure. Each branch maintains its own context path independently, supporting forking, merging, abandoning, and restoring — so complex problem debugging is no longer polluted by irrelevant history.',
+  appDescription:
+    'Transform AI conversations from linear lists into a git-repository-like web structure. Each branch maintains its own context path independently, supporting forking, merging, abandoning, and restoring — so complex problem debugging is no longer polluted by irrelevant history.',
 
   projectList: 'Project List',
   newProject: 'New Project',
@@ -422,9 +429,11 @@ export const STRINGS_EN = {
 
   howToGet: 'How to get?',
   officialGuide: 'Official Guide',
-  goToProviderConsole: 'Go to {provider} console to create an API Key and check available model names.',
+  goToProviderConsole:
+    'Go to {provider} console to create an API Key and check available model names.',
 
-  apiKeySecurityNote: 'API Key is stored only in your browser localStorage, never uploaded to any server (except your configured LLM provider).',
+  apiKeySecurityNote:
+    'API Key is stored only in your browser localStorage, never uploaded to any server (except your configured LLM provider).',
 
   pleaseFillApiKey: 'Please fill in the API Key',
   pleaseFillBaseUrl: 'Please fill in the Base URL',
@@ -439,12 +448,16 @@ export const STRINGS_EN = {
   memoryFrequency: 'Memory extraction frequency (every N AI responses)',
 
   conflictDetection: 'Conflict Detection',
-  enableConflictAutoCheck: 'Enable auto conflict detection (analyze branch contradictions after each response)',
+  enableConflictAutoCheck:
+    'Enable auto conflict detection (analyze branch contradictions after each response)',
   conflictCheckFrequency: 'Conflict detection frequency (every N turns)',
 
-  userRules: 'User Rules / Additional Instructions (injected into system prompt, e.g. tech stack, preferences)',
-  userRulesPlaceholder: 'e.g., I come from Java background, deploy on Cloudflare, prioritize performance over readability...',
-  userRulesNote: 'Default persona is not editable; this only adds supplementary rules. Advanced users can self-host the open-source version to modify.',
+  userRules:
+    'User Rules / Additional Instructions (injected into system prompt, e.g. tech stack, preferences)',
+  userRulesPlaceholder:
+    'e.g., I come from Java background, deploy on Cloudflare, prioritize performance over readability...',
+  userRulesNote:
+    'Default persona is not editable; this only adds supplementary rules. Advanced users can self-host the open-source version to modify.',
 
   openMemoryPanel: 'Open Memory Management Panel (view/edit/delete memory entries)',
 
@@ -481,17 +494,21 @@ export const STRINGS_EN = {
   apiConfigLabel: 'API Config',
   apiConfigDesc: 'Provider, API Key, Base URL, model',
 
-  storageWarning: 'Local storage is near the limit. We recommend exporting backups and cleaning old projects to avoid data loss from save failures.',
+  storageWarning:
+    'Local storage is near the limit. We recommend exporting backups and cleaning old projects to avoid data loss from save failures.',
   clearAllData: 'Clear All Data',
   clearing: 'Clearing...',
   cleared: 'Cleared',
   clear: 'Clear',
   confirmClearCategory: 'Clear "{label}"? This cannot be undone, we recommend exporting first.',
-  confirmClearAll: 'Clear all local data?\n\nThis will delete:\n• All projects and nodes\n• Global/project memory\n• App settings\n• API config\n\nCannot be undone. Export backup first is recommended.',
+  confirmClearAll:
+    'Clear all local data?\n\nThis will delete:\n• All projects and nodes\n• Global/project memory\n• App settings\n• API config\n\nCannot be undone. Export backup first is recommended.',
   reloadingPage: 'Reloading page...',
-  storageTip: 'Tip: Browser localStorage quota is about 5MB per domain, suitable for small-to-medium projects. For large projects, export backups and clean up regularly to avoid save failures.',
+  storageTip:
+    'Tip: Browser localStorage quota is about 5MB per domain, suitable for small-to-medium projects. For large projects, export backups and clean up regularly to avoid save failures.',
 
-  helpTooltip: 'Type a question → AI suggests directions → Click a direction card to follow up → Regenerate if unsatisfied → Roll back to any node to try a different path',
+  helpTooltip:
+    'Type a question → AI suggests directions → Click a direction card to follow up → Regenerate if unsatisfied → Roll back to any node to try a different path',
   toggleSidebar: 'Toggle sidebar',
   collapseSidebar: 'Collapse sidebar',
   expandSidebar: 'Expand sidebar',
@@ -507,7 +524,8 @@ export const STRINGS_EN = {
   clickToModify: 'Click to modify API Key config',
 
   startYourDebug: 'Start your web-style debugging',
-  startYourDebugDesc: 'Describe your problem, AI will unfold different debugging directions like a spider web',
+  startYourDebugDesc:
+    'Describe your problem, AI will unfold different debugging directions like a spider web',
   inputPlaceholder: 'Type your question to start debugging...',
   startDebug: 'Start Debug',
   enterSubmit: 'Enter to submit · Shift+Enter for new line',
@@ -565,7 +583,8 @@ export const STRINGS_EN = {
   mergeSources: 'Merge Sources ({count})',
   branchN: 'Branch {n}',
   nodeDeleted: 'Node deleted',
-  conflictLimitNote: 'Conflict detection only analyzes the parentId main path, not multi-path merged sources (known limitation)',
+  conflictLimitNote:
+    'Conflict detection only analyzes the parentId main path, not multi-path merged sources (known limitation)',
 
   possibleNextDirections: 'Possible Next Directions',
 
@@ -584,7 +603,8 @@ export const STRINGS_EN = {
   inputFollowUpPlaceholder: 'Type follow-up or new direction...',
 
   mergeNodeLimitTitle: 'Merge Node Limitation',
-  mergeNodeLimitDesc: 'Merge nodes: only the parentId main path is detected, mergedFromIds multi-paths are not expanded (known limitation)',
+  mergeNodeLimitDesc:
+    'Merge nodes: only the parentId main path is detected, mergedFromIds multi-paths are not expanded (known limitation)',
 
   conversation: 'Chat',
   merge: 'Merge',
@@ -654,7 +674,8 @@ export const STRINGS_EN = {
   shortcutDescSelect: 'Default, box-select',
   shortcutDescHand: 'Drag to pan',
   shortcutDescFitView: 'Center all nodes',
-  shortcutTip: 'Hold Space to temporarily switch to the hand tool. Scroll to zoom around the mouse position.',
+  shortcutTip:
+    'Hold Space to temporarily switch to the hand tool. Scroll to zoom around the mouse position.',
   shortcutSearchPlaceholder: 'Search shortcuts...',
   shortcutNoMatch: 'No matching shortcuts',
   statusFailed: 'Generation failed',
@@ -682,7 +703,8 @@ export const STRINGS_EN = {
 
   // ========== Auto Evolution ==========
   autoEvolutionTitle: 'Auto Evolution',
-  autoEvolutionSubtitle: 'From the effective leaves of the selected node, AI auto-spreads to explore',
+  autoEvolutionSubtitle:
+    'From the effective leaves of the selected node, AI auto-spreads to explore',
   autoEvolutionStart: 'Start Evolution',
   autoEvolutionStop: 'Stop Evolution',
   autoEvolutionClose: 'Close',
@@ -707,7 +729,8 @@ export const STRINGS_EN = {
   autoEvolutionTotalBranches: 'Total Branches',
   autoEvolutionDeleteThisRun: 'Delete This Run',
   autoEvolutionDeleteBranch: 'Delete This Branch',
-  autoEvolutionConfirmDelete: 'Delete {count} nodes produced by this evolution? This cannot be undone.',
+  autoEvolutionConfirmDelete:
+    'Delete {count} nodes produced by this evolution? This cannot be undone.',
   autoEvolutionConfirmDeleteBranch: 'Delete {count} nodes produced by this branch?',
   autoEvolutionDeleted: 'Evolution deleted',
   autoEvolutionNeedSelectNode: 'Please select a node first',

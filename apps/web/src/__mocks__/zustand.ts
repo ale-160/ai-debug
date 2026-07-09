@@ -60,9 +60,7 @@ export async function createZustandMockFactory(): Promise<ZustandModule> {
   const actualCreate = actual.create;
 
   /** 内部工具：包裹 stateCreator，捕获初始状态并注册重置函数 */
-  function makeStore<T>(
-    stateCreator: StateCreator<T>,
-  ): UseBoundStore<StoreApi<T>> {
+  function makeStore<T>(stateCreator: StateCreator<T>): UseBoundStore<StoreApi<T>> {
     const store = actualCreate<T>(stateCreator);
     const initialState = store.getState();
     storeResetFns.add(() => {

@@ -4,11 +4,7 @@
 // ============================================================
 
 import { loadConfig } from './llm-config';
-import {
-  callLLM,
-  callLLMStream,
-  type LLMMessage,
-} from './llm-client';
+import { callLLM, callLLMStream, type LLMMessage } from './llm-client';
 
 /**
  * 从 localStorage 加载配置并发起调用（便捷函数）。
@@ -62,20 +58,14 @@ export async function quickCallLLM(
  * @param imageBase64List  base64 编码的图片列表（可含或不含 data: 前缀）
  * @returns                包含一条多模态 user 消息的数组
  */
-export function buildVisionMessage(
-  text: string,
-  imageBase64List: string[],
-): LLMMessage[] {
+export function buildVisionMessage(text: string, imageBase64List: string[]): LLMMessage[] {
   const content: Array<
-    | { type: 'text'; text: string }
-    | { type: 'image_url'; image_url: { url: string } }
+    { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
   > = [{ type: 'text', text }];
 
   for (const base64 of imageBase64List) {
     // 已含 data: 前缀则直接使用，否则补上 png 前缀
-    const url = base64.startsWith('data:')
-      ? base64
-      : `data:image/png;base64,${base64}`;
+    const url = base64.startsWith('data:') ? base64 : `data:image/png;base64,${base64}`;
     content.push({ type: 'image_url', image_url: { url } });
   }
 

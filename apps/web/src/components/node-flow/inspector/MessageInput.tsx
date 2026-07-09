@@ -1,14 +1,6 @@
 'use client';
 
-import {
-  Loader2,
-  Send,
-  Ban,
-  RotateCcw,
-  RefreshCw,
-  EyeOff,
-  ScanSearch,
-} from 'lucide-react';
+import { Loader2, Send, Ban, RotateCcw, RefreshCw, EyeOff, ScanSearch } from 'lucide-react';
 import { useTranslation } from '@/components/I18nProvider';
 
 interface MessageInputProps {
@@ -72,14 +64,10 @@ export default function MessageInput({
   return (
     <div className="p-3 border-t border-slate-100 dark:border-slate-700">
       {isAbandoned && (
-        <div className="text-center text-sm text-slate-400 py-1 mb-2">
-          {t.branchAbandoned}
-        </div>
+        <div className="text-center text-sm text-slate-400 py-1 mb-2">{t.branchAbandoned}</div>
       )}
       {isIgnored && (
-        <div className="text-center text-sm text-amber-500 py-1 mb-2">
-          {t.nodeIgnored}
-        </div>
+        <div className="text-center text-sm text-amber-500 py-1 mb-2">{t.nodeIgnored}</div>
       )}
       <textarea
         value={input}

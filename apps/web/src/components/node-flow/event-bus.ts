@@ -37,10 +37,7 @@ export interface NodeEventDetailMap {
 export type NodeEventName = keyof NodeEventDetailMap;
 
 /** 类型安全的派发：以事件名推导 payload 类型 */
-export function emit<K extends NodeEventName>(
-  name: K,
-  detail?: NodeEventDetailMap[K],
-): void {
+export function emit<K extends NodeEventName>(name: K, detail?: NodeEventDetailMap[K]): void {
   window.dispatchEvent(new CustomEvent(name, { detail }));
 }
 

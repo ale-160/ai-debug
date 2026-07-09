@@ -71,8 +71,7 @@ function tryParseAnalysisObject(raw: string): PruneAnalysis | null {
     const mainPath: string[] = Array.isArray(parsed.mainPath)
       ? parsed.mainPath.filter((x: unknown) => typeof x === 'string')
       : [];
-    const reasoning: string =
-      typeof parsed.reasoning === 'string' ? parsed.reasoning : '';
+    const reasoning: string = typeof parsed.reasoning === 'string' ? parsed.reasoning : '';
     if (keepNodeIds.length === 0) return null;
     return { keepNodeIds, mainPath, reasoning };
   } catch {
@@ -142,9 +141,7 @@ function conservativeAnalysis(project: NetworkProject): PruneAnalysis {
  * 分析蛛网网络：收集所有节点 summary/userMessage 摘要，调用 LLM 识别
  * 重复支线与死胡同。失败时返回保守分析（保留所有非 abandoned 节点），不抛异常。
  */
-export async function analyzeNetwork(
-  project: NetworkProject,
-): Promise<PruneAnalysis> {
+export async function analyzeNetwork(project: NetworkProject): Promise<PruneAnalysis> {
   if (project.nodes.length === 0) {
     return { keepNodeIds: [], mainPath: [], reasoning: '项目无节点。' };
   }
@@ -158,10 +155,7 @@ export async function analyzeNetwork(
   }));
   const validIds = new Set(project.nodes.map((n) => n.id));
   const nodeListText = nodeInfos
-    .map(
-      (n) =>
-        `- id:${n.id} | 父:${n.parentId ?? '根'} | 状态:${n.status} | 摘要:${n.brief}`,
-    )
+    .map((n) => `- id:${n.id} | 父:${n.parentId ?? '根'} | 状态:${n.status} | 摘要:${n.brief}`)
     .join('\n');
 
   const userPrompt = `以下是蛛网对话网络的所有节点（id / 父节点 / 状态 / 摘要）：\n${nodeListText}\n\n请分析重复支线、死胡同，并给出主干道。严格按 System 约定的 JSON 格式输出，只输出 JSON 代码块。`;
@@ -229,10 +223,8 @@ export function derivePrunedProject(
   const mainPathSet = new Set(analysis.mainPath);
   // 主干末梢新 id：用于把脱离主干的保留节点挂回主干
   const lastMainOldId =
-    analysis.mainPath.length > 0
-      ? analysis.mainPath[analysis.mainPath.length - 1]
-      : null;
-  const lastMainNewId = lastMainOldId ? idMap.get(lastMainOldId) ?? null : null;
+    analysis.mainPath.length > 0 ? analysis.mainPath[analysis.mainPath.length - 1] : null;
+  const lastMainNewId = lastMainOldId ? (idMap.get(lastMainOldId) ?? null) : null;
 
   // 决定每个保留节点的新 parentId
   const newParentIdMap = new Map<string, string | null>();
@@ -242,8 +234,7 @@ export function derivePrunedProject(
     const oldId = analysis.mainPath[i];
     const newId = idMap.get(oldId);
     if (!newId) continue;
-    const parentId =
-      i === 0 ? null : idMap.get(analysis.mainPath[i - 1]) ?? null;
+    const parentId = i === 0 ? null : (idMap.get(analysis.mainPath[i - 1]) ?? null);
     newParentIdMap.set(newId, parentId);
   }
 

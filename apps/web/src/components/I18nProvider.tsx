@@ -1,18 +1,7 @@
 'use client';
 
-import React, {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
-import {
-  applyLanguage,
-  saveLanguage,
-  LANGUAGE_STORAGE_KEY,
-} from '@/lib/i18n-storage';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { applyLanguage, saveLanguage, LANGUAGE_STORAGE_KEY } from '@/lib/i18n-storage';
 import { getStrings, formatString, type Language, type Strings } from '@/data/i18n';
 
 interface I18nContextValue {
@@ -74,12 +63,12 @@ export function I18nProvider({ children, defaultLang = 'en' }: I18nProviderProps
       const template = t[key] as string;
       return vars ? formatString(template, vars) : template;
     },
-    [t]
+    [t],
   );
 
   const value = useMemo<I18nContextValue>(
     () => ({ language, setLanguage, toggleLanguage, t, tf }),
-    [language, setLanguage, toggleLanguage, t, tf]
+    [language, setLanguage, toggleLanguage, t, tf],
   );
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;

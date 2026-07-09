@@ -20,12 +20,10 @@ vi.mock('zustand', async () => {
 });
 
 import { useDebugStore } from '../debug-store';
-import { createProject as createProjectStorage, deleteProject as deleteProjectStorage, loadProjects } from '../project-storage';
 
 beforeEach(() => {
-  // 清掉 storage 残留（setup.ts 的 localStorage.clear 已覆盖，额外保险）
-  const projects = loadProjects();
-  for (const p of projects) deleteProjectStorage(p.id);
+  // persist 接管后：store.projects 由 persist 管理，测试前清空 store.projects
+  useDebugStore.setState({ projects: [], currentProjectId: null, turnCounter: 0 });
 });
 
 describe('createTurnNode / createMergedNode - pathSummary 继承字段', () => {
@@ -95,28 +93,25 @@ describe('turnCounter - 项目切换重置 / 恢复', () => {
   });
 
   it('切换到已有项目时，恢复该项目持久化的 turnCounter', () => {
-    // 项目 A：累计 3 轮后落盘
-    const projectA = createProjectStorage('项目 A');
-    useDebugStore.getState().loadProject(projectA.id);
+    // persist 接管后：用 store.createProject 创建项目（直接写入 store.projects）
+    const projectAId = useDebugStore.getState().createProject('项目 A');
     useDebugStore.getState().incrementTurnCounter();
     useDebugStore.getState().incrementTurnCounter();
     useDebugStore.getState().incrementTurnCounter();
     expect(useDebugStore.getState().turnCounter).toBe(3);
-    useDebugStore.getState().saveProject(); // 持久化 turnCounter
+    useDebugStore.getState().saveProject(); // 持久化 turnCounter 到 store.projects
 
     // 切换到项目 B（新建）→ turnCounter 应回到 0
-    const projectB = createProjectStorage('项目 B');
-    useDebugStore.getState().loadProject(projectB.id);
+    useDebugStore.getState().createProject('项目 B');
     expect(useDebugStore.getState().turnCounter).toBe(0);
 
     // 切换回项目 A → turnCounter 应恢复为 3
-    useDebugStore.getState().loadProject(projectA.id);
+    useDebugStore.getState().loadProject(projectAId);
     expect(useDebugStore.getState().turnCounter).toBe(3);
   });
 
   it('startNewProject 进入草稿态时，turnCounter 归零', () => {
-    const project = createProjectStorage('某项目');
-    useDebugStore.getState().loadProject(project.id);
+    useDebugStore.getState().createProject('某项目');
     useDebugStore.getState().incrementTurnCounter();
     useDebugStore.getState().incrementTurnCounter();
     expect(useDebugStore.getState().turnCounter).toBe(2);
@@ -127,16 +122,18 @@ describe('turnCounter - 项目切换重置 / 恢复', () => {
   });
 
   it('loadProject 持久化字段缺失时回退到 0', () => {
-    // 手动构造无 turnCounter 字段的项目
-    const project = createProjectStorage('老项目');
-    // 模拟旧数据未持久化 turnCounter
-    const raw = window.localStorage.getItem('ai-debug:network-projects')!;
-    const parsed = JSON.parse(raw);
-    const idx = parsed.findIndex((p: { id: string }) => p.id === project.id);
-    delete parsed[idx].turnCounter;
-    window.localStorage.setItem('ai-debug:network-projects', JSON.stringify(parsed));
-
-    useDebugStore.getState().loadProject(project.id);
+    // persist 接管后：手动构造无 turnCounter 字段的项目写入 store.projects
+    useDebugStore.getState().createProject('老项目');
+    const currentId = useDebugStore.getState().currentProjectId!;
+    // 模拟旧数据未持久化 turnCounter：直接修改 store.projects 中项目的字段
+    useDebugStore.setState((state) => ({
+      projects: state.projects.map((p) =>
+        p.id === currentId ? { ...p, turnCounter: undefined } : p,
+      ),
+    }));
+    // 切走再切回，验证 turnCounter 缺失时回退到 0
+    useDebugStore.getState().startNewProject();
+    useDebugStore.getState().loadProject(currentId);
     expect(useDebugStore.getState().turnCounter).toBe(0);
   });
 });

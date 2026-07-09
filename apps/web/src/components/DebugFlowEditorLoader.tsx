@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import DebugFlowEditor from '@/components/node-flow/DebugFlowEditor';
+import { useDebugStore, migrateLegacyProjectsKey } from '@/lib/debug-store';
 import type { Language } from '@/data/i18n';
 
 /**
@@ -9,12 +10,21 @@ import type { Language } from '@/data/i18n';
  * 使用 mounted 模式替代 dynamic ssr:false，
  * 确保 lang prop 直接传递，不经过动态导入序列化。
  * SSR 阶段渲染骨架屏，客户端挂载后才渲染编辑器（ReactFlow 不支持 SSR）。
+ *
+ * persist 接管后：客户端挂载时先迁移旧 key，再手动 rehydrate store，
+ * 完成后再渲染编辑器，确保 projects/currentProjectId 从 localStorage 恢复。
  */
 export default function DebugFlowEditorLoader({ lang }: { lang: Language }) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
+    // 迁移旧 key ai-debug:network-projects → ai-debug-store（一次性，仅旧 key 有数据时）
+    migrateLegacyProjectsKey();
+    // 手动 rehydrate：persist 配置了 skipHydration:true，需在此触发
+    // rehydrate 可能返回 void（同步存储）或 Promise（异步存储），用 Promise.resolve 兼容
+    Promise.resolve(useDebugStore.persist.rehydrate()).then(() => {
+      setMounted(true);
+    });
   }, []);
 
   if (!mounted) {

@@ -6,7 +6,7 @@
 // React Flow 的状态管理。
 // ============================================================
 import { create } from 'zustand';
-import { devtools } from 'zustand/middleware';
+import { devtools, persist, createJSONStorage } from 'zustand/middleware';
 import {
   applyNodeChanges,
   applyEdgeChanges,
@@ -21,14 +21,6 @@ import type { TurnNodeData, Suggestion, NetworkProject, MemoryEntry, AppSettings
 import { createTurnNodeData } from '@/components/node-flow/node-definitions';
 import { mergeBranches } from './network-engine';
 import { incrementalLayout } from '@/components/node-flow/radial-layout';
-import {
-  loadProjects,
-  saveProjects,
-  createProject as createProjectStorage,
-  updateProject as updateProjectStorage,
-  deleteProject as deleteProjectStorage,
-  getProject,
-} from './project-storage';
 import { loadConfig, type LLMConfig } from './llm-config';
 import {
   loadSettings,
@@ -146,8 +138,8 @@ interface NetworkState {
   toggleFocusMode: () => void;
 
   // ========== 项目操作 ==========
-  /** 创建并切换到新项目 */
-  createProject: (name: string) => void;
+  /** 创建并切换到新项目，返回新项目 id */
+  createProject: (name: string) => string;
   /** 进入新项目草稿态：清空画布 + currentProjectId 置空，等待首条消息后绑定项目 */
   startNewProject: () => void;
   /** 从 storage 加载项目到画布 */
@@ -252,9 +244,43 @@ function collectDescendants(nodeId: string, nodes: Node<TurnNodeData>[]): Set<st
   return result;
 }
 
+/** persist localStorage key（新统一 key） */
+export const STORE_PERSIST_KEY = 'ai-debug-store';
+/** 旧项目数据 key（project-storage 历史使用） */
+const LEGACY_PROJECTS_KEY = 'ai-debug:network-projects';
+
+/**
+ * 迁移旧 key `ai-debug:network-projects` 到新 persist key `ai-debug-store`。
+ * 仅在旧 key 有数据且新 key 无数据时执行一次性迁移，迁移后保留旧 key 不删除
+ * （等用户确认新版正常后再清理，避免数据丢失风险）。
+ * 非浏览器环境（SSR）静默跳过。
+ */
+export function migrateLegacyProjectsKey(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const oldRaw = window.localStorage.getItem(LEGACY_PROJECTS_KEY);
+    const newRaw = window.localStorage.getItem(STORE_PERSIST_KEY);
+    if (oldRaw && !newRaw) {
+      const projects = JSON.parse(oldRaw);
+      // persist 存储格式：{ state: {...}, version: N }
+      const migratedState = {
+        state: { projects, currentProjectId: null as string | null },
+        version: 1,
+      };
+      window.localStorage.setItem(
+        STORE_PERSIST_KEY,
+        JSON.stringify(migratedState),
+      );
+    }
+  } catch {
+    // 旧数据损坏，静默跳过（persist 会用默认空状态）
+  }
+}
+
 export const useDebugStore = create<NetworkState>()(
   devtools(
-    (set, get) => ({
+    persist(
+      (set, get) => ({
   // ========== 画布数据 ==========
   nodes: [],
   edges: [],
@@ -584,12 +610,25 @@ export const useDebugStore = create<NetworkState>()(
   toggleFocusMode: () => set((state) => ({ focusMode: !state.focusMode })),
 
   // ========== 项目操作 ==========
+  // persist 接管后：projects 数组变化由 persist 中间件自动同步到 localStorage，
+  // 不再手动调用 project-storage 的 createProjectStorage/updateProjectStorage/deleteProjectStorage。
   createProject: (name) => {
     // 切换前保存当前项目，避免防抖内的改动丢失
     get().flushCurrentProject();
-    const project = createProjectStorage(name);
-    set({ projects: loadProjects() });
+    const now = Date.now();
+    const project: NetworkProject = {
+      id: `project-${now}-${Math.random().toString(36).slice(2, 8)}`,
+      name: name.trim() || '未命名项目',
+      nodes: [],
+      edges: [],
+      viewport: null,
+      createdAt: now,
+      updatedAt: now,
+      projectType: 'normal',
+    };
+    set((state) => ({ projects: [...state.projects, project] }));
     get().loadProject(project.id);
+    return project.id;
   },
 
   // 进入新项目草稿态：清空画布数据并解除当前项目绑定。
@@ -617,7 +656,8 @@ export const useDebugStore = create<NetworkState>()(
     if (get().currentProjectId !== id) {
       get().flushCurrentProject();
     }
-    const project = getProject(id);
+    // persist 接管后从 store.projects 读（不再调 storage 层 getProject）
+    const project = get().projects.find((p) => p.id === id);
     if (!project) return;
     set({
       nodes: project.nodes,
@@ -633,7 +673,8 @@ export const useDebugStore = create<NetworkState>()(
     });
   },
 
-  // 立即保存当前项目的未保存改动（同步落盘，用于切换项目前的兜底）
+  // 立即保存当前项目的未保存改动（persist 接管后：更新 store.projects 中对应项目，
+  // persist 中间件自动同步到 localStorage，不再调 storage 层 updateProjectStorage）
   flushCurrentProject: () => {
     const state = get();
     if (state.currentProjectId && state.isDirty) {
@@ -644,35 +685,50 @@ export const useDebugStore = create<NetworkState>()(
   saveProject: () => {
     const id = get().currentProjectId;
     if (!id) return;
-    const { nodes, edges, viewport, projects, turnCounter } = get();
-    // 保留当前项目的 memory 字段（项目级记忆独立于 nodes/edges 存储）
-    const current = projects.find((p) => p.id === id);
-    const memory = current?.memory;
-    updateProjectStorage(id, { nodes, edges, viewport, memory, turnCounter });
-    // 同步刷新本地 projects 列表（保持左侧面板数据一致）
-    set({ projects: loadProjects(), isDirty: false });
+    const { nodes, edges, viewport, turnCounter } = get();
+    // 更新 store.projects 中对应项目的画布数据 + 记忆 + 轮数计数器
+    // persist 中间件监听 projects 变化自动同步到 localStorage
+    set((state) => ({
+      projects: state.projects.map((p) =>
+        p.id === id
+          ? {
+              ...p,
+              nodes,
+              edges,
+              viewport,
+              memory: p.memory,
+              turnCounter,
+              updatedAt: Date.now(),
+            }
+          : p,
+      ),
+      isDirty: false,
+    }));
   },
 
   deleteProject: (id) => {
-    deleteProjectStorage(id);
     set((state) => ({
-      projects: loadProjects(),
+      projects: state.projects.filter((p) => p.id !== id),
       currentProjectId:
         state.currentProjectId === id ? null : state.currentProjectId,
     }));
   },
 
   // 切换项目置顶：已置顶（pinnedAt 非空）→ 置空；未置顶 → 标记当前时间戳。
-  // 直接持久化到 storage 再刷新 store 列表，保持与 deleteProject 一致的处理模式。
+  // persist 接管后直接更新 store.projects，自动同步到 localStorage。
   togglePinProject: (id) => {
-    const project = getProject(id);
-    if (!project) return;
-    const nextPinnedAt = project.pinnedAt ? undefined : Date.now();
-    updateProjectStorage(id, { pinnedAt: nextPinnedAt });
-    set({ projects: loadProjects() });
+    set((state) => ({
+      projects: state.projects.map((p) =>
+        p.id === id
+          ? { ...p, pinnedAt: p.pinnedAt ? undefined : Date.now() }
+          : p,
+      ),
+    }));
   },
 
-  refreshProjects: () => set({ projects: loadProjects() }),
+  // persist 接管后：projects 由 persist 中间件自动从 localStorage rehydrate，
+  // 此函数保留为 no-op 以兼容 EditorInner 的 refreshProjects() 调用（避免破坏接口）
+  refreshProjects: () => {},
 
   // ========== 记忆操作 ==========
   // 全局记忆：直接读写 localStorage，再同步到 store
@@ -702,7 +758,7 @@ export const useDebugStore = create<NetworkState>()(
     set({ globalMemory: list });
   },
 
-  // 项目记忆：写入当前项目的 memory 字段并持久化
+  // 项目记忆：写入当前项目的 memory 字段，persist 中间件自动同步到 localStorage
   addProjectMemory: (content, source = 'manual') => {
     const { currentProjectId, projects } = get();
     if (!currentProjectId) return;
@@ -712,42 +768,42 @@ export const useDebugStore = create<NetworkState>()(
       createdAt: Date.now(),
       source,
     };
-    const updatedProjects = projects.map((p) =>
-      p.id === currentProjectId
-        ? { ...p, memory: [...(p.memory ?? []), entry] }
-        : p,
-    );
-    saveProjects(updatedProjects);
-    set({ projects: updatedProjects });
+    set({
+      projects: projects.map((p) =>
+        p.id === currentProjectId
+          ? { ...p, memory: [...(p.memory ?? []), entry] }
+          : p,
+      ),
+    });
   },
 
   updateProjectMemory: (id, content) => {
     const { currentProjectId, projects } = get();
     if (!currentProjectId) return;
-    const updatedProjects = projects.map((p) =>
-      p.id === currentProjectId
-        ? {
-            ...p,
-            memory: (p.memory ?? []).map((e) =>
-              e.id === id ? { ...e, content: content.trim() } : e,
-            ),
-          }
-        : p,
-    );
-    saveProjects(updatedProjects);
-    set({ projects: updatedProjects });
+    set({
+      projects: projects.map((p) =>
+        p.id === currentProjectId
+          ? {
+              ...p,
+              memory: (p.memory ?? []).map((e) =>
+                e.id === id ? { ...e, content: content.trim() } : e,
+              ),
+            }
+          : p,
+      ),
+    });
   },
 
   deleteProjectMemory: (id) => {
     const { currentProjectId, projects } = get();
     if (!currentProjectId) return;
-    const updatedProjects = projects.map((p) =>
-      p.id === currentProjectId
-        ? { ...p, memory: (p.memory ?? []).filter((e) => e.id !== id) }
-        : p,
-    );
-    saveProjects(updatedProjects);
-    set({ projects: updatedProjects });
+    set({
+      projects: projects.map((p) =>
+        p.id === currentProjectId
+          ? { ...p, memory: (p.memory ?? []).filter((e) => e.id !== id) }
+          : p,
+      ),
+    });
   },
 
   refreshGlobalMemory: () => set({ globalMemory: loadGlobalMemory() }),
@@ -847,7 +903,26 @@ export const useDebugStore = create<NetworkState>()(
         activeBranches: count,
       },
     })),
-  }),
+    }),
+    // persist 中间件配置：只持久化 projects + currentProjectId
+    // 排除所有 UI 临时态：nodes/edges/selectedNodeId/viewport/focusMode/isDirty/
+    // showSettings/mobileSidebarOpen/sidebarCollapsed/showAutoEvolution/llmConfig/
+    // appSettings/globalMemory/showMemoryPanel/turnCounter/nodeDisplayMode/
+    // highlightedPathIds/autoEvolutionState/_abortControllers/
+    // selectedChildIdMap（T017 将新增，已预留排除）
+    // appSettings/globalMemory 由 settings-storage 独立管理（保留 refresh* 兼容）
+    {
+      name: STORE_PERSIST_KEY,
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        projects: state.projects,
+        currentProjectId: state.currentProjectId,
+      }),
+      version: 1,
+      // SSR 安全：跳过自动 hydration，由 DebugFlowEditorLoader useEffect 手动 rehydrate
+      skipHydration: true,
+    },
+    ),
     // devtools 中间件配置：仅开发环境启用，生产构建 tree-shaking 移除
     {
       name: 'ai-debug-store',

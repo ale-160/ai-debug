@@ -129,6 +129,46 @@ export interface BuildLLMMessagesOptions {
   pathLength?: number;
 }
 
+/** buildLLMMessages 的返回结构：含消息数组与压缩元信息（T018） */
+export interface BuildLLMMessagesResult {
+  /** 构造好的 OpenAI 兼容消息数组（system + user/assistant） */
+  messages: LLMMessage[];
+  /**
+   * 估算 token 数（粗略估算：所有消息 content 字符数之和 / 3）。
+   * 中文 1 字 ≈ 1 token、英文 3 字符 ≈ 1 token，混合场景取 / 3 折中，
+   * 仅供 UI 成本预估与调试观测，不作为精确计费依据。
+   */
+  estimatedTokens: number;
+  /** 被压缩的节点数（前段被 pathSummary 替代的节点数，未触发压缩时为 0） */
+  compressedCount: number;
+  /** 路径总节点数（所有段长度之和，含 ignored 节点） */
+  totalNodes: number;
+}
+
+/**
+ * 计算 LLMMessage content 的字符数（支持 string 与多模态数组）。
+ * 多模态数组的 image_url 部分按 0 字符计（图片 token 由模型按图像尺寸另算，此处只估文本）。
+ */
+function getMessageContentLength(content: LLMMessage['content']): number {
+  if (typeof content === 'string') return content.length;
+  return content.reduce(
+    (sum, part) => sum + (part.type === 'text' ? part.text.length : 0),
+    0,
+  );
+}
+
+/**
+ * 估算 messages 的 token 数：所有 content 字符数之和 / 3。
+ * 粗略估算，供 UI 显示与调试观测，不作为精确计费依据。
+ */
+function estimateTokens(messages: LLMMessage[]): number {
+  const totalChars = messages.reduce(
+    (sum, m) => sum + getMessageContentLength(m.content),
+    0,
+  );
+  return Math.ceil(totalChars / 3);
+}
+
 /**
  * 计算多段路径的总节点数（所有段长度之和）。
  */
@@ -207,7 +247,7 @@ export function buildLLMMessages(
   segments: ContextPathItem[][],
   extraContext?: string,
   options?: BuildLLMMessagesOptions,
-): LLMMessage[] {
+): BuildLLMMessagesResult {
   const systemContent = extraContext
     ? `${SYSTEM_PROMPT}\n\n${extraContext}`
     : SYSTEM_PROMPT;
@@ -223,6 +263,9 @@ export function buildLLMMessages(
   // 判断是否启用混合模式：路径超过阈值 且（有 options.pathSummary 或 可能存在前段节点 pathSummary）
   const enableHybrid = totalLength > SUMMARY_THRESHOLD;
 
+  // 累计被压缩的节点数（前段被 pathSummary 替代的节点数）
+  let compressedCount = 0;
+
   // Case A：options.pathSummary 存在 → 单条摘要插入在最前，各段只发后 recentKeep 个节点
   if (enableHybrid && hasOptionsSummary) {
     messages.push({
@@ -236,11 +279,18 @@ export function buildLLMMessages(
       // 该段超过 recentKeep 时只发后 recentKeep 个节点；否则全发（每段独立应用规则）
       const startIdx =
         segment.length > recentKeep ? segment.length - recentKeep : 0;
+      // 前段被压缩的节点数（0..startIdx-1 被摘要替代）
+      compressedCount += startIdx;
       for (let i = startIdx; i < segment.length; i++) {
         messages.push(...pushItemMessages(segment[i]));
       }
     });
-    return messages;
+    return {
+      messages,
+      estimatedTokens: estimateTokens(messages),
+      compressedCount,
+      totalNodes: totalLength,
+    };
   }
 
   // Case B / 原行为：逐段拼接。超阈值时尝试前段回退（取最近有 pathSummary 的前段节点）
@@ -262,6 +312,8 @@ export function buildLLMMessages(
           content: `【前序路径摘要】\n${segment[summaryIdx].pathSummary}`,
         });
         startIdx = summaryIdx + 1;
+        // 0..summaryIdx 被摘要替代（共 summaryIdx + 1 个节点）
+        compressedCount += summaryIdx + 1;
       }
     }
 
@@ -270,7 +322,12 @@ export function buildLLMMessages(
     }
   });
 
-  return messages;
+  return {
+    messages,
+    estimatedTokens: estimateTokens(messages),
+    compressedCount,
+    totalNodes: totalLength,
+  };
 }
 
 /** 从 ```json 代码块中解析建议方向数组 */
@@ -385,7 +442,7 @@ export async function streamTurnResponse(
 }> {
   try {
     const contextPath = collectContextPath(nodeId, nodes);
-    const messages = buildLLMMessages(contextPath, extraContext);
+    const { messages } = buildLLMMessages(contextPath, extraContext);
     const fullText = await quickCallLLM(messages, onDelta, signal);
     const suggestions = parseSuggestions(fullText);
     // 旁路 1：流式结束后异步生成摘要标题（非阻塞，失败静默跳过，不影响主流程）

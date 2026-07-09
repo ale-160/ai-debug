@@ -78,10 +78,22 @@ export async function* openAICompatibleStream(
 
           try {
             const json = JSON.parse(data);
+            // 检测 in-stream error chunk（GLM 内容审核/限流/token 超限等）
+            // 服务商在流中返回 {"error":{"code":"1301","message":"..."}} 时，
+            // JSON.parse 成功但 json.choices 为 undefined，错误会被静默吞掉。
+            // 此处显式检测 json.error 并抛出，让错误冒泡到用户界面。
+            if (json.error) {
+              const errMsg = json.error.message || json.error.code || JSON.stringify(json.error);
+              throw new Error(`LLM API in-stream error: ${errMsg}`);
+            }
             const delta = json.choices?.[0]?.delta?.content;
             if (delta) yield delta;
-          } catch {
-            // 跳过无法解析的行（心跳、注释等）
+          } catch (e) {
+            // 区分：in-stream error 向上抛出（让用户看到错误），
+            // JSON.parse 失败（SyntaxError）仍静默跳过（心跳、注释等正常 SSE 行）
+            if (e instanceof Error && e.message.startsWith('LLM API in-stream error')) {
+              throw e;
+            }
           }
         }
       }

@@ -296,6 +296,7 @@ function EmptyStateInput() {
 function EditorInner() {
   const { t } = useTranslation();
   const nodes = useDebugStore((s) => s.nodes);
+  const selectedNodeId = useDebugStore((s) => s.selectedNodeId);
   const showSettings = useDebugStore((s) => s.showSettings);
   const setShowSettings = useDebugStore((s) => s.setShowSettings);
   const showMemoryPanel = useDebugStore((s) => s.showMemoryPanel);
@@ -361,6 +362,11 @@ function EditorInner() {
       <a href="#main-canvas" className="skip-link">
         {t.skipToContent}
       </a>
+      {selectedNodeId && (
+        <a href="#inspector" className="skip-link">
+          {t.skipToInspector}
+        </a>
+      )}
       <TopNav onShowHelp={() => setShowShortcuts(true)} />
       <div className="flex-1 flex overflow-hidden relative">
         <Suspense fallback={<div className="w-64 bg-slate-100 dark:bg-slate-900 animate-pulse" />}>

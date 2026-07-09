@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Loader2, MessageSquare, GitBranch, Wrench, GitFork } from 'lucide-react';
@@ -87,6 +87,20 @@ export default function NodeInspector() {
   // 所有操作逻辑（继续追问 / 重新生成 / 冲突检测等）托管在 hook 中
   const actions = useInspectorActions(selectedNode);
 
+  // Esc 清空选中节点（Inspector 是常驻侧栏，Esc 不关闭侧栏而是取消选中）
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        // 避免与输入框的 Esc 冲突：输入框聚焦时 Esc 不清空选中
+        const activeTag = document.activeElement?.tagName;
+        if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') return;
+        setSelectedNode(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [setSelectedNode]);
+
   // 通过 parentId 向上递归到根节点，收集从根到当前节点的路径
   const breadcrumb = useMemo(() => {
     if (!selectedNode) return [] as Node<TurnNodeData>[];
@@ -138,7 +152,12 @@ export default function NodeInspector() {
   ];
 
   return (
-    <div className="w-full md:w-[420px] shrink-0 bg-white border-l border-slate-200 shadow-lg flex flex-col z-20 dark:bg-slate-900 dark:border-slate-700">
+    <div
+      id="inspector"
+      role="complementary"
+      aria-label={t.inspectorLabel}
+      className="w-full md:w-[420px] shrink-0 bg-white border-l border-slate-200 shadow-lg flex flex-col z-20 dark:bg-slate-900 dark:border-slate-700"
+    >
       {/* 路径面包屑（始终可见，含关闭按钮） */}
       <Breadcrumb
         breadcrumb={breadcrumb}

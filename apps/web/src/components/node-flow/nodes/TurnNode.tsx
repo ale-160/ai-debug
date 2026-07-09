@@ -2,7 +2,6 @@
 import React, { memo, useMemo, useState } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
 import { Loader2, GitMerge, AlertTriangle, Zap, ChevronLeft, ChevronRight } from 'lucide-react';
-import { useShallow } from 'zustand/react/shallow';
 import type { TurnNodeData } from '../types';
 import { statusColors, truncateStreamingText } from './node-utils';
 import { pickStatusMessage } from '../marketing-messages';
@@ -33,9 +32,8 @@ function TurnNodeComponent({ id, data, selected }: TurnNodeProps) {
   } = data;
   const nodeDisplayMode = useDebugStore((s) => s.nodeDisplayMode);
   const isCompact = nodeDisplayMode === 'compact';
-  // 路径回放高亮：用 useShallow 避免 Set 每次新引用触发无限循环
-  // （参考 ExecutionStatusBar 的 useShallow 模式）
-  const isOnHighlightedPath = useDebugStore(useShallow((s) => s.highlightedPathIds.includes(id)));
+  // 路径回放高亮：选择器返回 boolean 原始值，Zustand 自动浅比较，无需 useShallow
+  const isOnHighlightedPath = useDebugStore((s) => s.highlightedPathIds.includes(id));
   // hover 显示路径摘要开关（默认关闭，用户主动开启后才显示）
   const hoverShowPathSummary = useDebugStore((s) => s.appSettings.hoverShowPathSummary);
   // 仅在开启开关且 pathSummary 非空时显示 hover 卡片

@@ -275,6 +275,8 @@ export function migrateLegacyProjectsKey(): void {
     const newRaw = window.localStorage.getItem(STORE_PERSIST_KEY);
     if (oldRaw && !newRaw) {
       const projects = JSON.parse(oldRaw);
+      // 防御性校验：旧数据必须是数组，否则跳过迁移（persist 用默认空状态）
+      if (!Array.isArray(projects)) return;
       // persist 存储格式：{ state: {...}, version: N }
       const migratedState = {
         state: { projects, currentProjectId: null as string | null },

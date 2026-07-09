@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 import type { Node } from 'reactflow';
 import { useTranslation } from '@/components/I18nProvider';
@@ -35,6 +35,13 @@ export default function Breadcrumb({
   const setHighlightedPath = useDebugStore((s) => s.setHighlightedPath);
   // 定时器引用：3 秒自动清除高亮，点击新节点时覆盖旧定时器
   const clearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 组件卸载时清理定时器，避免内存泄漏
+  useEffect(() => {
+    return () => {
+      if (clearTimerRef.current) clearTimeout(clearTimerRef.current);
+    };
+  }, []);
 
   const handleSelect = (id: string, idx: number) => {
     // 触发原跳转选中逻辑

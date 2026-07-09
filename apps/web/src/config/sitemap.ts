@@ -1,3 +1,11 @@
+// ============================================================
+// AI Debug — sitemap.xml 生成脚本（CLI 入口）
+//
+// 用途：通过 `node -e "require('./src/config/sitemap')"` 或直接 `node` 执行
+//      输出 sitemap.xml 到 stdout，重定向到 public/sitemap.xml。
+//      不被应用代码 import，knip 会误报为 unused file。
+// ============================================================
+
 const SITEMAP_PROJECTS = [
   {
     path: '',

@@ -89,6 +89,12 @@ interface NetworkState {
   /** 清除高亮（3 秒自动清除或切换项目时） */
   clearHighlightedPath: () => void;
 
+  // ========== 分支切换器（UI 临时态，不持久化） ==========
+  /** 记录每节点当前选中的子分支：key=父节点 id, value=当前选中的子节点 id */
+  selectedChildIdMap: Record<string, string>;
+  /** 切换某节点的选中子分支 */
+  setSelectedChild: (parentId: string, childId: string) => void;
+
   // ========== React Flow 集成 ==========
   onNodesChange: (changes: NodeChange[]) => void;
   onEdgesChange: (changes: EdgeChange[]) => void;
@@ -319,6 +325,14 @@ export const useDebugStore = create<NetworkState>()(
   setHighlightedPath: (nodeIds) => set({ highlightedPathIds: nodeIds }),
   clearHighlightedPath: () => set({ highlightedPathIds: [] }),
 
+  // ========== 分支切换器 ==========
+  // 默认空对象，不持久化，切换项目时清空
+  selectedChildIdMap: {},
+  setSelectedChild: (parentId, childId) =>
+    set((state) => ({
+      selectedChildIdMap: { ...state.selectedChildIdMap, [parentId]: childId },
+    })),
+
   // ========== 自动推演 ==========
   // 默认 idle，由引擎在 start/done 时切换
   autoEvolutionState: { status: 'idle', currentStep: 0, maxSteps: 0, activeBranches: 0 },
@@ -380,6 +394,10 @@ export const useDebugStore = create<NetworkState>()(
         isDirty: true,
       };
     });
+    // 新建子分支时自动选中最新（分支切换器记录每节点当前选中子分支）
+    if (parentId !== null) {
+      get().setSelectedChild(parentId, id);
+    }
     return id;
   },
 
@@ -648,6 +666,8 @@ export const useDebugStore = create<NetworkState>()(
       turnCounter: 0,
       // 清空路径高亮（UI 临时态不跨项目）
       highlightedPathIds: [],
+      // 清空分支切换器选中状态（UI 临时态不跨项目）
+      selectedChildIdMap: {},
     });
   },
 
@@ -670,6 +690,8 @@ export const useDebugStore = create<NetworkState>()(
       turnCounter: project.turnCounter ?? 0,
       // 清空路径高亮（UI 临时态不跨项目）
       highlightedPathIds: [],
+      // 清空分支切换器选中状态（UI 临时态不跨项目）
+      selectedChildIdMap: {},
     });
   },
 

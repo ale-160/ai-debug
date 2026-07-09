@@ -69,13 +69,18 @@ function TurnNodeComponent({ id, data, selected }: TurnNodeProps) {
       })
     : '';
 
-  // 分支切换器：订阅当前节点的子节点 id 列表（csv 字符串避免数组引用变化）。
-  // 仅当子节点数 > 1 时显示分支徽标；点击展开 `< 1/N >` 切换器，
-  // 切换时调用 setSelectedNode 切到对应子节点。
+  // 分支切换器：订阅当前节点的子节点列表（csv 字符串避免数组引用变化）。
+  // 仅当子节点数 > 1 时显示分支徽标；点击展开 `< 1/N >` 切换器。
+  // T017 升级：用 selectedChildIdMap[id] 记录每节点独立选中的子分支，
+  // 而非全局 selectedNodeId（避免选中其他不相关节点时切换器错乱）。
+  // 分支按 createdAt 升序排序（1=最早，N=最新）。
   const setSelectedNode = useDebugStore((s) => s.setSelectedNode);
+  const setSelectedChild = useDebugStore((s) => s.setSelectedChild);
+  const selectedChildId = useDebugStore((s) => s.selectedChildIdMap[id] ?? '');
   const childIdsCsv = useDebugStore((s) =>
     s.nodes
       .filter((n) => n.data.parentId === id)
+      .sort((a, b) => (a.data.createdAt ?? 0) - (b.data.createdAt ?? 0))
       .map((n) => n.id)
       .join(',')
   );
@@ -85,12 +90,11 @@ function TurnNodeComponent({ id, data, selected }: TurnNodeProps) {
   );
   const hasMultipleBranches = childIds.length > 1;
   const [branchSwitcherOpen, setBranchSwitcherOpen] = useState(false);
-  // 切换器当前索引：默认指向当前 selectedNode 在 childIds 中的位置，无则 0
-  const selectedNodeId = useDebugStore((s) => s.selectedNodeId);
+  // 切换器当前索引：基于 selectedChildIdMap[id]，无则默认 0（第一个分支）
   const currentBranchIndex = useMemo(() => {
-    const idx = childIds.indexOf(selectedNodeId ?? '');
+    const idx = selectedChildId ? childIds.indexOf(selectedChildId) : -1;
     return idx === -1 ? 0 : idx;
-  }, [childIds, selectedNodeId]);
+  }, [childIds, selectedChildId]);
 
   const handleBranchBadgeClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -100,13 +104,17 @@ function TurnNodeComponent({ id, data, selected }: TurnNodeProps) {
     e.stopPropagation();
     if (childIds.length === 0) return;
     const next = (currentBranchIndex - 1 + childIds.length) % childIds.length;
-    setSelectedNode(childIds[next]);
+    const nextChildId = childIds[next];
+    setSelectedChild(id, nextChildId);
+    setSelectedNode(nextChildId);
   };
   const handleNextBranch = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (childIds.length === 0) return;
     const next = (currentBranchIndex + 1) % childIds.length;
-    setSelectedNode(childIds[next]);
+    const nextChildId = childIds[next];
+    setSelectedChild(id, nextChildId);
+    setSelectedNode(nextChildId);
   };
 
   // 渲染状态指示器（圆点 / 旋转图标）：配色统一取自 statusColors，与 MiniMap 一致

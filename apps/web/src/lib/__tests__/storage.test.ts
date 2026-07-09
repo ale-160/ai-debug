@@ -258,6 +258,7 @@ describe('project-storage - 容量超限 QuotaExceededError', () => {
         conflictCheckFrequency: 1,
         globalRules: '',
         hoverShowPathSummary: false,
+        nodeActionsStyle: 'both',
       }),
     ).not.toThrow();
     spy.mockRestore();

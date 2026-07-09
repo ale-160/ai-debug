@@ -22,6 +22,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   conflictCheckFrequency: 1,
   globalRules: '',
   hoverShowPathSummary: false,
+  nodeActionsStyle: 'both',
 };
 
 /**

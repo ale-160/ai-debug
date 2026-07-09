@@ -39,6 +39,8 @@ export interface AppSettings {
   globalRules: string;
   /** 是否在 hover 节点时显示路径摘要（默认关闭，用户主动开启后才显示） */
   hoverShowPathSummary: boolean;
+  /** 节点操作入口样式：'toolbar'（仅浮动工具条）/ 'context'（仅右键菜单）/ 'both'（两者都开，默认） */
+  nodeActionsStyle: 'toolbar' | 'context' | 'both';
   /**
    * 路径摘要（pathSummary）混合模式参数（用户可覆盖 provider 预设）。
    * - undefined：使用 provider 预设默认值（向后兼容，老数据无此字段）

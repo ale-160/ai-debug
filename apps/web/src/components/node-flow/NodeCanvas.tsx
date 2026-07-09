@@ -19,6 +19,12 @@ import {
   Hand,
   AlignJustify,
   Rows3,
+  Ban,
+  RotateCcw,
+  EyeOff,
+  Eye,
+  Trash2,
+  X,
 } from 'lucide-react';
 import { nodeTypes } from './nodes';
 import { getStatusColor } from './nodes/node-utils';
@@ -89,6 +95,14 @@ export default function NodeCanvas() {
   const focusMode = useDebugStore((s) => s.focusMode);
   const toggleFocusMode = useDebugStore((s) => s.toggleFocusMode);
 
+  // 批量操作 actions（T024 浮动工具条 + 右键菜单）
+  const abandonBranch = useDebugStore((s) => s.abandonBranch);
+  const reactivateBranch = useDebugStore((s) => s.reactivateBranch);
+  const ignoreNode = useDebugStore((s) => s.ignoreNode);
+  const unignoreNode = useDebugStore((s) => s.unignoreNode);
+  const deleteNode = useDebugStore((s) => s.deleteNode);
+  const appSettings = useDebugStore((s) => s.appSettings);
+
   const currentProjectId = useDebugStore((s) => s.currentProjectId);
   const projects = useDebugStore((s) => s.projects);
   const refreshProjects = useDebugStore((s) => s.refreshProjects);
@@ -128,9 +142,21 @@ export default function NodeCanvas() {
     [setSelectedNode],
   );
 
+  // 右键菜单 state（T024）：记录右键的节点 id 和菜单位置（声明在 onPaneClick 之前，避免 use-before-declare）
+  const [contextMenu, setContextMenu] = useState<{ nodeId: string; x: number; y: number } | null>(
+    null,
+  );
+
   const onPaneClick = useCallback(() => {
     setSelectedNode(null);
+    setContextMenu(null);
   }, [setSelectedNode]);
+
+  // 右键节点时记录位置并显示菜单（T024）
+  const onNodeContextMenu = useCallback((e: React.MouseEvent, node: Node) => {
+    e.preventDefault();
+    setContextMenu({ nodeId: node.id, x: e.clientX, y: e.clientY });
+  }, []);
 
   const onMove = useCallback(
     (_: unknown, vp: Viewport) => {
@@ -348,6 +374,11 @@ export default function NodeCanvas() {
 
       const isCtrl = e.ctrlKey || e.metaKey;
       const isShift = e.shiftKey;
+
+      // Esc 关闭右键菜单（T024，不检查 contextMenu 避免闭包旧值问题）
+      if (e.key === 'Escape') {
+        setContextMenu(null);
+      }
 
       // Ctrl+Z 撤销
       if (isCtrl && !isShift && (e.key === 'z' || e.key === 'Z') && !e.repeat) {
@@ -620,6 +651,7 @@ export default function NodeCanvas() {
           onConnect={onConnect}
           onNodeClick={onNodeClick}
           onPaneClick={onPaneClick}
+          onNodeContextMenu={onNodeContextMenu}
           onMove={onMove}
           nodeTypes={nodeTypes}
           fitView
@@ -745,6 +777,133 @@ export default function NodeCanvas() {
           </div>
           <NodeDisplayModeToggle />
         </div>
+
+        {/* 浮动工具条（T024）：至少 1 个节点选中时显示在画布底部居中 */}
+        {(appSettings.nodeActionsStyle === 'toolbar' ||
+          appSettings.nodeActionsStyle === 'both') &&
+          selectedNodes.length >= 1 && (
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 px-3 py-2 bg-white border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-lg shadow-lg max-w-[90%] overflow-x-auto">
+              <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap mr-1">
+                {tf('batchSelectedCount', { n: selectedNodes.length })}
+              </span>
+              {selectedNodes.some((n) => n.data.status !== 'abandoned') && (
+                <button
+                  onClick={() => selectedNodes.forEach((n) => abandonBranch(n.id))}
+                  className="flex items-center gap-1 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700 rounded transition-colors whitespace-nowrap"
+                >
+                  <Ban size={12} />
+                  {t.abandonBranch}
+                </button>
+              )}
+              {selectedNodes.some((n) => n.data.status === 'abandoned') && (
+                <button
+                  onClick={() => selectedNodes.forEach((n) => reactivateBranch(n.id))}
+                  className="flex items-center gap-1 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700 rounded transition-colors whitespace-nowrap"
+                >
+                  <RotateCcw size={12} />
+                  {t.restoreBranch}
+                </button>
+              )}
+              {selectedNodes.some((n) => n.data.status !== 'ignored') && (
+                <button
+                  onClick={() => selectedNodes.forEach((n) => ignoreNode(n.id))}
+                  className="flex items-center gap-1 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700 rounded transition-colors whitespace-nowrap"
+                >
+                  <EyeOff size={12} />
+                  {t.ignoreNode}
+                </button>
+              )}
+              {selectedNodes.some((n) => n.data.status === 'ignored') && (
+                <button
+                  onClick={() => selectedNodes.forEach((n) => unignoreNode(n.id))}
+                  className="flex items-center gap-1 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700 rounded transition-colors whitespace-nowrap"
+                >
+                  <Eye size={12} />
+                  {t.unignore}
+                </button>
+              )}
+              <button
+                onClick={handleDelete}
+                className="flex items-center gap-1 px-2 py-1 text-xs text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30 rounded transition-colors whitespace-nowrap"
+              >
+                <Trash2 size={12} />
+                {t.delete}
+              </button>
+              <button
+                onClick={() => {
+                  useDebugStore.setState((s) => ({
+                    nodes: s.nodes.map((n) => (n.selected ? { ...n, selected: false } : n)),
+                  }));
+                }}
+                className="flex items-center gap-1 px-2 py-1 text-xs text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700 rounded transition-colors whitespace-nowrap"
+                aria-label={t.cancelSelection}
+              >
+                <X size={12} />
+                {t.cancelSelection}
+              </button>
+            </div>
+          )}
+
+        {/* 右键菜单（T024）：右键节点时在鼠标位置显示 */}
+        {(appSettings.nodeActionsStyle === 'context' ||
+          appSettings.nodeActionsStyle === 'both') &&
+          contextMenu && (
+            <div
+              className="fixed z-50 min-w-[160px] py-1 bg-white border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-lg shadow-lg"
+              style={{ left: contextMenu.x, top: contextMenu.y }}
+              role="menu"
+            >
+              {(() => {
+                const node = nodes.find((n) => n.id === contextMenu.nodeId);
+                if (!node) return null;
+                const isAbandoned = node.data.status === 'abandoned';
+                const isIgnored = node.data.status === 'ignored';
+                return (
+                  <>
+                    <button
+                      onClick={() => {
+                        if (isAbandoned) reactivateBranch(node.id);
+                        else abandonBranch(node.id);
+                        setContextMenu(null);
+                      }}
+                      className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors text-left"
+                      role="menuitem"
+                    >
+                      {isAbandoned ? <RotateCcw size={12} /> : <Ban size={12} />}
+                      {isAbandoned ? t.contextMenuReactivate : t.contextMenuAbandon}
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (isIgnored) unignoreNode(node.id);
+                        else ignoreNode(node.id);
+                        setContextMenu(null);
+                      }}
+                      className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors text-left"
+                      role="menuitem"
+                    >
+                      {isIgnored ? <Eye size={12} /> : <EyeOff size={12} />}
+                      {isIgnored ? t.contextMenuUnignore : t.contextMenuIgnore}
+                    </button>
+                    <div className="my-1 border-t border-slate-100 dark:border-slate-700" />
+                    <button
+                      onClick={() => {
+                        if (confirm(t.confirmPruneNode)) {
+                          deleteNode(node.id);
+                          setSelectedNode(null);
+                        }
+                        setContextMenu(null);
+                      }}
+                      className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors text-left"
+                      role="menuitem"
+                    >
+                      <Trash2 size={12} />
+                      {t.contextMenuDelete}
+                    </button>
+                  </>
+                );
+              })()}
+            </div>
+          )}
       </div>
     </div>
   );

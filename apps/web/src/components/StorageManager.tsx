@@ -119,6 +119,7 @@ export function StorageManager() {
       conflictCheckFrequency: 5,
       nodeDisplayMode: 'detailed' as const,
       hoverShowPathSummary: false,
+      nodeActionsStyle: 'both' as const,
     };
     saveAppSettings(defaults);
     refreshAppSettings();

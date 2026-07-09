@@ -549,6 +549,27 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 </label>
               </div>
 
+              {/* 节点操作入口样式（T024） */}
+              <div className="space-y-2">
+                <div className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                  {t.nodeActionsStyle}
+                </div>
+                <select
+                  value={settingsDraft.nodeActionsStyle}
+                  onChange={(e) =>
+                    setSettingsDraft({
+                      ...settingsDraft,
+                      nodeActionsStyle: e.target.value as 'toolbar' | 'context' | 'both',
+                    })
+                  }
+                  className="w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-violet-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+                >
+                  <option value="both">{t.nodeActionsStyleBoth}</option>
+                  <option value="toolbar">{t.nodeActionsStyleToolbar}</option>
+                  <option value="context">{t.nodeActionsStyleContext}</option>
+                </select>
+              </div>
+
               {/* 上下文压缩：pathSummary 混合模式参数（T007） */}
               <div className="space-y-2">
                 <div className="text-xs font-medium text-slate-600 dark:text-slate-300">

@@ -10,7 +10,9 @@
     "analyze": "pnpm --filter @ai-debug/web analyze",
     "clean": "pnpm --filter @ai-debug/web clean",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "test": "pnpm --filter @ai-debug/web exec vitest run",
+    "push:feature": "node scripts/push-feature.mjs"
   },
   "engines": {
     "node": ">=22",

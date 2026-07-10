@@ -44,7 +44,7 @@ yarn-error.log*
 coverage/
 
 # 比赛报名相关内容（不公开）
-docs/
+contest/
 
 # 多智能体协作文档（秘书长维护，含飞书 webhook 等不公开信息）
 collab/

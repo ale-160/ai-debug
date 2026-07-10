@@ -779,8 +779,7 @@ export default function NodeCanvas() {
         </div>
 
         {/* 浮动工具条（T024）：至少 1 个节点选中时显示在画布底部居中 */}
-        {(appSettings.nodeActionsStyle === 'toolbar' ||
-          appSettings.nodeActionsStyle === 'both') &&
+        {(appSettings.nodeActionsStyle === 'toolbar' || appSettings.nodeActionsStyle === 'both') &&
           selectedNodes.length >= 1 && (
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 px-3 py-2 bg-white border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-lg shadow-lg max-w-[90%] overflow-x-auto">
               <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap mr-1">
@@ -845,8 +844,7 @@ export default function NodeCanvas() {
           )}
 
         {/* 右键菜单（T024）：右键节点时在鼠标位置显示 */}
-        {(appSettings.nodeActionsStyle === 'context' ||
-          appSettings.nodeActionsStyle === 'both') &&
+        {(appSettings.nodeActionsStyle === 'context' || appSettings.nodeActionsStyle === 'both') &&
           contextMenu && (
             <div
               className="fixed z-50 min-w-[160px] py-1 bg-white border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-lg shadow-lg"

@@ -261,7 +261,11 @@ export default function NodeInspector() {
           />
         )}
         {mergedFromIds && mergedFromIds.length > 0 && (
-          <MergeSourcesList mergedFromIds={mergedFromIds} nodes={nodes} onSelect={setSelectedNode} />
+          <MergeSourcesList
+            mergedFromIds={mergedFromIds}
+            nodes={nodes}
+            onSelect={setSelectedNode}
+          />
         )}
         {/* 注入的记忆条目：依据全局/项目记忆开关 */}
         <div className="space-y-2">

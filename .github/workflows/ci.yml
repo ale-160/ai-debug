@@ -5,10 +5,25 @@ on:
     branches: [main]
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      retry_count:
+        description: 'Auto-fix retry count (internal use)'
+        required: false
+        default: '0'
+
+env:
+  MAX_AUTO_FIX_RETRIES: 3
+
+permissions:
+  contents: read
+  pull-requests: write
 
 jobs:
   quality:
     runs-on: ubuntu-latest
+    outputs:
+      status: ${{ steps.result.outputs.status }}
     steps:
       - uses: actions/checkout@v5
 
@@ -20,16 +35,200 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Lint
-        run: pnpm lint
+        run: |
+          set -o pipefail
+          pnpm lint 2>&1 | tee /tmp/lint.log || echo "failed" > /tmp/lint_status
+        continue-on-error: true
+
+      - name: Format check
+        run: |
+          set -o pipefail
+          pnpm format:check 2>&1 | tee /tmp/format.log || echo "failed" > /tmp/format_status
+        continue-on-error: true
 
       - name: Type check
-        run: pnpm type-check
+        run: |
+          set -o pipefail
+          pnpm type-check 2>&1 | tee /tmp/typecheck.log || echo "failed" > /tmp/typecheck_status
+        continue-on-error: true
 
       - name: Test
-        run: pnpm --filter @ai-debug/web exec vitest run
+        run: |
+          set -o pipefail
+          pnpm test 2>&1 | tee /tmp/test.log || echo "failed" > /tmp/test_status
+        continue-on-error: true
 
       - name: Build
-        run: pnpm build
+        run: |
+          set -o pipefail
+          pnpm build 2>&1 | tee /tmp/build.log || echo "failed" > /tmp/build_status
+        continue-on-error: true
+
+      - name: Collect results
+        id: result
+        if: always()
+        run: |
+          STATUS="success"
+          mkdir -p /tmp/ci-logs
+          if [ -f /tmp/lint_status ]; then
+            STATUS="failed"
+            cp /tmp/lint.log /tmp/ci-logs/lint.log
+          fi
+          if [ -f /tmp/format_status ]; then
+            STATUS="failed"
+            cp /tmp/format.log /tmp/ci-logs/format.log
+          fi
+          if [ -f /tmp/typecheck_status ]; then
+            STATUS="failed"
+            cp /tmp/typecheck.log /tmp/ci-logs/typecheck.log
+          fi
+          if [ -f /tmp/test_status ]; then
+            STATUS="failed"
+            cp /tmp/test.log /tmp/ci-logs/test.log
+          fi
+          if [ -f /tmp/build_status ]; then
+            STATUS="failed"
+            cp /tmp/build.log /tmp/ci-logs/build.log
+          fi
+          echo "status=$STATUS" >> $GITHUB_OUTPUT
+          if [ "$STATUS" = "failed" ]; then
+            exit 1
+          fi
+
+      - name: Upload CI logs
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: ci-error-logs
+          path: /tmp/ci-logs/
+          retention-days: 7
+
+  # ============================================================
+  # PR 评论：CI 结果自动通知
+  # - 仅 PR 事件触发
+  # - 成功/失败都评论，失败时附错误摘要
+  # - 部署由 Cloudflare Pages 的 GitHub 集成自动完成，无需 CI 推送
+  # ============================================================
+  pr-comment:
+    needs: quality
+    if: always() && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download CI logs
+        if: needs.quality.result == 'failure'
+        uses: actions/download-artifact@v5
+        with:
+          name: ci-error-logs
+          path: /tmp/ci-logs
+        continue-on-error: true
+
+      - name: Find existing comment
+        if: always()
+        id: find-comment
+        uses: peter-evans/find-comment@v4
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: 'github-actions[bot]'
+          body-includes: '<!-- ci-status-comment -->'
+
+      - name: Generate PR comment
+        id: comment
+        if: always()
+        run: |
+          STATUS="${{ needs.quality.result }}"
+          MAX_RETRIES=3
+
+          RETRY_COUNT=0
+          if [ -n "${{ steps.find-comment.outputs.comment-id }}" ]; then
+            if command -v gh &> /dev/null; then
+              COMMENT_BODY=$(gh api /repos/${{ github.repository }}/issues/comments/${{ steps.find-comment.outputs.comment-id }} --jq '.body' 2>/dev/null || echo "")
+              if echo "$COMMENT_BODY" | grep -q "auto-fix-retry-count:"; then
+                RETRY_COUNT=$(echo "$COMMENT_BODY" | grep -o "auto-fix-retry-count: [0-9]*" | grep -o "[0-9]*")
+              fi
+            fi
+          fi
+
+          if [ "$STATUS" != "success" ]; then
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+          else
+            RETRY_COUNT=0
+          fi
+
+          {
+            echo 'body<<COMMENT_EOF'
+            if [ "$STATUS" = "success" ]; then
+              echo "## ✅ CI 通过"
+              echo ""
+              echo "所有检查项均已通过，可以进行代码审查。"
+            else
+              echo "## ❌ CI 失败"
+              echo ""
+              if [ "$RETRY_COUNT" -le "$MAX_RETRIES" ]; then
+                echo "> 🔄 自动修复中... 第 ${RETRY_COUNT}/${MAX_RETRIES} 次尝试"
+                echo ""
+              else
+                echo "> ⛔ 已达到最大自动修复次数 (${MAX_RETRIES})，请人工介入"
+                echo ""
+              fi
+              if [ -f /tmp/ci-logs/typecheck.log ]; then
+                echo "### 🔴 Type Check 错误"
+                echo ""
+                echo '```'
+                grep -E "error TS[0-9]+:" /tmp/ci-logs/typecheck.log | head -30
+                echo '```'
+                echo ""
+              fi
+              if [ -f /tmp/ci-logs/lint.log ]; then
+                echo "### 🟡 Lint 警告/错误"
+                echo ""
+                echo '```'
+                tail -30 /tmp/ci-logs/lint.log
+                echo '```'
+                echo ""
+              fi
+              if [ -f /tmp/ci-logs/test.log ]; then
+                echo "### 🧪 Test 失败"
+                echo ""
+                echo '```'
+                tail -30 /tmp/ci-logs/test.log
+                echo '```'
+                echo ""
+              fi
+              if [ -f /tmp/ci-logs/build.log ]; then
+                echo "### 🏗️ Build 失败"
+                echo ""
+                echo '```'
+                tail -20 /tmp/ci-logs/build.log
+                echo '```'
+                echo ""
+              fi
+              if [ -f /tmp/ci-logs/format.log ]; then
+                echo "### 📝 Format 失败"
+                echo ""
+                echo '```'
+                tail -20 /tmp/ci-logs/format.log
+                echo '```'
+                echo ""
+              fi
+              echo "完整日志请查看本次 run 的 Artifacts: \`ci-error-logs\`。"
+            fi
+            echo ""
+            echo "<!-- ci-status-comment -->"
+            echo "<!-- auto-fix-retry-count: ${RETRY_COUNT} -->"
+            echo 'COMMENT_EOF'
+          } >> $GITHUB_OUTPUT
+
+      - name: Create or update comment
+        if: always()
+        uses: peter-evans/create-or-update-comment@v5
+        with:
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body: ${{ steps.comment.outputs.body }}
+          edit-mode: replace

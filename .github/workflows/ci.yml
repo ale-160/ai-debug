@@ -21,14 +21,14 @@ permissions:
 
 jobs:
   # ============================================================
-  # 安全检查：fork PR 权限校验 + Pages Functions 防护
-  # - fork PR 仅协作者可触发完整 CI，外部贡献者跳过（防 CI 额度被刷）
+  # 安全检查：Pages Functions 防护 + 外部贡献者标记
   # - 检测 /functions/ 目录是否被新增（防恶意 Pages Functions 窃取预览部署 secrets）
+  # - 标记外部贡献者 PR（仅信息记录，不跳过 CI，因为公共仓库 CI 免费）
   # ============================================================
   security-check:
     runs-on: ubuntu-latest
     outputs:
-      skip_ci: ${{ steps.permission.outputs.skip }}
+      is_external: ${{ steps.permission.outputs.is_external }}
       has_functions: ${{ steps.functions.outputs.has }}
     steps:
       - uses: actions/checkout@v5
@@ -45,10 +45,10 @@ jobs:
               username: context.payload.pull_request.user.login,
             });
             if (perm.permission === 'none') {
-              core.warning('PR from external contributor - CI will skip quality checks');
-              core.setOutput('skip', 'true');
+              core.info('External contributor PR - will run full CI (public repo CI is free)');
+              core.setOutput('is_external', 'true');
             } else {
-              core.setOutput('skip', 'false');
+              core.setOutput('is_external', 'false');
             }
 
       - name: Detect Pages Functions directory
@@ -64,7 +64,6 @@ jobs:
 
   quality:
     needs: security-check
-    if: needs.security-check.outputs.skip_ci != 'true'
     runs-on: ubuntu-latest
     outputs:
       status: ${{ steps.result.outputs.status }}
@@ -191,7 +190,7 @@ jobs:
         run: |
           STATUS="${{ needs.quality.result }}"
           SEC_STATUS="${{ needs.security-check.result }}"
-          SKIP_CI="${{ needs.security-check.outputs.skip_ci }}"
+          IS_EXTERNAL="${{ needs.security-check.outputs.is_external }}"
           MAX_RETRIES=3
 
           RETRY_COUNT=0
@@ -217,13 +216,12 @@ jobs:
               echo ""
               echo "检测到潜在安全风险（如 /functions/ 目录注入），CI 已中止。"
               echo "请检查 PR 中是否包含 Pages Functions 代码，本项目是纯静态导出不应有 Functions。"
-            elif [ "$SKIP_CI" = "true" ]; then
-              echo "## ℹ️ 外部贡献者 PR"
-              echo ""
-              echo "CI 质量检查已跳过（外部贡献者 PR 不消耗 CI 额度）。"
-              echo "秘书长会手动审查此 PR，感谢贡献。"
             elif [ "$STATUS" = "success" ]; then
-              echo "## ✅ CI 通过"
+              if [ "$IS_EXTERNAL" = "true" ]; then
+                echo "## ✅ CI 通过（外部贡献者）"
+              else
+                echo "## ✅ CI 通过"
+              fi
               echo ""
               echo "所有检查项均已通过，可以进行代码审查。"
             else

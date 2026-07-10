@@ -7,3 +7,5 @@ next-env.d.ts
 *.md
 collab/
 .trae/
+# GitHub 自动生成的 workflow 文件，不格式化（用 CRLF 且非项目维护）
+.github/workflows/codeql.yml

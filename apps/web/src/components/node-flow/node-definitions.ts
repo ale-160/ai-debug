@@ -46,12 +46,14 @@ export type SchemaNodeDefinition = NodeDefinition & {
 
 /** 创建对话节点的默认数据 */
 export function createTurnNodeData(userMessage: string, parentId: string | null): TurnNodeData {
+  const now = Date.now();
   return {
     parentId,
     userMessage,
     assistantMessage: '',
     suggestions: [],
     status: 'idle',
-    createdAt: Date.now(),
+    createdAt: now,
+    shortHash: now.toString(36).slice(-7).padStart(7, '0'),
   };
 }

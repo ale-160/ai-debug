@@ -72,6 +72,10 @@ export default function NodeInspector() {
   const globalMemory = useDebugStore((s) => s.globalMemory);
   const projects = useDebugStore((s) => s.projects);
   const currentProjectId = useDebugStore((s) => s.currentProjectId);
+  // 标签与分支管理 actions（T028）
+  const addNodeTag = useDebugStore((s) => s.addNodeTag);
+  const removeNodeTag = useDebugStore((s) => s.removeNodeTag);
+  const setNodeBranchName = useDebugStore((s) => s.setNodeBranchName);
 
   /** fork 提示态：true 时高亮"从此处分叉"按钮 + 展示提示 banner */
   const [forkHintVisible, setForkHintVisible] = useState(false);
@@ -242,6 +246,63 @@ export default function NodeInspector() {
 
         {/* ④ 上下文信息：路径摘要 / 推演元数据 / 冲突标注 / 合并来源 / 注入记忆 */}
         <PathSummaryCard pathSummary={data.pathSummary} pathLength={breadcrumb.length} />
+
+        {/* 标签与分支管理（git 模式相关，T028） */}
+        <div className="space-y-2 p-3 border border-slate-100 dark:border-slate-700 rounded-lg">
+          {/* 标签 */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                {t.tags}
+              </span>
+              <button
+                onClick={() => {
+                  const tag = window.prompt(t.addTag + ':', '');
+                  if (tag && tag.trim()) {
+                    addNodeTag(selectedNodeId!, tag.trim());
+                  }
+                }}
+                className="text-xs text-blue-500 hover:text-blue-600"
+              >
+                + {t.addTag}
+              </button>
+            </div>
+            {!data.tags || data.tags.length === 0 ? (
+              <span className="text-xs text-slate-400">{t.noTags}</span>
+            ) : (
+              <div className="flex flex-wrap gap-1">
+                {data.tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                  >
+                    {tag}
+                    <button
+                      onClick={() => removeNodeTag(selectedNodeId!, tag)}
+                      className="hover:text-red-500"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 分支名 */}
+          <div>
+            <span className="text-xs font-medium text-slate-500 dark:text-slate-400 block mb-1">
+              {t.branchName}
+            </span>
+            <input
+              type="text"
+              value={data.branchName ?? ''}
+              placeholder={t.setBranchName}
+              onChange={(e) => setNodeBranchName(selectedNodeId!, e.target.value)}
+              className="flex-1 w-full px-2 py-1 text-xs border border-slate-200 dark:border-slate-600 rounded bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 focus:outline-none focus:border-blue-400"
+            />
+          </div>
+        </div>
         {data.evolutionMeta && (
           <EvolutionMetaCard
             evolutionMeta={data.evolutionMeta}

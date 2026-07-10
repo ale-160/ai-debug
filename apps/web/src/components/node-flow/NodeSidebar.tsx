@@ -16,6 +16,7 @@ import {
   Search,
   Pin,
   PinOff,
+  Clock,
 } from 'lucide-react';
 import { useDebugStore } from '@/lib/debug-store';
 import { getProject, updateProject, importProject } from '@/lib/project-storage';
@@ -38,6 +39,9 @@ export default function NodeSidebar() {
   // 自动推演：选中节点才可用，未选中时 disabled
   const selectedNodeId = useDebugStore((s) => s.selectedNodeId);
   const setShowAutoEvolution = useDebugStore((s) => s.setShowAutoEvolution);
+  // 时间线视图：当前项目节点 + 选中跳转
+  const nodes = useDebugStore((s) => s.nodes);
+  const setSelectedNode = useDebugStore((s) => s.setSelectedNode);
   // 桌面端侧边栏收纳/展开
   const sidebarCollapsed = useDebugStore((s) => s.sidebarCollapsed);
   const toggleSidebarCollapsed = useDebugStore((s) => s.toggleSidebarCollapsed);
@@ -70,6 +74,8 @@ export default function NodeSidebar() {
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   // 项目搜索关键字（匹配项目名 + root 节点 summary）
   const [searchQuery, setSearchQuery] = useState('');
+  // 侧边栏 tab 切换：项目列表 / 时间线
+  const [sidebarTab, setSidebarTab] = useState<'projects' | 'timeline'>('projects');
   const importFileRef = useRef<HTMLInputElement>(null);
 
   const togglePinProject = useDebugStore((s) => s.togglePinProject);
@@ -101,6 +107,20 @@ export default function NodeSidebar() {
       hasSearchResult: pinned.length + normal.length > 0,
     };
   }, [projects, searchQuery]);
+
+  // 时间线：当前项目节点按 createdAt 倒序排列
+  const currentProjectNodes = useMemo(() => {
+    return [...nodes].sort((a, b) => (b.data.createdAt ?? 0) - (a.data.createdAt ?? 0));
+  }, [nodes]);
+
+  // 点击时间线节点：选中并跳转到画布对应节点
+  const handleTimelineNodeClick = useCallback(
+    (nodeId: string) => {
+      setSelectedNode(nodeId);
+      setMobileSidebarOpen(false);
+    },
+    [setSelectedNode, setMobileSidebarOpen],
+  );
 
   // 点击菜单外部关闭菜单
   useEffect(() => {
@@ -416,65 +436,159 @@ export default function NodeSidebar() {
           </button>
         </div>
 
-        <div className="p-3 border-b border-slate-100 dark:border-slate-700 space-y-2">
+        {/* 侧边栏 tab 切换：项目 / 时间线 */}
+        <div className="flex border-b border-slate-200 dark:border-slate-700">
           <button
-            onClick={handleCreate}
-            className="w-full bg-blue-500 text-white rounded-lg py-2 px-3 hover:bg-blue-600 flex items-center justify-center gap-2 transition-colors"
-            aria-label={t.newProject}
+            onClick={() => setSidebarTab('projects')}
+            className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
+              sidebarTab === 'projects'
+                ? 'text-blue-500 border-b-2 border-blue-500'
+                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
+            }`}
           >
-            <Plus size={16} />
-            <span className="text-sm font-medium">{t.newProject}</span>
+            {t.projects}
           </button>
-          {/* 搜索框：匹配项目名 + root 节点 summary */}
-          <div className="relative">
-            <Search
-              size={12}
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
-            />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={t.searchProjects}
-              className="w-full pl-7 pr-2 py-1.5 text-xs rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400"
-              aria-label={t.searchProjects}
-            />
-          </div>
+          <button
+            onClick={() => setSidebarTab('timeline')}
+            className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
+              sidebarTab === 'timeline'
+                ? 'text-blue-500 border-b-2 border-blue-500'
+                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
+            }`}
+          >
+            <Clock size={12} className="inline mr-1" />
+            {t.timeline}
+          </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
-          {projects.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-slate-400 dark:text-slate-500">
-              {t.noProjects}
+        {/* 项目 tab：新建 + 搜索 + 项目列表 */}
+        {sidebarTab === 'projects' && (
+          <>
+            <div className="p-3 border-b border-slate-100 dark:border-slate-700 space-y-2">
+              <button
+                onClick={handleCreate}
+                className="w-full bg-blue-500 text-white rounded-lg py-2 px-3 hover:bg-blue-600 flex items-center justify-center gap-2 transition-colors"
+                aria-label={t.newProject}
+              >
+                <Plus size={16} />
+                <span className="text-sm font-medium">{t.newProject}</span>
+              </button>
+              {/* 搜索框：匹配项目名 + root 节点 summary */}
+              <div className="relative">
+                <Search
+                  size={12}
+                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+                />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={t.searchProjects}
+                  className="w-full pl-7 pr-2 py-1.5 text-xs rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400"
+                  aria-label={t.searchProjects}
+                />
+              </div>
             </div>
-          ) : !hasSearchResult ? (
-            <div className="px-4 py-8 text-center text-sm text-slate-400 dark:text-slate-500">
-              {t.noSearchResult}
-            </div>
-          ) : (
-            <>
-              {pinnedProjects.length > 0 && (
-                <div>
-                  <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                    <Pin size={10} />
-                    {t.pinnedSection}
-                  </div>
-                  {pinnedProjects.map((project) => renderProjectCard(project))}
+
+            <div className="flex-1 overflow-y-auto">
+              {projects.length === 0 ? (
+                <div className="px-4 py-8 text-center text-sm text-slate-400 dark:text-slate-500">
+                  {t.noProjects}
                 </div>
-              )}
-              {normalProjects.length > 0 && (
-                <div>
+              ) : !hasSearchResult ? (
+                <div className="px-4 py-8 text-center text-sm text-slate-400 dark:text-slate-500">
+                  {t.noSearchResult}
+                </div>
+              ) : (
+                <>
                   {pinnedProjects.length > 0 && (
-                    <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                      {t.projectsSection}
+                    <div>
+                      <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                        <Pin size={10} />
+                        {t.pinnedSection}
+                      </div>
+                      {pinnedProjects.map((project) => renderProjectCard(project))}
                     </div>
                   )}
-                  {normalProjects.map((project) => renderProjectCard(project))}
-                </div>
+                  {normalProjects.length > 0 && (
+                    <div>
+                      {pinnedProjects.length > 0 && (
+                        <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                          {t.projectsSection}
+                        </div>
+                      )}
+                      {normalProjects.map((project) => renderProjectCard(project))}
+                    </div>
+                  )}
+                </>
               )}
-            </>
-          )}
-        </div>
+            </div>
+          </>
+        )}
+
+        {/* 时间线 tab：按 createdAt 倒序列出当前项目所有节点 */}
+        {sidebarTab === 'timeline' && (
+          <div className="flex-1 overflow-y-auto p-2">
+            {currentProjectNodes.length === 0 ? (
+              <div className="text-center text-xs text-slate-400 py-8">{t.noTimelineNodes}</div>
+            ) : (
+              <div className="space-y-1">
+                {currentProjectNodes.map((node) => (
+                  <button
+                    key={node.id}
+                    onClick={() => handleTimelineNodeClick(node.id)}
+                    className={`w-full text-left p-2 rounded-lg transition-colors ${
+                      node.id === selectedNodeId
+                        ? 'bg-blue-50 dark:bg-blue-900/30 ring-1 ring-blue-400'
+                        : 'hover:bg-slate-100 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    {/* hash + 时间 */}
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <code className="text-[10px] font-mono text-slate-400">
+                        {node.data.shortHash ?? node.id.slice(-7)}
+                      </code>
+                      <span className="text-[10px] text-slate-400">
+                        {formatTime(node.data.createdAt)}
+                      </span>
+                    </div>
+                    {/* summary 或 userMessage 摘要 */}
+                    <div className="text-xs text-slate-700 dark:text-slate-300 truncate">
+                      {node.data.summary ??
+                        node.data.userMessage.slice(0, 40) +
+                          (node.data.userMessage.length > 40 ? '…' : '')}
+                    </div>
+                    {/* 标签和分支名 */}
+                    {(node.data.tags?.length || node.data.branchName) && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {node.data.branchName && (
+                          <span className="px-1 py-0.5 rounded text-[9px] bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300">
+                            {node.data.branchName}
+                          </span>
+                        )}
+                        {node.data.tags?.map((tag) => (
+                          <span
+                            key={tag}
+                            className="px-1 py-0.5 rounded text-[9px] bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {/* 状态指示 */}
+                    {node.data.status === 'abandoned' && (
+                      <span className="text-[9px] text-slate-400 italic">({t.abandonedLabel})</span>
+                    )}
+                    {node.data.status === 'ignored' && (
+                      <span className="text-[9px] text-slate-400 italic">({t.ignored})</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* 底部：自动推演入口 + 从 JSON 文件导入 */}
         <div className="px-3 pt-2 pb-1 border-t border-slate-100 dark:border-slate-700 space-y-1">

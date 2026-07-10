@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactFlow, {
   Background,
   MiniMap,
@@ -15,6 +15,9 @@ import {
   ZoomOut,
   Maximize2,
   GitMerge,
+  GitBranch,
+  GitCompare,
+  Network,
   MousePointer2,
   Hand,
   AlignJustify,
@@ -25,15 +28,24 @@ import {
   Eye,
   Trash2,
   X,
+  Tag,
+  Copy,
+  CornerDownRight,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { nodeTypes } from './nodes';
 import { getStatusColor } from './nodes/node-utils';
+import { layoutRadial } from './radial-layout';
+import { layoutGit } from './git-layout';
 import type { TurnNodeData } from './types';
 import { useDebugStore } from '@/lib/debug-store';
 import { streamTurnResponse } from '@/lib/network-engine';
 import { isConfigured } from '@/lib/llm-config';
 import { updateProject } from '@/lib/project-storage';
 import { useTranslation } from '@/components/I18nProvider';
+
+// diff 视图懒加载：react-diff-viewer-continued 较大，用户点击"对比"后才加载
+const DiffViewer = lazy(() => import('./DiffViewer'));
 
 const defaultEdgeOptions = {
   type: 'smoothstep',
@@ -89,11 +101,15 @@ export default function NodeCanvas() {
   const setSelectedNode = useDebugStore((s) => s.setSelectedNode);
   const setViewport = useDebugStore((s) => s.setViewport);
   const createMergedNode = useDebugStore((s) => s.createMergedNode);
+  const createTurnNode = useDebugStore((s) => s.createTurnNode);
   const updateTurnNode = useDebugStore((s) => s.updateTurnNode);
   const appendAssistantChunk = useDebugStore((s) => s.appendAssistantChunk);
   const selectedNodeId = useDebugStore((s) => s.selectedNodeId);
   const focusMode = useDebugStore((s) => s.focusMode);
   const toggleFocusMode = useDebugStore((s) => s.toggleFocusMode);
+  // 视图模式切换（T027）：web 蛛网模式 / git git 风格模式
+  const viewMode = useDebugStore((s) => s.viewMode);
+  const setViewMode = useDebugStore((s) => s.setViewMode);
 
   // 批量操作 actions（T024 浮动工具条 + 右键菜单）
   const abandonBranch = useDebugStore((s) => s.abandonBranch);
@@ -101,6 +117,9 @@ export default function NodeCanvas() {
   const ignoreNode = useDebugStore((s) => s.ignoreNode);
   const unignoreNode = useDebugStore((s) => s.unignoreNode);
   const deleteNode = useDebugStore((s) => s.deleteNode);
+  // 标签与分支管理 actions（T028）
+  const addNodeTag = useDebugStore((s) => s.addNodeTag);
+  const setNodeBranchName = useDebugStore((s) => s.setNodeBranchName);
   const appSettings = useDebugStore((s) => s.appSettings);
 
   const currentProjectId = useDebugStore((s) => s.currentProjectId);
@@ -146,6 +165,14 @@ export default function NodeCanvas() {
   const [contextMenu, setContextMenu] = useState<{ nodeId: string; x: number; y: number } | null>(
     null,
   );
+
+  // diff 视图状态（T029）：对比两个节点的 assistantMessage，组件内 state 不入 store
+  const [diffNodeAId, setDiffNodeAId] = useState<string | null>(null);
+  const [diffNodeBId, setDiffNodeBId] = useState<string | null>(null);
+  const [showDiff, setShowDiff] = useState(false);
+
+  // cherry-pick 状态（T031）：源节点 id，设置后右键其他节点可"移植到此处"
+  const [cherryPickSource, setCherryPickSource] = useState<string | null>(null);
 
   const onPaneClick = useCallback(() => {
     setSelectedNode(null);
@@ -241,6 +268,16 @@ export default function NodeCanvas() {
       setTimeout(() => fitView({ padding: 0.2 }), 50);
     }
   }, [currentProjectId, rfSetViewport, fitView]);
+
+  // 视图模式切换（T027）：viewMode 变化时用对应布局算法重算节点位置并 fitView。
+  // 仅 viewMode 变化时触发，避免 nodes/edges 变化时反复重排。
+  useEffect(() => {
+    if (nodes.length === 0) return;
+    const laidOut = viewMode === 'git' ? layoutGit(nodes, edges) : layoutRadial(nodes, edges);
+    useDebugStore.setState({ nodes: laidOut });
+    setTimeout(() => fitView({ padding: 0.2 }), 100);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode]);
 
   // 撤销/重做：在 nodes/edges 变化时自动把上一快照推入历史栈
   // 合并 500ms 内的快速变更（如流式输出），避免历史栈被中间状态填满
@@ -570,6 +607,80 @@ export default function NodeCanvas() {
     t,
   ]);
 
+  /**
+   * 执行 cherry-pick（T031）：以源节点的 assistantMessage 为参考，在目标节点下创建
+   * 子节点并调 LLM 流式生成。不纯复制回答，而是以"参考以下回答"作为 userMessage，
+   * 在目标分支的上下文下重新生成，语义对齐 git cherry-pick 的"应用到另一分支"。
+   * 流式调用接入 AbortController，发起新请求前取消旧请求（项目约定）。
+   */
+  const handleCherryPick = useCallback(
+    async (targetNodeId: string) => {
+      if (!cherryPickSource) return;
+      if (!isConfigured()) {
+        alert(t.pleaseConfigureApiKey);
+        setCherryPickSource(null);
+        return;
+      }
+      const sourceNode = nodes.find((n) => n.id === cherryPickSource);
+      const targetNode = nodes.find((n) => n.id === targetNodeId);
+      if (!sourceNode || !targetNode) {
+        setCherryPickSource(null);
+        return;
+      }
+
+      // 构造 cherry-pick 的 userMessage：以源节点回答为参考上下文
+      const sourceAnswer = sourceNode.data.assistantMessage;
+      const cherryPickMessage = `${t.cherryPickConfirm}\n\n${sourceAnswer}`;
+
+      // 在目标节点下创建子节点
+      const newNodeId = createTurnNode(cherryPickMessage, targetNodeId);
+
+      // 选中新节点 + 清除 cherry-pick 状态
+      setSelectedNode(newNodeId);
+      setCherryPickSource(null);
+
+      // 标记 running 并发起流式请求（复用 handleMerge 的 AbortController 模式）
+      updateTurnNode(newNodeId, { status: 'running' });
+      const currentNodes = useDebugStore.getState().nodes;
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+      // 注册到 store 供 ExecutionStatusBar 取消
+      registerAbortController(newNodeId, controller);
+
+      toast(t.cherryPickStarted);
+
+      const result = await streamTurnResponse(
+        newNodeId,
+        currentNodes,
+        (delta) => appendAssistantChunk(newNodeId, delta),
+        controller.signal,
+        (summary) => updateTurnNode(newNodeId, { summary }),
+        undefined,
+        // 旁路回调：cherry-pick 回答完成后生成路径摘要
+        (pathSummary) => updateTurnNode(newNodeId, { pathSummary }),
+      );
+      if (result.success) {
+        updateTurnNode(newNodeId, {
+          status: 'success',
+          suggestions: result.suggestions ?? [],
+        });
+      } else {
+        updateTurnNode(newNodeId, { status: 'error', errorMessage: result.error });
+      }
+    },
+    [
+      cherryPickSource,
+      nodes,
+      createTurnNode,
+      setSelectedNode,
+      updateTurnNode,
+      appendAssistantChunk,
+      registerAbortController,
+      t,
+    ],
+  );
+
   const { displayNodes, displayEdges } = useMemo(() => {
     if (!focusMode || !selectedNodeId) {
       return { displayNodes: nodes, displayEdges: edges };
@@ -681,6 +792,49 @@ export default function NodeCanvas() {
             className="!bg-white !border-slate-200 dark:!bg-slate-800 dark:!border-slate-700"
           />
         </ReactFlow>
+
+        {/* 视图模式切换（T027）：蛛网 ↔ git，左上角浮动 toggle */}
+        <div className="absolute top-4 left-4 z-10 flex items-center gap-0.5 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm p-0.5">
+          <button
+            onClick={() => setViewMode('web')}
+            className={`px-2 py-1 text-xs rounded transition-colors ${
+              viewMode === 'web'
+                ? 'bg-blue-500 text-white'
+                : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700'
+            }`}
+            title={t.webMode}
+          >
+            <Network size={14} className="inline mr-1" />
+            {t.webMode}
+          </button>
+          <button
+            onClick={() => setViewMode('git')}
+            className={`px-2 py-1 text-xs rounded transition-colors ${
+              viewMode === 'git'
+                ? 'bg-blue-500 text-white'
+                : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700'
+            }`}
+            title={t.gitMode}
+          >
+            <GitBranch size={14} className="inline mr-1" />
+            {t.gitMode}
+          </button>
+        </div>
+
+        {/* cherry-pick 模式提示（T031）：已选源节点后浮动提示，点 × 取消 */}
+        {cherryPickSource && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-3 py-1.5 bg-green-500 text-white text-xs rounded-lg shadow-lg">
+            <Copy size={12} />
+            <span>{t.cherryPickSourceSelected}</span>
+            <button
+              onClick={() => setCherryPickSource(null)}
+              className="ml-2 hover:bg-green-600 rounded p-0.5"
+              aria-label={t.cancelSelection}
+            >
+              <X size={12} />
+            </button>
+          </div>
+        )}
 
         {showFocusHint && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 px-4 py-2 bg-slate-900/80 text-white text-sm rounded-full shadow-lg backdrop-blur-sm">
@@ -821,6 +975,35 @@ export default function NodeCanvas() {
                   {t.unignore}
                 </button>
               )}
+              {selectedNodes.length === 1 && (
+                <button
+                  onClick={() => {
+                    const node = selectedNodes[0];
+                    const tag = window.prompt(t.addTag + ':', '');
+                    if (tag && tag.trim()) {
+                      addNodeTag(node.id, tag.trim());
+                    }
+                  }}
+                  className="flex items-center gap-1 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700 rounded transition-colors whitespace-nowrap"
+                >
+                  <Tag size={12} />
+                  {t.addTag}
+                </button>
+              )}
+              {/* diff 对比（T029）：选中 2 个节点时浮动工具条显示"对比"按钮 */}
+              {selectedNodes.length === 2 && (
+                <button
+                  onClick={() => {
+                    setDiffNodeAId(selectedNodes[0].id);
+                    setDiffNodeBId(selectedNodes[1].id);
+                    setShowDiff(true);
+                  }}
+                  className="flex items-center gap-1 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700 rounded transition-colors whitespace-nowrap"
+                >
+                  <GitCompare size={12} />
+                  {t.compareNodes}
+                </button>
+              )}
               <button
                 onClick={handleDelete}
                 className="flex items-center gap-1 px-2 py-1 text-xs text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30 rounded transition-colors whitespace-nowrap"
@@ -882,6 +1065,84 @@ export default function NodeCanvas() {
                       {isIgnored ? <Eye size={12} /> : <EyeOff size={12} />}
                       {isIgnored ? t.contextMenuUnignore : t.contextMenuIgnore}
                     </button>
+                    <button
+                      onClick={() => {
+                        const tag = window.prompt(t.addTag + ':', '');
+                        if (tag && tag.trim()) {
+                          addNodeTag(node.id, tag.trim());
+                        }
+                        setContextMenu(null);
+                      }}
+                      className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors text-left"
+                      role="menuitem"
+                    >
+                      <Tag size={12} />
+                      {t.addTag}
+                    </button>
+                    <button
+                      onClick={() => {
+                        const name = window.prompt(
+                          t.setBranchName + ':',
+                          node.data.branchName ?? '',
+                        );
+                        if (name !== null) {
+                          setNodeBranchName(node.id, name.trim());
+                        }
+                        setContextMenu(null);
+                      }}
+                      className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors text-left"
+                      role="menuitem"
+                    >
+                      <GitBranch size={12} />
+                      {t.setBranchName}
+                    </button>
+                    {/* cherry-pick（T031）：移植此回答到其他分支。仅已有 AI 回答的节点可作为源 */}
+                    {node.data.assistantMessage.trim() !== '' && (
+                      <button
+                        onClick={() => {
+                          setCherryPickSource(node.id);
+                          setContextMenu(null);
+                          toast(t.cherryPickSourceSelected);
+                        }}
+                        className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors text-left"
+                        role="menuitem"
+                      >
+                        <Copy size={12} />
+                        {t.cherryPick}
+                      </button>
+                    )}
+                    {/* cherry-pick 目标（T031）：已选源节点后，右键另一节点显示"移植到此处" */}
+                    {cherryPickSource && cherryPickSource !== node.id && (
+                      <button
+                        onClick={() => {
+                          handleCherryPick(node.id);
+                          setContextMenu(null);
+                        }}
+                        className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-green-600 hover:bg-green-50 dark:text-green-400 dark:hover:bg-green-900/30 transition-colors text-left"
+                        role="menuitem"
+                      >
+                        <CornerDownRight size={12} />
+                        {t.cherryPickTarget}
+                      </button>
+                    )}
+                    {/* diff 对比（T029）：右键节点设为对比 A，再右键另一节点进行对比 */}
+                    <button
+                      onClick={() => {
+                        if (diffNodeAId === null) {
+                          setDiffNodeAId(node.id);
+                          toast(t.diffNodeASet);
+                        } else if (diffNodeAId !== node.id) {
+                          setDiffNodeBId(node.id);
+                          setShowDiff(true);
+                        }
+                        setContextMenu(null);
+                      }}
+                      className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors text-left"
+                      role="menuitem"
+                    >
+                      <GitCompare size={12} />
+                      {diffNodeAId === null ? t.diffSetNodeA : t.diffCompareWith}
+                    </button>
                     <div className="my-1 border-t border-slate-100 dark:border-slate-700" />
                     <button
                       onClick={() => {
@@ -903,6 +1164,21 @@ export default function NodeCanvas() {
             </div>
           )}
       </div>
+
+      {/* diff 视图抽屉（T029）：懒加载，用户点击"对比"后渲染 */}
+      {showDiff && (
+        <Suspense fallback={null}>
+          <DiffViewer
+            nodeAId={diffNodeAId}
+            nodeBId={diffNodeBId}
+            onClose={() => {
+              setShowDiff(false);
+              setDiffNodeAId(null);
+              setDiffNodeBId(null);
+            }}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

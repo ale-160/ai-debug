@@ -230,6 +230,18 @@ interface NetworkState {
   setAutoEvolutionStep: (step: number) => void;
   /** 更新活跃路数（多路推演中某路收敛/停止后递减） */
   setAutoEvolutionActiveBranches: (count: number) => void;
+
+  // ========== git 模式视图切换（UI 临时态） ==========
+  /** 当前视图模式：'web' 蛛网模式（默认）/ 'git' git 风格模式 */
+  viewMode: 'web' | 'git';
+  /** 切换视图模式 */
+  setViewMode: (mode: 'web' | 'git') => void;
+  /** 给节点打标签 */
+  addNodeTag: (nodeId: string, tag: string) => void;
+  /** 移除节点标签 */
+  removeNodeTag: (nodeId: string, tag: string) => void;
+  /** 设置节点命名分支名 */
+  setNodeBranchName: (nodeId: string, branchName: string) => void;
 }
 
 /**
@@ -906,6 +918,51 @@ export const useDebugStore = create<NetworkState>()(
               activeBranches: count,
             },
           })),
+
+        // ========== git 模式视图切换 ==========
+        // 默认 'web' 蛛网模式，切换到 'git' 时由组件层接管布局
+        viewMode: 'web',
+        setViewMode: (mode) => set({ viewMode: mode }),
+        // 给节点打标签：使用 Set 去重，避免重复标签
+        addNodeTag: (nodeId, tag) =>
+          set((state) => ({
+            nodes: state.nodes.map((n) =>
+              n.id === nodeId
+                ? {
+                    ...n,
+                    data: {
+                      ...n.data,
+                      tags: [...new Set([...(n.data.tags ?? []), tag])],
+                    },
+                  }
+                : n,
+            ),
+            isDirty: true,
+          })),
+        // 移除节点标签：过滤掉目标 tag，空数组保留（与 undefined 等价处理）
+        removeNodeTag: (nodeId, tag) =>
+          set((state) => ({
+            nodes: state.nodes.map((n) =>
+              n.id === nodeId
+                ? {
+                    ...n,
+                    data: {
+                      ...n.data,
+                      tags: (n.data.tags ?? []).filter((t) => t !== tag),
+                    },
+                  }
+                : n,
+            ),
+            isDirty: true,
+          })),
+        // 设置节点命名分支名：分支名挂在代表节点上（HEAD），空串等价于清除
+        setNodeBranchName: (nodeId, branchName) =>
+          set((state) => ({
+            nodes: state.nodes.map((n) =>
+              n.id === nodeId ? { ...n, data: { ...n.data, branchName } } : n,
+            ),
+            isDirty: true,
+          })),
       }),
       // persist 中间件配置：只持久化 projects + currentProjectId
       // 排除所有 UI 临时态：nodes/edges/selectedNodeId/viewport/focusMode/isDirty/
@@ -913,6 +970,7 @@ export const useDebugStore = create<NetworkState>()(
       // appSettings/globalMemory/showMemoryPanel/turnCounter/nodeDisplayMode/
       // highlightedPathIds/autoEvolutionState/_abortControllers/
       // selectedChildIdMap（T017 将新增，已预留排除）
+      // viewMode（T026 git 模式视图切换，UI 临时态不持久化）
       // appSettings/globalMemory 由 settings-storage 独立管理（保留 refresh* 兼容）
       {
         name: STORE_PERSIST_KEY,

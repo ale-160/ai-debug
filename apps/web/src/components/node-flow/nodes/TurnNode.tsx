@@ -32,6 +32,9 @@ function TurnNodeComponent({ id, data, selected }: TurnNodeProps) {
   } = data;
   const nodeDisplayMode = useDebugStore((s) => s.nodeDisplayMode);
   const isCompact = nodeDisplayMode === 'compact';
+  // git 模式：dagre 左→右布局，节点显示 hash/branch/tags 等 git 风格信息
+  const viewMode = useDebugStore((s) => s.viewMode);
+  const isGitMode = viewMode === 'git';
   // 路径回放高亮：选择器返回 boolean 原始值，Zustand 自动浅比较，无需 useShallow
   const isOnHighlightedPath = useDebugStore((s) => s.highlightedPathIds.includes(id));
   // hover 显示路径摘要开关（默认关闭，用户主动开启后才显示）
@@ -79,7 +82,8 @@ function TurnNodeComponent({ id, data, selected }: TurnNodeProps) {
       .join(','),
   );
   const childIds = useMemo(() => (childIdsCsv ? childIdsCsv.split(',') : []), [childIdsCsv]);
-  const hasMultipleBranches = childIds.length > 1;
+  // git 模式下 dagre 自动展开所有分支，不需要分支切换器
+  const hasMultipleBranches = childIds.length > 1 && !isGitMode;
   const [branchSwitcherOpen, setBranchSwitcherOpen] = useState(false);
   // 切换器当前索引：基于 selectedChildIdMap[id]，无则默认 0（第一个分支）
   const currentBranchIndex = useMemo(() => {
@@ -163,14 +167,15 @@ function TurnNodeComponent({ id, data, selected }: TurnNodeProps) {
         style={{ top: '50%', transform: 'translate(50%, -50%)' }}
       />
 
-      {/* 合并节点左上角 merged 角标：绝对定位，仅 isMerged 时显示 */}
+      {/* 合并节点左上角 merged 角标：绝对定位，仅 isMerged 时显示。
+          git 模式下显示 "merge" 文案，蛛网模式下显示 "merged" */}
       {isMerged && (
         <div
           className="absolute -top-2 -left-2 px-1.5 py-0.5 rounded bg-violet-500 text-white text-[10px] font-semibold tracking-wide shadow-sm"
-          aria-label={t.mergedBadge}
-          title={t.mergedBadge}
+          aria-label={isGitMode ? t.merge : t.mergedBadge}
+          title={isGitMode ? t.merge : t.mergedBadge}
         >
-          {t.mergedBadge}
+          {isGitMode ? t.merge : t.mergedBadge}
         </div>
       )}
 
@@ -225,6 +230,27 @@ function TurnNodeComponent({ id, data, selected }: TurnNodeProps) {
             </div>
           )}
         </div>
+      )}
+
+      {/* git 模式额外渲染：commit 风格 hash+summary 行、分支名角标、标签列表 */}
+      {isGitMode && (
+        <>
+          {/* 顶部 hash + summary 行（commit message 风格） */}
+          <div className="flex items-center gap-1.5 mb-1 pb-1 border-b border-slate-100 dark:border-slate-700">
+            <code className="text-[10px] font-mono text-slate-400 shrink-0">
+              {data.shortHash ?? '---------'}
+            </code>
+            {summary && (
+              <span className="text-xs text-slate-600 dark:text-slate-300 truncate">{summary}</span>
+            )}
+          </div>
+          {/* branchName 角标：右上角绿色背景 */}
+          {data.branchName && (
+            <div className="absolute -top-2 -right-2 px-1.5 py-0.5 rounded bg-green-500 text-white text-[10px] font-semibold shadow-sm max-w-[80px] truncate">
+              {data.branchName}
+            </div>
+          )}
+        </>
       )}
 
       {/* 顶部：状态指示器 + 类型标签（合并节点显示 GitMerge 图标） */}
@@ -329,6 +355,20 @@ function TurnNodeComponent({ id, data, selected }: TurnNodeProps) {
             <AlertTriangle size={10} />
             {t.conflict}
           </span>
+        </div>
+      )}
+
+      {/* git 模式标签列表：节点底部小圆角标签（如 "最终方案"/"v1"） */}
+      {isGitMode && data.tags && data.tags.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-1 pt-1 border-t border-slate-100 dark:border-slate-700">
+          {data.tags.map((tag) => (
+            <span
+              key={tag}
+              className="px-1.5 py-0.5 rounded text-[10px] bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+            >
+              {tag}
+            </span>
+          ))}
         </div>
       )}
 

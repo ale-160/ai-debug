@@ -115,6 +115,22 @@ export interface TurnNodeData {
     startNodeId: string;
     reasoning: string;
   };
+  /**
+   * git 模式：节点短哈希（取 nodeId 后 7 位）。用于 git 视图显示，形如 "a1b2c3d"。
+   * 既有节点无此字段时按 undefined 处理，首次进入 git 模式时回填。
+   */
+  shortHash?: string;
+  /**
+   * git 模式：命名分支的代表节点。
+   * 非空表示该节点是某个命名分支的 HEAD（最新节点）。分支名挂在代表节点上，而非每个节点。
+   * 既有节点无此字段时按 undefined 处理。
+   */
+  branchName?: string;
+  /**
+   * git 模式：标签列表（如 "最终方案" / "废弃" / "v1"）。
+   * 既有节点无此字段时按 undefined 处理（空数组与 undefined 等价）。
+   */
+  tags?: string[];
 }
 
 /** 蛛网项目（一棵对话网络树） */

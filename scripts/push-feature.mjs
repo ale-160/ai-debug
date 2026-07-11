@@ -164,7 +164,9 @@ function main() {
 
     const msg = commitMsg || `feat: ${branchName.replace(/^feat\//, '').replace(/-/g, ' ')}`;
     console.log(`✍️  提交: ${msg}`);
-    run(`git commit -m "${msg.replace(/"/g, '\\"')}"`);
+    // 先转义反斜杠再转义双引号，避免被 shell 解释
+    const safeMsg = msg.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    run(`git commit -m "${safeMsg}"`);
   }
 
   if (!skipCheck) {
@@ -210,8 +212,10 @@ function main() {
     writeFileSync(tmpFile, prDesc);
     try {
       const title = commitMsg || branchName;
+      // 先转义反斜杠再转义双引号，避免被 shell 解释
+      const safeTitle = title.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
       run(
-        `gh pr create --base ${defaultBranch} --head ${branchName} --title "${title.replace(/"/g, '\\"')}" --body-file ${tmpFile}`,
+        `gh pr create --base ${defaultBranch} --head ${branchName} --title "${safeTitle}" --body-file ${tmpFile}`,
       );
       console.log('✅ PR 创建成功！');
     } catch (e) {

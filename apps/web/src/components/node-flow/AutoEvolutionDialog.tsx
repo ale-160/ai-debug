@@ -19,6 +19,8 @@ import {
   AlertTriangle,
   ArrowRight,
   RefreshCw,
+  Minimize2,
+  Maximize2,
 } from 'lucide-react';
 import { useDebugStore } from '@/lib/debug-store';
 import { useTranslation } from '@/components/I18nProvider';
@@ -93,6 +95,8 @@ function AutoEvolutionDialog({ onClose }: AutoEvolutionDialogProps) {
   const [lowConfidencePrompt, setLowConfidencePrompt] = useState<LowConfidencePrompt | null>(null);
   /** "换一个方向"输入框 */
   const [newDirection, setNewDirection] = useState('');
+  /** 抽屉是否最小化为右下角角标 */
+  const [minimized, setMinimized] = useState(false);
   /** 推演是否正在运行（含 paused） */
   const isRunning =
     autoEvolutionState.status === 'running' || autoEvolutionState.status === 'paused';
@@ -308,16 +312,6 @@ function AutoEvolutionDialog({ onClose }: AutoEvolutionDialogProps) {
     }
   }, [lowConfidencePrompt]);
 
-  // 背景点击关闭：仅当不在推演中且无弹窗时允许
-  const handleBackdropClick = useCallback(
-    (e: React.MouseEvent) => {
-      if (e.target === e.currentTarget && !isRunning && !lowConfidencePrompt) {
-        onClose();
-      }
-    },
-    [isRunning, lowConfidencePrompt, onClose],
-  );
-
   // ========== 当前选中节点摘要（用于低置信度弹窗显示） ==========
   const lowConfidenceNode = useMemo<Node<TurnNodeData> | null>(() => {
     if (!lowConfidencePrompt) return null;
@@ -332,394 +326,452 @@ function AutoEvolutionDialog({ onClose }: AutoEvolutionDialogProps) {
   }, [lowConfidenceNode]);
 
   return (
-    <div
-      className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center animate-[fadeIn_0.2s_ease-out] dark:bg-black/50"
-      onClick={handleBackdropClick}
-    >
-      <div className="bg-white rounded-xl shadow-2xl w-[560px] max-w-[90vw] max-h-[85vh] overflow-hidden animate-[slideUp_0.25s_ease-out] dark:bg-slate-800 flex flex-col">
-        {/* 头部 */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-700 shrink-0">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-amber-500 flex items-center justify-center">
-              <Zap size={16} className="text-white" />
-            </div>
-            <div>
-              <h2 className="font-semibold text-slate-800 text-sm dark:text-slate-100">
-                {t.autoEvolutionTitle}
-              </h2>
-              <p className="text-[11px] text-slate-400 dark:text-slate-500">
-                {t.autoEvolutionSubtitle}
-              </p>
-            </div>
+    <>
+      {/* ========== 最小化角标：右下角悬浮，点击恢复展开 ========== */}
+      {minimized && (
+        <button
+          onClick={() => setMinimized(false)}
+          className="fixed bottom-6 right-6 z-40 flex items-center gap-2 px-4 py-2.5 rounded-2xl shadow-lg backdrop-blur-md border bg-white/95 border-violet-200 text-slate-700 hover:scale-105 dark:bg-slate-800/95 dark:border-violet-800 dark:text-slate-200 transition-all duration-200 animate-[fadeIn_0.2s_ease-out]"
+          aria-label={t.autoEvolutionTitle}
+          title={t.autoEvolutionTitle}
+        >
+          <div className="w-6 h-6 rounded-md bg-gradient-to-br from-violet-500 to-amber-500 flex items-center justify-center shrink-0">
+            {isRunning ? (
+              <Loader2 size={12} className="text-white animate-spin" />
+            ) : isFinished ? (
+              <Zap size={12} className="text-white" />
+            ) : (
+              <Zap size={12} className="text-white" />
+            )}
           </div>
-          <button
-            onClick={handleClose}
-            disabled={isRunning && !lowConfidencePrompt}
-            className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors dark:hover:text-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
-            aria-label={t.autoEvolutionClose}
-          >
-            <X size={16} />
-          </button>
-        </div>
+          <div className="flex flex-col items-start leading-tight">
+            <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200">
+              {isRunning
+                ? autoEvolutionState.status === 'paused'
+                  ? t.autoEvolutionPaused
+                  : t.autoEvolutionRunning
+                : isFinished
+                  ? t.autoEvolutionDone
+                  : t.autoEvolutionTitle}
+            </span>
+            {(isRunning || isFinished) && autoEvolutionState.maxSteps > 0 && (
+              <span className="text-[10px] font-mono text-violet-600 dark:text-violet-400">
+                {tf('autoEvolutionStepN', {
+                  step: autoEvolutionState.currentStep,
+                  max: autoEvolutionState.maxSteps,
+                })}
+                {producedNodeCount > 0 && ` · ${producedNodeCount}`}
+              </span>
+            )}
+          </div>
+          <Maximize2 size={14} className="text-slate-400 dark:text-slate-500 shrink-0" />
+        </button>
+      )}
 
-        {/* 内容区 */}
-        <div className="p-5 overflow-y-auto flex-1 space-y-5">
-          {/* 配置参数（仅未运行时显示） */}
-          {!isRunning && !isFinished && (
-            <>
-              <div className="space-y-4">
-                {/* 最大步数 */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                      {t.autoEvolutionMaxSteps}
-                    </label>
-                    <span className="text-xs font-mono text-violet-600 dark:text-violet-400">
-                      {maxSteps}
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={1}
-                    max={10}
-                    step={1}
-                    value={maxSteps}
-                    onChange={(e) => setMaxSteps(Number(e.target.value))}
-                    className="w-full accent-violet-500"
-                  />
-                </div>
-
-                {/* 分叉上限 */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                      {t.autoEvolutionMaxBranches}
-                    </label>
-                    <span className="text-xs font-mono text-violet-600 dark:text-violet-400">
-                      {maxBranches}
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={1}
-                    max={3}
-                    step={1}
-                    value={maxBranches}
-                    onChange={(e) => setMaxBranches(Number(e.target.value))}
-                    className="w-full accent-violet-500"
-                  />
-                </div>
-
-                {/* 置信度阈值 */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                      {t.autoEvolutionConfidenceThreshold}
-                    </label>
-                    <span className="text-xs font-mono text-violet-600 dark:text-violet-400">
-                      {confidenceThreshold.toFixed(2)}
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={confidenceThreshold}
-                    onChange={(e) => setConfidenceThreshold(Number(e.target.value))}
-                    className="w-full accent-violet-500"
-                  />
-                </div>
-              </div>
-
-              {/* 成本预估 */}
-              <div className="p-3 bg-gradient-to-r from-violet-50 to-amber-50 rounded-lg border border-violet-100 dark:from-violet-900/30 dark:to-amber-900/30 dark:border-violet-800">
-                <div className="text-[11px] font-semibold text-violet-700 dark:text-violet-300 uppercase tracking-wide mb-1.5">
-                  {t.autoEvolutionCostEstimate}
-                </div>
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600 dark:text-slate-300">
-                  <span>
-                    {t.autoEvolutionEstimatedCalls}：
-                    <span className="font-mono font-semibold text-violet-600 dark:text-violet-400">
-                      {tf('autoEvolutionCalls', { count: estimatedCalls })}
-                    </span>
-                  </span>
-                  <span>
-                    {t.autoEvolutionEstimatedTokens}：
-                    <span className="font-mono font-semibold text-violet-600 dark:text-violet-400">
-                      {tf('autoEvolutionTokens', { count: estimatedTokens })}
-                    </span>
-                  </span>
-                </div>
-              </div>
-
-              {/* 启动按钮 */}
-              <button
-                onClick={() => void handleStart()}
-                disabled={!selectedNodeId}
-                className="w-full bg-gradient-to-r from-violet-600 to-amber-500 text-white rounded-lg py-2.5 px-3 hover:opacity-90 flex items-center justify-center gap-2 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Play size={16} />
-                <span className="text-sm font-medium">{t.autoEvolutionStartBtn}</span>
-              </button>
-              {!selectedNodeId && (
-                <div className="text-center text-[11px] text-slate-400 dark:text-slate-500">
-                  {t.autoEvolutionSelectNodeFirst}
-                </div>
-              )}
-            </>
-          )}
-
-          {/* 推演进度（运行中或已完成时显示） */}
-          {(isRunning || isFinished) && (
-            <div className="space-y-4">
-              {/* 进度标题 */}
+      {/* ========== 右侧抽屉（展开态） ========== */}
+      {!minimized && (
+        <div
+          className="fixed top-14 right-0 bottom-0 w-[360px] z-40 flex flex-col animate-[slideInRight_0.25s_ease-out]"
+          role="dialog"
+          aria-label={t.autoEvolutionTitle}
+        >
+          <div className="w-full h-full bg-white dark:bg-slate-800 shadow-2xl flex flex-col overflow-hidden border-l border-slate-200 dark:border-slate-700">
+            {/* 头部 */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-700 shrink-0">
               <div className="flex items-center gap-2">
-                {isRunning ? (
-                  <Loader2 size={14} className="animate-spin text-violet-500" />
-                ) : (
-                  <Zap size={14} className="text-amber-500" />
-                )}
-                <h3 className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-                  {isRunning
-                    ? autoEvolutionState.status === 'paused'
-                      ? t.autoEvolutionPaused
-                      : t.autoEvolutionRunning
-                    : autoEvolutionState.status === 'done'
-                      ? t.autoEvolutionDone
-                      : t.autoEvolutionStopped}
-                </h3>
-              </div>
-
-              {/* 进度数据 */}
-              <div className="grid grid-cols-3 gap-2">
-                <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-2.5 text-center">
-                  <div className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wide">
-                    {t.autoEvolutionCurrentStep}
-                  </div>
-                  <div className="text-base font-semibold text-slate-700 dark:text-slate-200 mt-0.5">
-                    {tf('autoEvolutionStepN', {
-                      step: autoEvolutionState.currentStep,
-                      max: autoEvolutionState.maxSteps,
-                    })}
-                  </div>
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-amber-500 flex items-center justify-center">
+                  <Zap size={16} className="text-white" />
                 </div>
-                <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-2.5 text-center">
-                  <div className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wide">
-                    {t.autoEvolutionActiveBranches}
-                  </div>
-                  <div className="text-base font-semibold text-slate-700 dark:text-slate-200 mt-0.5">
-                    {autoEvolutionState.activeBranches}
-                  </div>
-                </div>
-                <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-2.5 text-center">
-                  <div className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wide">
-                    {t.autoEvolutionProducedNodes}
-                  </div>
-                  <div className="text-base font-semibold text-slate-700 dark:text-slate-200 mt-0.5">
-                    {producedNodeCount}
-                  </div>
+                <div>
+                  <h2 className="font-semibold text-slate-800 text-sm dark:text-slate-100">
+                    {t.autoEvolutionTitle}
+                  </h2>
+                  <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                    {t.autoEvolutionSubtitle}
+                  </p>
                 </div>
               </div>
-
-              {/* 视觉化进度条：step N/M 的横向进度 */}
-              {isRunning && autoEvolutionState.maxSteps > 0 && (
-                <div className="space-y-1">
-                  <div className="h-1.5 w-full rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-violet-500 to-amber-500 transition-all duration-500 ease-out"
-                      style={{
-                        width: `${Math.min(
-                          100,
-                          (autoEvolutionState.currentStep / autoEvolutionState.maxSteps) * 100,
-                        )}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* 停止按钮（运行中显示） */}
-              {isRunning && (
+              <div className="flex items-center gap-1">
+                {/* 最小化按钮：缩为右下角角标，让用户看到画布节点创建过程 */}
                 <button
-                  onClick={handleStop}
-                  className="w-full bg-red-500 text-white rounded-lg py-2 px-3 hover:bg-red-600 flex items-center justify-center gap-2 transition-colors"
+                  onClick={() => setMinimized(true)}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors dark:hover:text-slate-200 dark:hover:bg-slate-700"
+                  aria-label={t.autoEvolutionClose}
+                  title={t.autoEvolutionTitle}
                 >
-                  <Square size={14} />
-                  <span className="text-sm font-medium">{t.autoEvolutionStop}</span>
+                  <Minimize2 size={16} />
                 </button>
-              )}
+                <button
+                  onClick={handleClose}
+                  disabled={isRunning && !lowConfidencePrompt}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors dark:hover:text-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                  aria-label={t.autoEvolutionClose}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
 
-              {/* 完成总结 */}
-              {isFinished && (
-                <div className="space-y-3">
-                  {/* 总览 */}
-                  <div className="p-3 rounded-lg border border-emerald-200 bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-700">
-                    <div className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 uppercase tracking-wide mb-1.5">
-                      {t.autoEvolutionDone}
+            {/* 内容区 */}
+            <div className="p-5 overflow-y-auto flex-1 space-y-5">
+              {/* 配置参数（仅未运行时显示） */}
+              {!isRunning && !isFinished && (
+                <>
+                  <div className="space-y-4">
+                    {/* 最大步数 */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                          {t.autoEvolutionMaxSteps}
+                        </label>
+                        <span className="text-xs font-mono text-violet-600 dark:text-violet-400">
+                          {maxSteps}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={1}
+                        max={10}
+                        step={1}
+                        value={maxSteps}
+                        onChange={(e) => setMaxSteps(Number(e.target.value))}
+                        className="w-full accent-violet-500"
+                      />
+                    </div>
+
+                    {/* 分叉上限 */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                          {t.autoEvolutionMaxBranches}
+                        </label>
+                        <span className="text-xs font-mono text-violet-600 dark:text-violet-400">
+                          {maxBranches}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={1}
+                        max={3}
+                        step={1}
+                        value={maxBranches}
+                        onChange={(e) => setMaxBranches(Number(e.target.value))}
+                        className="w-full accent-violet-500"
+                      />
+                    </div>
+
+                    {/* 置信度阈值 */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                          {t.autoEvolutionConfidenceThreshold}
+                        </label>
+                        <span className="text-xs font-mono text-violet-600 dark:text-violet-400">
+                          {confidenceThreshold.toFixed(2)}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={confidenceThreshold}
+                        onChange={(e) => setConfidenceThreshold(Number(e.target.value))}
+                        className="w-full accent-violet-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* 成本预估 */}
+                  <div className="p-3 bg-gradient-to-r from-violet-50 to-amber-50 rounded-lg border border-violet-100 dark:from-violet-900/30 dark:to-amber-900/30 dark:border-violet-800">
+                    <div className="text-[11px] font-semibold text-violet-700 dark:text-violet-300 uppercase tracking-wide mb-1.5">
+                      {t.autoEvolutionCostEstimate}
                     </div>
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600 dark:text-slate-300">
                       <span>
-                        {t.autoEvolutionTotalNodes}：
-                        <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">
-                          {producedNodeCount}
+                        {t.autoEvolutionEstimatedCalls}：
+                        <span className="font-mono font-semibold text-violet-600 dark:text-violet-400">
+                          {tf('autoEvolutionCalls', { count: estimatedCalls })}
                         </span>
                       </span>
                       <span>
-                        {t.autoEvolutionTotalBranches}：
-                        <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">
-                          {branchSummaries.length}
+                        {t.autoEvolutionEstimatedTokens}：
+                        <span className="font-mono font-semibold text-violet-600 dark:text-violet-400">
+                          {tf('autoEvolutionTokens', { count: estimatedTokens })}
                         </span>
                       </span>
                     </div>
                   </div>
 
-                  {/* 各路详情 + 按路删除 */}
-                  {branchSummaries.length > 1 && (
-                    <div className="space-y-1.5">
-                      {branchSummaries.map((b) => (
+                  {/* 启动按钮 */}
+                  <button
+                    onClick={() => void handleStart()}
+                    disabled={!selectedNodeId}
+                    className="w-full bg-gradient-to-r from-violet-600 to-amber-500 text-white rounded-lg py-2.5 px-3 hover:opacity-90 flex items-center justify-center gap-2 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Play size={16} />
+                    <span className="text-sm font-medium">{t.autoEvolutionStartBtn}</span>
+                  </button>
+                  {!selectedNodeId && (
+                    <div className="text-center text-[11px] text-slate-400 dark:text-slate-500">
+                      {t.autoEvolutionSelectNodeFirst}
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* 推演进度（运行中或已完成时显示） */}
+              {(isRunning || isFinished) && (
+                <div className="space-y-4">
+                  {/* 进度标题 */}
+                  <div className="flex items-center gap-2">
+                    {isRunning ? (
+                      <Loader2 size={14} className="animate-spin text-violet-500" />
+                    ) : (
+                      <Zap size={14} className="text-amber-500" />
+                    )}
+                    <h3 className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                      {isRunning
+                        ? autoEvolutionState.status === 'paused'
+                          ? t.autoEvolutionPaused
+                          : t.autoEvolutionRunning
+                        : autoEvolutionState.status === 'done'
+                          ? t.autoEvolutionDone
+                          : t.autoEvolutionStopped}
+                    </h3>
+                  </div>
+
+                  {/* 进度数据 */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-2.5 text-center">
+                      <div className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wide">
+                        {t.autoEvolutionCurrentStep}
+                      </div>
+                      <div className="text-base font-semibold text-slate-700 dark:text-slate-200 mt-0.5">
+                        {tf('autoEvolutionStepN', {
+                          step: autoEvolutionState.currentStep,
+                          max: autoEvolutionState.maxSteps,
+                        })}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-2.5 text-center">
+                      <div className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wide">
+                        {t.autoEvolutionActiveBranches}
+                      </div>
+                      <div className="text-base font-semibold text-slate-700 dark:text-slate-200 mt-0.5">
+                        {autoEvolutionState.activeBranches}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-2.5 text-center">
+                      <div className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wide">
+                        {t.autoEvolutionProducedNodes}
+                      </div>
+                      <div className="text-base font-semibold text-slate-700 dark:text-slate-200 mt-0.5">
+                        {producedNodeCount}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 视觉化进度条：step N/M 的横向进度 */}
+                  {isRunning && autoEvolutionState.maxSteps > 0 && (
+                    <div className="space-y-1">
+                      <div className="h-1.5 w-full rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
                         <div
-                          key={b.startNodeId}
-                          className="flex items-center justify-between p-2 rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50"
-                        >
-                          <div className="flex items-center gap-2 text-xs">
-                            <span className="text-slate-600 dark:text-slate-300">
-                              {tf('autoEvolutionBranchNodes', { count: b.nodeCount })}
-                            </span>
-                            {b.converged && (
-                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-[10px]">
-                                {t.autoEvolutionConverged}
-                              </span>
-                            )}
-                          </div>
-                          <button
-                            onClick={() => handleDeleteRun(b.startNodeId)}
-                            className="inline-flex items-center gap-1 text-[11px] text-red-500 hover:text-red-700 dark:hover:text-red-400 px-1.5 py-0.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                          >
-                            <Trash2 size={11} />
-                            {t.autoEvolutionDeleteBranch}
-                          </button>
-                        </div>
-                      ))}
+                          className="h-full rounded-full bg-gradient-to-r from-violet-500 to-amber-500 transition-all duration-500 ease-out"
+                          style={{
+                            width: `${Math.min(
+                              100,
+                              (autoEvolutionState.currentStep / autoEvolutionState.maxSteps) * 100,
+                            )}%`,
+                          }}
+                        />
+                      </div>
                     </div>
                   )}
 
-                  {/* 全部删除按钮 */}
-                  <button
-                    onClick={() => handleDeleteRun()}
-                    className="w-full bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 text-red-600 dark:text-red-400 rounded-lg py-2 px-3 hover:bg-red-100 dark:hover:bg-red-900/30 flex items-center justify-center gap-2 transition-colors text-sm"
-                  >
-                    <Trash2 size={14} />
-                    {t.autoEvolutionDeleteThisRun}
-                  </button>
+                  {/* 停止按钮（运行中显示） */}
+                  {isRunning && (
+                    <button
+                      onClick={handleStop}
+                      className="w-full bg-red-500 text-white rounded-lg py-2 px-3 hover:bg-red-600 flex items-center justify-center gap-2 transition-colors"
+                    >
+                      <Square size={14} />
+                      <span className="text-sm font-medium">{t.autoEvolutionStop}</span>
+                    </button>
+                  )}
+
+                  {/* 完成总结 */}
+                  {isFinished && (
+                    <div className="space-y-3">
+                      {/* 总览 */}
+                      <div className="p-3 rounded-lg border border-emerald-200 bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-700">
+                        <div className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 uppercase tracking-wide mb-1.5">
+                          {t.autoEvolutionDone}
+                        </div>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600 dark:text-slate-300">
+                          <span>
+                            {t.autoEvolutionTotalNodes}：
+                            <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">
+                              {producedNodeCount}
+                            </span>
+                          </span>
+                          <span>
+                            {t.autoEvolutionTotalBranches}：
+                            <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">
+                              {branchSummaries.length}
+                            </span>
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* 各路详情 + 按路删除 */}
+                      {branchSummaries.length > 1 && (
+                        <div className="space-y-1.5">
+                          {branchSummaries.map((b) => (
+                            <div
+                              key={b.startNodeId}
+                              className="flex items-center justify-between p-2 rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50"
+                            >
+                              <div className="flex items-center gap-2 text-xs">
+                                <span className="text-slate-600 dark:text-slate-300">
+                                  {tf('autoEvolutionBranchNodes', { count: b.nodeCount })}
+                                </span>
+                                {b.converged && (
+                                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-[10px]">
+                                    {t.autoEvolutionConverged}
+                                  </span>
+                                )}
+                              </div>
+                              <button
+                                onClick={() => handleDeleteRun(b.startNodeId)}
+                                className="inline-flex items-center gap-1 text-[11px] text-red-500 hover:text-red-700 dark:hover:text-red-400 px-1.5 py-0.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                              >
+                                <Trash2 size={11} />
+                                {t.autoEvolutionDeleteBranch}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* 全部删除按钮 */}
+                      <button
+                        onClick={() => handleDeleteRun()}
+                        className="w-full bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 text-red-600 dark:text-red-400 rounded-lg py-2 px-3 hover:bg-red-100 dark:hover:bg-red-900/30 flex items-center justify-center gap-2 transition-colors text-sm"
+                      >
+                        <Trash2 size={14} />
+                        {t.autoEvolutionDeleteThisRun}
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
-          )}
+          </div>
         </div>
+      )}
 
-        {/* ========== 低置信度弹窗（叠加在对话框之上） ========== */}
-        {lowConfidencePrompt && (
-          <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-10 p-4">
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-[480px] overflow-hidden border border-amber-200 dark:border-amber-700">
-              {/* 弹窗头部 */}
-              <div className="px-4 py-3 border-b border-amber-100 dark:border-amber-700/50 bg-amber-50/50 dark:bg-amber-900/20">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle size={16} className="text-amber-500" />
-                  <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                    {t.autoEvolutionLowConfidenceTitle}
-                  </h3>
-                </div>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                  {t.autoEvolutionLowConfidenceDesc}
-                </p>
+      {/* ========== 低置信度弹窗（叠加在抽屉之上，居中模态） ========== */}
+      {lowConfidencePrompt && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4 animate-[fadeIn_0.2s_ease-out]">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-[480px] overflow-hidden border border-amber-200 dark:border-amber-700 animate-[scaleIn_0.2s_ease-out]">
+            {/* 弹窗头部 */}
+            <div className="px-4 py-3 border-b border-amber-100 dark:border-amber-700/50 bg-amber-50/50 dark:bg-amber-900/20">
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={16} className="text-amber-500" />
+                <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                  {t.autoEvolutionLowConfidenceTitle}
+                </h3>
               </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                {t.autoEvolutionLowConfidenceDesc}
+              </p>
+            </div>
 
-              {/* 弹窗内容 */}
-              <div className="p-4 space-y-3">
-                {/* 当前节点摘要 */}
-                <div className="space-y-1">
-                  <div className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide">
-                    {t.autoEvolutionNodeSummary}
-                  </div>
-                  <div className="text-xs text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/50 rounded p-2 break-words max-h-[80px] overflow-y-auto">
-                    {lowConfidenceNodeSummary || '—'}
-                  </div>
+            {/* 弹窗内容 */}
+            <div className="p-4 space-y-3">
+              {/* 当前节点摘要 */}
+              <div className="space-y-1">
+                <div className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide">
+                  {t.autoEvolutionNodeSummary}
                 </div>
-
-                {/* AI 不确定原因 */}
-                <div className="space-y-1">
-                  <div className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide">
-                    {t.autoEvolutionReasoning}
-                  </div>
-                  <div className="text-xs text-slate-700 dark:text-slate-300 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-700/50 rounded p-2 break-words">
-                    {lowConfidencePrompt.reasoning || '—'}
-                  </div>
-                </div>
-
-                {/* 置信度 */}
-                <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                  {t.autoEvolutionConfidence}：
-                  <span className="font-mono font-semibold text-amber-600 dark:text-amber-400 ml-1">
-                    {lowConfidencePrompt.confidence.toFixed(2)}
-                  </span>
-                </div>
-
-                {/* 换一个方向输入 */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400">
-                    <RefreshCw size={11} />
-                    {t.autoEvolutionChangeDirection}
-                  </div>
-                  <div className="flex gap-1.5">
-                    <textarea
-                      ref={newDirectionRef}
-                      value={newDirection}
-                      onChange={(e) => setNewDirection(e.target.value)}
-                      placeholder={t.autoEvolutionNewDirectionPlaceholder}
-                      rows={2}
-                      className="flex-1 resize-none text-xs px-2 py-1.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 focus:outline-none focus:border-violet-400"
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          handleChangeDirection();
-                        }
-                      }}
-                    />
-                    <button
-                      onClick={handleChangeDirection}
-                      disabled={!newDirection.trim()}
-                      className="self-stretch px-2.5 bg-violet-500 text-white rounded text-xs hover:bg-violet-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-                      title={t.autoEvolutionChangeDirection}
-                    >
-                      <ArrowRight size={12} />
-                    </button>
-                  </div>
+                <div className="text-xs text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/50 rounded p-2 break-words max-h-[80px] overflow-y-auto">
+                  {lowConfidenceNodeSummary || '—'}
                 </div>
               </div>
 
-              {/* 弹窗底部操作 */}
-              <div className="px-4 py-3 border-t border-slate-100 dark:border-slate-700 flex items-center gap-2">
-                <button
-                  onClick={handleStopFromPrompt}
-                  className="flex-1 inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded bg-red-500 text-white text-xs hover:bg-red-600"
-                >
-                  <Square size={12} />
-                  {t.autoEvolutionStopRun}
-                </button>
-                <button
-                  onClick={handleContinue}
-                  className="flex-1 inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded bg-emerald-500 text-white text-xs hover:bg-emerald-600"
-                >
-                  <ArrowRight size={12} />
-                  {t.autoEvolutionContinue}
-                </button>
+              {/* AI 不确定原因 */}
+              <div className="space-y-1">
+                <div className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide">
+                  {t.autoEvolutionReasoning}
+                </div>
+                <div className="text-xs text-slate-700 dark:text-slate-300 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-700/50 rounded p-2 break-words">
+                  {lowConfidencePrompt.reasoning || '—'}
+                </div>
+              </div>
+
+              {/* 置信度 */}
+              <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                {t.autoEvolutionConfidence}：
+                <span className="font-mono font-semibold text-amber-600 dark:text-amber-400 ml-1">
+                  {lowConfidencePrompt.confidence.toFixed(2)}
+                </span>
+              </div>
+
+              {/* 换一个方向输入 */}
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400">
+                  <RefreshCw size={11} />
+                  {t.autoEvolutionChangeDirection}
+                </div>
+                <div className="flex gap-1.5">
+                  <textarea
+                    ref={newDirectionRef}
+                    value={newDirection}
+                    onChange={(e) => setNewDirection(e.target.value)}
+                    placeholder={t.autoEvolutionNewDirectionPlaceholder}
+                    rows={2}
+                    className="flex-1 resize-none text-xs px-2 py-1.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 focus:outline-none focus:border-violet-400"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleChangeDirection();
+                      }
+                    }}
+                  />
+                  <button
+                    onClick={handleChangeDirection}
+                    disabled={!newDirection.trim()}
+                    className="self-stretch px-2.5 bg-violet-500 text-white rounded text-xs hover:bg-violet-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                    title={t.autoEvolutionChangeDirection}
+                  >
+                    <ArrowRight size={12} />
+                  </button>
+                </div>
               </div>
             </div>
+
+            {/* 弹窗底部操作 */}
+            <div className="px-4 py-3 border-t border-slate-100 dark:border-slate-700 flex items-center gap-2">
+              <button
+                onClick={handleStopFromPrompt}
+                className="flex-1 inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded bg-red-500 text-white text-xs hover:bg-red-600"
+              >
+                <Square size={12} />
+                {t.autoEvolutionStopRun}
+              </button>
+              <button
+                onClick={handleContinue}
+                className="flex-1 inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded bg-emerald-500 text-white text-xs hover:bg-emerald-600"
+              >
+                <ArrowRight size={12} />
+                {t.autoEvolutionContinue}
+              </button>
+            </div>
           </div>
-        )}
-      </div>
-    </div>
+        </div>
+      )}
+    </>
   );
 }
 

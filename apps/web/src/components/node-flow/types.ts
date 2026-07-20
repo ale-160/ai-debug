@@ -42,6 +42,12 @@ export interface AppSettings {
   /** 节点操作入口样式：'toolbar'（仅浮动工具条）/ 'context'（仅右键菜单）/ 'both'（两者都开，默认） */
   nodeActionsStyle: 'toolbar' | 'context' | 'both';
   /**
+   * 助手自动建图模式（默认关闭）：
+   * - true：每次助手回答后自动把用户消息转发为新节点
+   * - false：仅当助手显式输出 `### 转发到节点` 标记时才建节点
+   */
+  assistantAutoCreateNodes: boolean;
+  /**
    * 路径摘要（pathSummary）混合模式参数（用户可覆盖 provider 预设）。
    * - undefined：使用 provider 预设默认值（向后兼容，老数据无此字段）
    * - 显式对象：覆盖 provider 预设

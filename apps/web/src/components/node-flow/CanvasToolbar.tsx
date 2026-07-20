@@ -13,6 +13,7 @@ import {
   Undo2,
   Redo2,
   LayoutGrid,
+  ListCollapse,
   type LucideIcon,
 } from 'lucide-react';
 import { useTranslation } from '@/components/I18nProvider';
@@ -38,6 +39,9 @@ export interface CanvasToolbarProps {
   /** 是否处于全屏 */
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
+  /** 节点显示模式：detailed 详细 / compact 紧凑（节点收纳） */
+  nodeDisplayMode: 'detailed' | 'compact';
+  onToggleNodeDisplayMode: () => void;
   canUndo: boolean;
   canRedo: boolean;
   onUndo: () => void;
@@ -101,6 +105,8 @@ export default function CanvasToolbar(props: CanvasToolbarProps) {
     onToggleSidebar,
     isFullscreen,
     onToggleFullscreen,
+    nodeDisplayMode,
+    onToggleNodeDisplayMode,
     canUndo,
     canRedo,
     onUndo,
@@ -112,6 +118,9 @@ export default function CanvasToolbar(props: CanvasToolbarProps) {
   const isHandActive = interactionMode === 'hand' || spacePressed;
   const sidebarLabel = sidebarCollapsed ? t.toggleSidebarExpand : t.toggleSidebarCollapse;
   const fullscreenLabel = isFullscreen ? t.fullscreenExit : t.fullscreenEnter;
+  // 节点收纳：active 表示当前处于紧凑模式；tooltip 提示下一步动作
+  const isCompact = nodeDisplayMode === 'compact';
+  const nodeDisplayLabel = isCompact ? t.detailedMode : t.compactMode;
 
   return (
     <div className="absolute top-3 right-3 z-10 flex items-center gap-0.5 bg-slate-100/90 dark:bg-white/10 backdrop-blur-xl rounded-full px-1.5 py-1.5 border border-slate-200 dark:border-white/10 shadow-2xl shadow-black/10 dark:shadow-black/40">
@@ -136,6 +145,16 @@ export default function CanvasToolbar(props: CanvasToolbarProps) {
       <ToolbarButton icon={ZoomIn} label={t.zoomIn} onClick={onZoomIn} />
       <ToolbarButton icon={Maximize2} label={t.fitView} onClick={onFitView} />
       <ToolbarButton icon={LayoutGrid} label={t.autoLayout} onClick={onAutoLayout} />
+
+      <Divider />
+
+      {/* 节点收纳：详细 / 紧凑模式切换（active 表示当前紧凑） */}
+      <ToolbarButton
+        icon={ListCollapse}
+        label={nodeDisplayLabel}
+        active={isCompact}
+        onClick={onToggleNodeDisplayMode}
+      />
 
       <Divider />
 

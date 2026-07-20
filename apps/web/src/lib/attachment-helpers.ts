@@ -1,4 +1,5 @@
 import type { NodeAttachment, AttachmentKind } from '@/components/node-flow/types';
+import { generateId } from '@/lib/id';
 
 /** 单文件大小上限：10MB */
 export const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -33,9 +34,9 @@ const TEXT_EXTENSIONS = new Set([
   'sh',
 ]);
 
-/** 生成附件 ID：att-<时间戳>-<6位随机串> */
+/** 生成附件 ID（统一使用 @/lib/id 的 CSPRNG 方案） */
 function generateAttachmentId(): string {
-  return `att-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  return generateId('att');
 }
 
 /** 从文件名提取扩展名（小写，不含点）。无扩展名返回空串 */

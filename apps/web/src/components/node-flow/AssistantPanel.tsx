@@ -16,13 +16,21 @@ import {
   Plus,
   MessageSquare,
   Settings as SettingsIcon,
+  Zap,
+  ZapOff,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useDebugStore } from '@/lib/debug-store';
 import { useTranslation } from '@/components/I18nProvider';
 import { isConfigured, PROVIDER_PRESETS } from '@/lib/llm-config';
-import { streamAssistantResponse, messagesToHistory } from '@/lib/agent-engine';
-import type { AssistantMessage } from './types';
+import {
+  streamAssistantResponse,
+  messagesToHistory,
+  type CanvasContextSnapshot,
+} from '@/lib/agent-engine';
+import { generateId } from '@/lib/id';
+import type { AssistantMessage, TurnNodeData } from './types';
+import type { Node } from 'reactflow';
 
 /** Markdown 渲染组件（复用 NodeInspector 风格，适配助手对话气泡） */
 const mdComponents: Components = {
@@ -69,10 +77,8 @@ const mdComponents: Components = {
   ),
 };
 
-/** 生成助手消息 ID */
-function genAssistantMessageId(): string {
-  return `asst-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
+/** 生成助手消息 ID（统一使用 @/lib/id 的 CSPRNG 方案） */
+const genAssistantMessageId = () => generateId('asst');
 
 /** 助手对话面板（侧边栏 tab 内嵌） */
 export default function AssistantPanel() {
@@ -111,6 +117,13 @@ export default function AssistantPanel() {
   const persistCurrentChatSession = useDebugStore((s) => s.persistCurrentChatSession);
   const switchLlmConfig = useDebugStore((s) => s.switchLlmConfig);
 
+  // 画布上下文注入 + 自动建图模式（让助手感知画布状态，可切换每次都建图）
+  const nodes = useDebugStore((s) => s.nodes);
+  const currentProjectId = useDebugStore((s) => s.currentProjectId);
+  const projects = useDebugStore((s) => s.projects);
+  const appSettings = useDebugStore((s) => s.appSettings);
+  const updateAppSettings = useDebugStore((s) => s.updateAppSettings);
+
   // ===== 本地 UI 状态 =====
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
@@ -143,6 +156,68 @@ export default function AssistantPanel() {
   const configured = useMemo(() => {
     return !!llmConfig && !!llmConfig.apiKey && !!llmConfig.baseUrl && !!llmConfig.model;
   }, [llmConfig]);
+
+  /**
+   * 构建画布上下文快照（注入助手 system prompt，让助手感知画布状态）。
+   * - 项目名/ID 来自 currentProjectId + projects
+   * - 最近节点：按 createdAt 倒序取前 5 个，提取 userMessage 前 120 字
+   * - 选中节点路径：从选中节点沿 parentId 链回溯到根，每项取 userMessage 前 80 字
+   *
+   * 节点变化 / 选中节点变化 / 项目切换时重新计算。
+   */
+  const canvasSnapshot = useMemo<CanvasContextSnapshot>(() => {
+    const currentProject = currentProjectId
+      ? projects.find((p) => p.id === currentProjectId)
+      : null;
+    const turnNodes = nodes.filter((n): n is Node<TurnNodeData> =>
+      Boolean(n.data && typeof n.data === 'object'),
+    );
+
+    // 最近 5 个节点（按 createdAt 倒序；createdAt 缺失时按数组顺序兜底）
+    const recentNodes = [...turnNodes]
+      .sort((a, b) => (b.data.createdAt ?? 0) - (a.data.createdAt ?? 0))
+      .slice(0, 5)
+      .map((n) => ({
+        id: n.id,
+        userMessagePreview: (n.data.userMessage ?? '').slice(0, 120),
+        parentId: n.data.parentId ?? null,
+        status: n.data.status ?? 'active',
+      }));
+
+    // 选中节点路径：从选中节点沿 parentId 回溯到根
+    const selectedPathPreview: Array<{ id: string; userMessagePreview: string }> = [];
+    if (selectedNodeId) {
+      const byId = new Map(turnNodes.map((n) => [n.id, n]));
+      let currentId: string | null = selectedNodeId;
+      const visited = new Set<string>(); // 防御环路
+      while (currentId && !visited.has(currentId)) {
+        visited.add(currentId);
+        const n = byId.get(currentId);
+        if (!n) break;
+        selectedPathPreview.unshift({
+          id: n.id,
+          userMessagePreview: (n.data.userMessage ?? '').slice(0, 80),
+        });
+        currentId = n.data.parentId ?? null;
+      }
+    }
+
+    return {
+      projectName: currentProject?.name ?? null,
+      projectId: currentProjectId,
+      nodeCount: turnNodes.length,
+      selectedNodeId: selectedNodeId ?? null,
+      recentNodes,
+      selectedPathPreview,
+    };
+  }, [nodes, currentProjectId, projects, selectedNodeId]);
+
+  // 自动建图模式开关（持久化到 appSettings）
+  const autoCreateNodes = appSettings.assistantAutoCreateNodes;
+  const handleToggleAutoCreate = useCallback(() => {
+    updateAppSettings({ assistantAutoCreateNodes: !autoCreateNodes });
+    toast.success(autoCreateNodes ? t.assistantAutoCreateOff : t.assistantAutoCreateOn);
+  }, [autoCreateNodes, updateAppSettings, t]);
 
   // 自动滚动到底部（消息列表变化或流式更新时）
   useEffect(() => {
@@ -248,6 +323,8 @@ export default function AssistantPanel() {
       skillId: activeSkillId,
       skills,
       history,
+      canvasContext: canvasSnapshot,
+      autoCreateNode: autoCreateNodes,
       signal: controller.signal,
       onDelta: (delta) => {
         appendAssistantMessageChunk(assistantMessageId, delta);
@@ -300,6 +377,8 @@ export default function AssistantPanel() {
     updateAssistantMessage,
     createTurnNode,
     persistCurrentChatSession,
+    canvasSnapshot,
+    autoCreateNodes,
     t,
     tf,
   ]);
@@ -545,6 +624,20 @@ export default function AssistantPanel() {
               </div>
             )}
           </div>
+          {/* 自动建图模式切换：开启后每次助手回答都自动把用户消息转发为新节点 */}
+          <button
+            onClick={handleToggleAutoCreate}
+            className={`p-1 rounded transition-colors ${
+              autoCreateNodes
+                ? 'text-amber-500 bg-amber-50 dark:bg-amber-900/30'
+                : 'text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-slate-700'
+            }`}
+            aria-label={t.assistantAutoCreate}
+            aria-pressed={autoCreateNodes}
+            title={autoCreateNodes ? t.assistantAutoCreateOn : t.assistantAutoCreateOff}
+          >
+            {autoCreateNodes ? <Zap size={12} /> : <ZapOff size={12} />}
+          </button>
           <button
             onClick={handleClear}
             disabled={isStreaming || assistantMessages.length === 0}

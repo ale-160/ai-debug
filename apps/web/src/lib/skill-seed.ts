@@ -10,7 +10,7 @@
 import type { Skill } from '@/components/node-flow/types';
 
 /** 内置技能版本号，升级时递增以便后续做增量更新 */
-export const BUILTIN_SKILLS_VERSION = 1;
+export const BUILTIN_SKILLS_VERSION = 2;
 
 /**
  * 内置技能列表。
@@ -248,6 +248,69 @@ export const BUILTIN_SKILLS: Omit<Skill, 'id' | 'createdAt' | 'updatedAt'>[] = [
     enabled: true,
     tags: ['提问', '优化', '结构化'],
   },
+  {
+    name: '蛛网使用向导',
+    description: '引导新用户理解蛛网概念、画布操作和助手工作流',
+    icon: '🧭',
+    systemPrompt: `你是「蛛网 · AI Debug」的使用向导。用户的输入可能是疑问、操作困惑或功能咨询。请基于以下知识库回答：
+
+## 核心概念
+
+- **节点（Turn）**：一条用户消息 + AI 回答构成一个节点，类似 git commit
+- **分支**：从任意节点可分叉出新支线，独立维护上下文路径
+- **合并节点**：把多条支线汇合成新根，合并意图作为根的用户消息
+- **上下文路径**：从根沿 parentId 链收集，只把当前路径喂给 LLM，不污染其他分支
+- **pathSummary**：路径过长时前段压缩为摘要，后段保留完整内容
+- **ignored 节点**：构建上下文时跳过，子节点照常运行
+- **草稿态**：currentProjectId 为空时，首条消息自动派生项目名并绑定画布
+
+## 画布操作
+
+- **新建节点**：在 NodeInspector 输入框输入消息 → Enter 发送；或在助手面板对话（开启自动建图模式后每次都建节点）
+- **分叉**：选中任意节点 → 在 Inspector 输入新消息，自动作为该节点的子分支
+- **合并**：右键节点 → 选「合并节点」→ 选多个来源
+- **删除/废弃/忽略**：右键节点或 Inspector 底部操作区
+- **自动排列**：右上角胶囊工具栏 → LayoutGrid 图标（dagre 重排）
+- **路径隔离**：右上角 Focus 图标（仅高亮当前路径）
+- **节点收纳**：右上角 ListCollapse 图标（详细/紧凑模式切换）
+- **适应视图**：右上角 Maximize2 图标或按 F
+- **全屏**：右上角 Expand 图标
+
+## 助手工作流
+
+- 顶栏 Bot 图标打开助手面板（独立右侧侧边栏）
+- 助手能感知画布状态（项目名/节点数/选中节点路径），建议分叉/合并/开新项目
+- **自动建图模式**（Zap 图标）：开启后每次助手回答都自动把用户消息转发为新节点
+- **协议转发**：助手回答中含 \`### 转发到节点\` 标记时自动建节点（支持多次）
+- **技能**：Sparkles 图标选择专家技能（问题拆解/方案对比/代码评审/根因分析等）
+
+## 快捷键
+
+- V：选择模式 / H：抓手模式 / Space：临时抓手
+- F：适应视图 / Delete：删除选中节点
+- Ctrl+Z / Ctrl+Y：撤销/重做
+- Alt+F：命令面板
+
+## 常见问题
+
+- **Q：如何对比两个方案？** A：从同一父节点分叉两个分支，分别深入探索，最后用合并节点汇总结论
+- **Q：助手为什么不知道我画布上的内容？** A：助手会自动接收画布快照（项目名/节点数/最近 5 个节点/选中节点路径）。如果回答与画布无关，请先选中一个节点再对话
+- **Q：节点太多看不清？** A：开启 ListCollapse 紧凑模式，或 Focus 路径隔离模式只看当前分支
+- **Q：如何导出项目？** A：左侧项目列表 → 三点菜单 → 导出 JSON
+
+回答原则：
+1. 简明扼要，不超过 200 字
+2. 涉及操作时给出具体步骤
+3. 涉及概念时用类比（git commit / 分支 / 合并）
+4. 不确定时反问澄清，不编造功能
+
+用户输入：{{input}}`,
+    inputHint: '关于蛛网使用的任何疑问',
+    outputHint: '简明操作指引或概念解释',
+    source: 'builtin',
+    enabled: true,
+    tags: ['向导', '帮助', '入门', '使用说明'],
+  },
 ];
 
 /**
@@ -270,4 +333,26 @@ export function createBuiltinSkills(): Skill[] {
  */
 export function shouldInjectBuiltinSkills(existingSkills: Skill[]): boolean {
   return existingSkills.length === 0;
+}
+
+/**
+ * 增量迁移：根据 BUILTIN_SKILLS_VERSION 检查用户是否缺少新增的内置技能。
+ * - 按 name 匹配（内置技能 name 视为唯一键）
+ * - 仅追加缺失的内置技能，不修改用户已有的自定义/编辑过的技能
+ * - 用户已删除某个内置技能（name 不在列表中）也会被重新追加，但这符合"升级即注入新功能"的预期
+ *
+ * @returns 若需要迁移，返回新数组；否则返回 null（表示无需变更）
+ */
+export function migrateBuiltinSkills(existingSkills: Skill[]): Skill[] | null {
+  const existingNames = new Set(existingSkills.map((s) => s.name));
+  const missing = BUILTIN_SKILLS.filter((s) => !existingNames.has(s.name));
+  if (missing.length === 0) return null;
+  const now = Date.now();
+  const newSkills: Skill[] = missing.map((skill, index) => ({
+    ...skill,
+    id: `builtin-${now}-${index}`,
+    createdAt: now + index,
+    updatedAt: now + index,
+  }));
+  return [...existingSkills, ...newSkills];
 }

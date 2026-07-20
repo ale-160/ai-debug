@@ -15,6 +15,7 @@
 
 import type { Node, Edge } from 'reactflow';
 import type { TurnNodeData } from '@/components/node-flow/types';
+import { generateId } from '@/lib/id';
 
 export interface CanvasSnapshot {
   /** 唯一 id（crypto.randomUUID 或时间戳 + 随机串） */
@@ -153,7 +154,7 @@ export function getSnapshotById(id: string): CanvasSnapshot | undefined {
 export function saveSnapshot(input: Omit<CanvasSnapshot, 'id' | 'createdAt'>): CanvasSnapshot {
   const now = Date.now();
   const next: CanvasSnapshot = {
-    id: generateId(),
+    id: generateId('snapshot'),
     name: input.name,
     nodes: input.nodes,
     edges: input.edges,
@@ -214,9 +215,4 @@ function enforceCapacityForProject(list: CanvasSnapshot[], projectId: string): C
   return list.filter((s) => !idsToRemove.has(s.id));
 }
 
-function generateId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return `snapshot-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
+// generateId 已迁移至 @/lib/id（统一 CSPRNG ID 生成）

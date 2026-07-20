@@ -10,6 +10,7 @@
 // ============================================================
 
 import type { AssistantMessage } from '@/components/node-flow/types';
+import { generateId } from '@/lib/id';
 
 /** 单个助手会话 */
 export interface ChatSession {
@@ -42,10 +43,7 @@ function notify(): void {
   subscribers.forEach((cb) => cb());
 }
 
-/** 生成会话 ID：`sess-${timestamp}-${rand}` */
-function generateId(): string {
-  return `sess-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
+// generateId 已迁移至 @/lib/id（统一 CSPRNG ID 生成）
 
 /**
  * 从 localStorage 读取会话列表。
@@ -174,7 +172,7 @@ export function createChatSession(title?: string): ChatSession {
   // 默认标题：会话 N
   const defaultTitle = `会话 ${snapshot.length + 1}`;
   const session: ChatSession = {
-    id: generateId(),
+    id: generateId('sess'),
     title: title?.trim() || defaultTitle,
     messages: [],
     activeLlmConfigId: null,

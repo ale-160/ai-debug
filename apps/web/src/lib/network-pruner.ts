@@ -10,6 +10,7 @@ import type { NetworkProject, TurnNodeData } from '@/components/node-flow/types'
 import { quickCallLLM } from './llm-helpers';
 import type { LLMMessage } from './llm-client';
 import { createProject, updateProject } from './project-storage';
+import { randomSuffix } from '@/lib/id';
 
 /** 修剪分析结果 */
 export interface PruneAnalysis {
@@ -49,7 +50,7 @@ const PRUNE_SYSTEM_PROMPT = `你是一位蛛网对话网络清理助手。用户
 
 /** 生成节点 ID（与 store 保持一致格式，加 index 防批量生成碰撞） */
 function generateNodeId(prefix: string, index: number): string {
-  return `${prefix}-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`;
+  return `${prefix}-${Date.now()}-${index}-${randomSuffix(8)}`;
 }
 
 /** 格式化为 YYYYMMDD */

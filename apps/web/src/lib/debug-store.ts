@@ -62,7 +62,7 @@ import {
   setActiveChatSessionId as setActiveChatSessionIdEntry,
   type ChatSession,
 } from './chat-session-store';
-import { createBuiltinSkills, shouldInjectBuiltinSkills } from './skill-seed';
+import { createBuiltinSkills, shouldInjectBuiltinSkills, migrateBuiltinSkills } from './skill-seed';
 import {
   loadSettings,
   saveSettings,
@@ -71,6 +71,7 @@ import {
   DEFAULT_SETTINGS,
 } from './settings-storage';
 import { saveSnapshot as saveSnapshotToStore, getSnapshotById } from './canvas-snapshots-store';
+import { generateId } from '@/lib/id';
 
 // immer patches 全局初始化：
 // - enablePatches：开启 patch 序列化能力（produceWithPatches 依赖）
@@ -170,8 +171,9 @@ function syncArrayById<T extends { id: string }>(draftArr: T[], newArr: T[]) {
  * 生成节点 ID。
  * 策略：`${prefix}-${Date.now()}-${6 位 base36 随机串}`，避免旧 node-utils 依赖。
  */
+// generateNodeId 已迁移至 @/lib/id 的 generateId（统一 CSPRNG ID 生成）
 function generateNodeId(prefix: string): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  return generateId(prefix);
 }
 
 interface NetworkState {
@@ -933,7 +935,7 @@ export const useDebugStore = create<NetworkState>()(
           get().flushCurrentProject();
           const now = Date.now();
           const project: NetworkProject = {
-            id: `project-${now}-${Math.random().toString(36).slice(2, 8)}`,
+            id: generateId('project'),
             name: name.trim() || '未命名项目',
             nodes: [],
             edges: [],
@@ -1055,7 +1057,7 @@ export const useDebugStore = create<NetworkState>()(
         // 全局记忆：直接读写 localStorage，再同步到 store
         addGlobalMemory: (content, source = 'manual') => {
           const entry: MemoryEntry = {
-            id: `mem-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            id: generateId('mem'),
             content: content.trim(),
             createdAt: Date.now(),
             source,
@@ -1084,7 +1086,7 @@ export const useDebugStore = create<NetworkState>()(
           const { currentProjectId, projects } = get();
           if (!currentProjectId) return;
           const entry: MemoryEntry = {
-            id: `mem-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            id: generateId('mem'),
             content: content.trim(),
             createdAt: Date.now(),
             source,
@@ -1591,14 +1593,21 @@ export const useDebugStore = create<NetworkState>()(
         setSkillManagerOpen: (open) => set({ skillManagerOpen: open }),
         refreshSkills: () => {
           const existing = loadSkillsFromStorage();
-          // 首次启动（用户技能列表为空）自动注入内置技能
+          // 首次启动（用户技能列表为空）自动注入全部内置技能
           if (shouldInjectBuiltinSkills(existing)) {
             const builtin = createBuiltinSkills();
             persistSkills(builtin);
             set({ skills: builtin });
-          } else {
-            set({ skills: existing });
+            return;
           }
+          // 增量迁移：老用户升级后自动补齐新增的内置技能（如「蛛网使用向导」）
+          const migrated = migrateBuiltinSkills(existing);
+          if (migrated) {
+            persistSkills(migrated);
+            set({ skills: migrated });
+            return;
+          }
+          set({ skills: existing });
         },
 
         // ========== 多 LLM 配置（PR-3） ==========

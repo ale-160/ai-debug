@@ -10,6 +10,8 @@
 // UI 通过 subscribe + getSnapshot 订阅，跨标签页通过 window 'storage' 事件同步。
 // ============================================================
 
+import { generateId } from '@/lib/id';
+
 /** ai-debug 仅有的节点类型：turn 用户消息节点 / merge 合并节点 */
 export type PresetNodeType = 'turn' | 'merge';
 
@@ -171,7 +173,7 @@ export function savePreset(input: Partial<NodePreset> & { name: string }): NodeP
         updatedAt: now,
       }
     : {
-        id: input.id || generateId(),
+        id: input.id || generateId('preset'),
         name: input.name,
         nodeType: input.nodeType || 'turn',
         userMessage: input.userMessage ?? '',
@@ -266,7 +268,7 @@ export function importPresets(input: string | { presets?: unknown[] }): number {
       const now = Date.now();
       const nodeType: PresetNodeType = p.nodeType === 'merge' ? 'merge' : 'turn';
       valid.push({
-        id: typeof p.id === 'string' ? p.id : generateId(),
+        id: typeof p.id === 'string' ? p.id : generateId('preset'),
         name: p.name,
         nodeType,
         userMessage: p.userMessage,
@@ -304,10 +306,4 @@ export function importPresets(input: string | { presets?: unknown[] }): number {
 
 // ========== 工具 ==========
 
-function generateId(): string {
-  // 优先使用 crypto.randomUUID（现代浏览器均支持）
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return `preset-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
+// generateId 已迁移至 @/lib/id（统一 CSPRNG ID 生成）

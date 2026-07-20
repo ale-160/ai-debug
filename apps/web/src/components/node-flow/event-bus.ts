@@ -21,7 +21,25 @@ export const NODE_EVENTS = {
   MemoryUpdated: 'memory-updated',
   /** LLM 配置更新（替换原 'llm-config-updated' 裸字符串） */
   LlmConfigUpdated: 'llm-config-updated',
+  /** 冲突检测到（自动 / 手动检测命中后由 useInspectorActions 派发，UI 监听后弹决策 Modal） */
+  ConflictDetected: 'conflict-detected',
+  /** 用户在 ConflictCard 主动点击「人工决策」时派发，UI 监听后弹决策 Modal */
+  ConflictDecisionRequested: 'conflict-decision-requested',
 } as const;
+
+/** 冲突决策 Modal 所需冲突信息（ConflictDetected / ConflictDecisionRequested 共用） */
+export interface ConflictDecisionPayload {
+  /** 冲突唯一标识（使用被标注冲突的 nodeId） */
+  id: string;
+  /** 被标注冲突的节点 ID（与 id 一致，显式保留便于 handler 使用） */
+  nodeId: string;
+  /** 分支 A 名称（前序/主干） */
+  branchAName: string;
+  /** 分支 B 名称（当前冲突节点所属分支） */
+  branchBName: string;
+  /** 冲突描述（来自 ConflictMark.note） */
+  description: string;
+}
 
 /** 事件名 → payload 类型映射 */
 export interface NodeEventDetailMap {
@@ -32,6 +50,8 @@ export interface NodeEventDetailMap {
   [NODE_EVENTS.PruneDerived]: { projectId: string; originalProjectId: string };
   [NODE_EVENTS.MemoryUpdated]: { scope: 'global' | 'project' };
   [NODE_EVENTS.LlmConfigUpdated]: undefined;
+  [NODE_EVENTS.ConflictDetected]: ConflictDecisionPayload;
+  [NODE_EVENTS.ConflictDecisionRequested]: ConflictDecisionPayload;
 }
 
 export type NodeEventName = keyof NodeEventDetailMap;

@@ -13,6 +13,8 @@ import {
   Network,
   Heart,
   Globe,
+  Paperclip,
+  Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -22,21 +24,34 @@ import { useDebugStore } from '@/lib/debug-store';
 import { streamTurnResponse } from '@/lib/network-engine';
 import { buildMemoryContext } from '@/lib/memory-engine';
 import { isConfigured, maskKey } from '@/lib/llm-config';
+import { hitlEventBus } from '@/lib/hitl-event-bus';
 import { useTranslation, I18nProvider } from '@/components/I18nProvider';
 import { useRouter } from 'next/navigation';
 import { getStrings, type Language } from '@/data/i18n';
 import ExecutionStatusBar from './ExecutionStatusBar';
-import { on as onEvent, NODE_EVENTS } from './event-bus';
+import { on as onEvent, NODE_EVENTS, type ConflictDecisionPayload } from './event-bus';
+import type { ConflictDecision } from './ConflictDecisionModal';
+import type { NodeAttachment } from './types';
+import { processFiles, MAX_FILE_SIZE } from '@/lib/attachment-helpers';
+import AttachmentChips from './inspector/AttachmentChips';
 
 // 快捷键帮助面板懒加载，用户点击帮助按钮后才渲染
 const KeyboardShortcuts = lazy(() => import('./KeyboardShortcuts'));
+// P1-1 命令面板懒加载：用户按 Alt+F 后才加载
+const CommandPalette = lazy(() => import('./CommandPalette'));
+// P1-3 快照管理面板懒加载：用户从命令面板或工具栏入口打开后才加载
+const SnapshotManager = lazy(() => import('./SnapshotManager'));
 // 自动推演对话框懒加载，用户点击"自动推演"入口按钮后才渲染
 const AutoEvolutionDialog = lazy(() => import('./AutoEvolutionDialog'));
+// P2-3 冲突决策 Modal 懒加载：检测到冲突或用户点击「人工决策」时才加载
+const ConflictDecisionModal = lazy(() => import('./ConflictDecisionModal'));
 // 模态框懒加载：用户点击设置/记忆按钮后才加载，避免首屏打包
 const SettingsModal = lazy(() =>
   import('@/components/SettingsModal').then((m) => ({ default: m.SettingsModal })),
 );
 const MemoryPanel = lazy(() => import('@/components/MemoryPanel'));
+// 技能管理面板懒加载：用户点击技能管理入口后才加载
+const SkillManager = lazy(() => import('./SkillManager'));
 // 侧边栏/检查器懒加载：首屏只需画布，侧边栏/Inspector 延迟加载
 const NodeSidebar = lazy(() => import('./NodeSidebar'));
 const NodeInspector = lazy(() => import('./NodeInspector'));
@@ -178,14 +193,104 @@ function TopNav({ onShowHelp }: { onShowHelp: () => void }) {
 }
 
 function EmptyStateInput() {
-  const { t } = useTranslation();
+  const { t, tf } = useTranslation();
   const [input, setInput] = useState('');
+  /** PR-2: 附件列表（提交后清空，由 createTurnNode 携带到根节点 data） */
+  const [attachments, setAttachments] = useState<NodeAttachment[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  // ref 缓存 attachments，避免 handler 频繁重建
+  const attachmentsRef = useRef(attachments);
+  attachmentsRef.current = attachments;
   const createTurnNode = useDebugStore((s) => s.createTurnNode);
   const updateTurnNode = useDebugStore((s) => s.updateTurnNode);
   const appendAssistantChunk = useDebugStore((s) => s.appendAssistantChunk);
   const createProject = useDebugStore((s) => s.createProject);
   // 当前流式请求的 AbortController：用于在发起新请求前取消旧请求
   const abortRef = useRef<AbortController | null>(null);
+
+  /** 处理文件列表：调用 processFiles 合并到现有附件，并对 failed 项 toast 提示 */
+  const addFiles = useCallback(
+    async (files: FileList | File[]) => {
+      setIsProcessing(true);
+      try {
+        const newAtts = await processFiles(files);
+        setAttachments([...attachmentsRef.current, ...newAtts]);
+        const failed = newAtts.filter((a) => a.parseStatus === 'failed');
+        if (failed.length > 0) {
+          const tooLarge = failed.filter((a) => a.parseError?.includes('exceeds'));
+          if (tooLarge.length > 0) {
+            toast.warning(tf('attachmentTooLarge', { max: Math.floor(MAX_FILE_SIZE / 1024 / 1024) }));
+          } else {
+            for (const f of failed) {
+              toast.error(tf('attachmentParseFailed', { message: f.parseError ?? '' }));
+            }
+          }
+        }
+      } finally {
+        setIsProcessing(false);
+      }
+    },
+    [tf],
+  );
+
+  const removeAttachment = useCallback((id: string) => {
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragOver(false);
+      const files = e.dataTransfer.files;
+      if (files && files.length > 0) void addFiles(files);
+    },
+    [addFiles],
+  );
+
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      const imageFiles: File[] = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.kind === 'file' && item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) imageFiles.push(file);
+        }
+      }
+      if (imageFiles.length > 0) {
+        e.preventDefault();
+        void addFiles(imageFiles);
+      }
+    },
+    [addFiles],
+  );
+
+  const handleFileInputChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (!files || files.length === 0) return;
+      await addFiles(files);
+      e.target.value = '';
+    },
+    [addFiles],
+  );
 
   const handleSubmit = useCallback(async () => {
     const userMessage = input.trim();
@@ -202,7 +307,13 @@ function EmptyStateInput() {
       createProject(name);
     }
 
-    const newId = createTurnNode(userMessage, null);
+    // PR-2: 仅持久化 parseStatus=parsed 的附件，failed 项不写入节点
+    const parsedAttachments = attachments.filter((a) => a.parseStatus === 'parsed');
+    const newId = createTurnNode(
+      userMessage,
+      null,
+      parsedAttachments.length > 0 ? { attachments: parsedAttachments } : undefined,
+    );
     updateTurnNode(newId, { status: 'running' });
 
     // 读取创建后的最新 nodes 快照（createTurnNode 已同步写入 store）
@@ -247,8 +358,10 @@ function EmptyStateInput() {
     }
 
     setInput('');
+    setAttachments([]);
   }, [
     input,
+    attachments,
     createTurnNode,
     updateTurnNode,
     appendAssistantChunk,
@@ -270,23 +383,75 @@ function EmptyStateInput() {
         <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">{t.startYourDebug}</h2>
         <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{t.startYourDebugDesc}</p>
       </div>
-      <div className="w-full bg-white rounded-xl shadow-lg border border-slate-200 p-3 flex items-end gap-2 dark:bg-slate-800 dark:border-slate-700">
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={t.inputPlaceholder}
-          rows={3}
-          className="flex-1 resize-none text-base text-slate-800 placeholder:text-slate-400 bg-transparent focus:outline-none dark:text-slate-100 dark:placeholder:text-slate-500"
+      <div className="w-full bg-white rounded-xl shadow-lg border border-slate-200 p-3 flex flex-col gap-2 dark:bg-slate-800 dark:border-slate-700">
+        {/* PR-2: 附件预览区（有附件时显示） */}
+        {attachments.length > 0 && (
+          <AttachmentChips attachments={attachments} onRemove={removeAttachment} />
+        )}
+
+        {/* textarea + 拖拽叠层（拖入文件时显示蓝色虚线边框） */}
+        <div className="relative">
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            placeholder={t.inputPlaceholder}
+            rows={3}
+            className={`w-full resize-none text-base text-slate-800 placeholder:text-slate-400 bg-transparent focus:outline-none dark:text-slate-100 dark:placeholder:text-slate-500 rounded-lg p-2 border transition-colors ${
+              isDragOver
+                ? 'border-blue-400 border-dashed ring-2 ring-blue-200 dark:ring-blue-900/60 bg-blue-50/40 dark:bg-blue-900/20'
+                : 'border-transparent'
+            }`}
+          />
+          {/* 拖拽叠层提示 */}
+          {isDragOver && (
+            <div className="absolute inset-0 pointer-events-none flex items-center justify-center text-blue-500 text-sm font-medium">
+              {t.attachmentDropZone}
+            </div>
+          )}
+          {/* 处理中指示器 */}
+          {isProcessing && (
+            <div className="absolute top-1.5 right-1.5 inline-flex items-center gap-1 text-xs text-blue-500 bg-white/80 dark:bg-slate-800/80 rounded px-1.5 py-0.5">
+              <Loader2 size={12} className="animate-spin" />
+              {t.attachmentProcessing}
+            </div>
+          )}
+        </div>
+
+        {/* 隐藏的 file input：multiple + 不限制 accept */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={handleFileInputChange}
         />
-        <button
-          onClick={() => void handleSubmit()}
-          disabled={!input.trim()}
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          <Send size={14} />
-          {t.startDebug}
-        </button>
+
+        {/* 按钮区：添加附件（左）+ 开始 Debug（右，flex-1） */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isProcessing}
+            className="inline-flex items-center justify-center gap-1 px-3 py-2 rounded-lg text-sm text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            title={t.attachmentDragDropHint}
+          >
+            <Paperclip size={14} />
+            {t.attachmentButton}
+          </button>
+          <button
+            onClick={() => void handleSubmit()}
+            disabled={!input.trim()}
+            className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <Send size={14} />
+            {t.startDebug}
+          </button>
+        </div>
       </div>
       <p className="text-xs text-slate-400">{t.enterSubmit}</p>
     </div>
@@ -295,6 +460,7 @@ function EmptyStateInput() {
 
 function EditorInner() {
   const { t } = useTranslation();
+  const { toggleTheme } = useTheme();
   const nodes = useDebugStore((s) => s.nodes);
   const selectedNodeId = useDebugStore((s) => s.selectedNodeId);
   const showSettings = useDebugStore((s) => s.showSettings);
@@ -304,6 +470,11 @@ function EditorInner() {
   // 自动推演对话框可见性（懒加载，由 NodeSidebar 入口按钮触发）
   const showAutoEvolution = useDebugStore((s) => s.showAutoEvolution);
   const setShowAutoEvolution = useDebugStore((s) => s.setShowAutoEvolution);
+  // 技能管理面板可见性（懒加载，由 NodeSidebar 助手 tab 内入口触发）
+  const skillManagerOpen = useDebugStore((s) => s.skillManagerOpen);
+  const setSkillManagerOpen = useDebugStore((s) => s.setSkillManagerOpen);
+  // 客户端挂载后从 localStorage 加载技能列表（SSR 安全）
+  const refreshSkills = useDebugStore((s) => s.refreshSkills);
   const refreshLlmConfig = useDebugStore((s) => s.refreshLlmConfig);
   const refreshProjects = useDebugStore((s) => s.refreshProjects);
   const refreshAppSettings = useDebugStore((s) => s.refreshAppSettings);
@@ -313,17 +484,61 @@ function EditorInner() {
   const [isHydrated, setIsHydrated] = useState(false);
   // 快捷键帮助面板可见性（懒加载，仅用户点击帮助按钮后渲染）
   const [showShortcuts, setShowShortcuts] = useState(false);
+  // P1-1 命令面板可见性（Alt+F 触发）
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
+  // P1-3 快照管理面板可见性
+  const [showSnapshotManager, setShowSnapshotManager] = useState(false);
+  // P2-3 待决策的冲突信息（接收 conflict-detected / conflict-decision-requested 事件后写入）
+  const [pendingConflict, setPendingConflict] = useState<ConflictDecisionPayload | null>(null);
 
   const isEmpty = nodes.length === 0;
 
-  // 挂载后从 localStorage 加载 llmConfig/projects/设置/全局记忆，保证首屏 SSR/CSR 一致
+  // 挂载后从 localStorage 加载 llmConfig/projects/设置/全局记忆/技能，保证首屏 SSR/CSR 一致
   useEffect(() => {
     refreshLlmConfig();
     refreshProjects();
     refreshAppSettings();
     refreshGlobalMemory();
+    refreshSkills();
     setIsHydrated(true);
-  }, [refreshLlmConfig, refreshProjects, refreshAppSettings, refreshGlobalMemory]);
+  }, [refreshLlmConfig, refreshProjects, refreshAppSettings, refreshGlobalMemory, refreshSkills]);
+
+  // P0-2：跨标签页 storage 事件同步
+  // 其他标签页修改 localStorage 时，本标签页收到 storage 事件，按 key 触发对应 refresh。
+  // 注意：storage 事件只在跨标签页时触发，本标签页的 setItem 不会触发，因此无需担心循环刷新。
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      if (!e.key) return;
+      switch (e.key) {
+        case 'ai-debug:network-projects':
+          refreshProjects();
+          break;
+        case 'ai-debug:skills':
+          refreshSkills();
+          break;
+        case 'ai-debug:llm-config':
+          refreshLlmConfig();
+          break;
+        case 'ai-debug:app-settings':
+          refreshAppSettings();
+          break;
+        case 'ai-debug:global-memory':
+          refreshGlobalMemory();
+          break;
+        default:
+          // 其他键（theme / user-lang / zustand persist 内部键）由各自 Provider 自行处理
+          break;
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, [
+    refreshProjects,
+    refreshSkills,
+    refreshLlmConfig,
+    refreshAppSettings,
+    refreshGlobalMemory,
+  ]);
 
   // 监听 llm-config-updated 事件刷新 store 中的 llmConfig（TopNav 徽章随之更新）
   // 走 event-bus 类型安全事件总线
@@ -332,6 +547,21 @@ function EditorInner() {
       refreshLlmConfig();
     });
   }, [refreshLlmConfig]);
+
+  // P2-3：监听 conflict-detected / conflict-decision-requested 事件，弹出冲突决策 Modal。
+  // 两个事件 payload 结构相同（ConflictDecisionPayload），统一写入 pendingConflict 状态。
+  useEffect(() => {
+    const offDetected = onEvent(NODE_EVENTS.ConflictDetected, (payload) => {
+      if (payload) setPendingConflict(payload);
+    });
+    const offRequested = onEvent(NODE_EVENTS.ConflictDecisionRequested, (payload) => {
+      if (payload) setPendingConflict(payload);
+    });
+    return () => {
+      offDetected();
+      offRequested();
+    };
+  }, []);
 
   // 页面关闭/刷新前同步保存当前项目（自动保存的兜底，避免丢失最后几次防抖内的改动）
   useEffect(() => {
@@ -343,6 +573,79 @@ function EditorInner() {
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
+  // P0-1：撤销/重做快捷键（Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z）
+  // 在 EditorInner 层监听，直接调用 store.undo()/redo()，避免与 NodeCanvas 的局部快捷键冲突
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      // 输入框中不触发撤销/重做（避免与文本编辑冲突）
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+
+      const isCtrl = e.ctrlKey || e.metaKey;
+      if (!isCtrl) return;
+
+      // Ctrl+Z 撤销
+      if (!e.shiftKey && (e.key === 'z' || e.key === 'Z') && !e.repeat) {
+        e.preventDefault();
+        const state = useDebugStore.getState();
+        if (state.undoCount > 0) {
+          state.undo();
+        } else {
+          toast(t.undoEmpty);
+        }
+        return;
+      }
+
+      // Ctrl+Y 或 Ctrl+Shift+Z 重做
+      if (
+        (e.key === 'y' || e.key === 'Y') ||
+        (e.shiftKey && (e.key === 'z' || e.key === 'Z'))
+      ) {
+        if (!e.repeat) {
+          e.preventDefault();
+          const state = useDebugStore.getState();
+          if (state.redoCount > 0) {
+            state.redo();
+          } else {
+            toast(t.redoEmpty);
+          }
+        }
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [t.undoEmpty, t.redoEmpty]);
+
+  // P1-1：命令面板快捷键（Alt+F）
+  // 不在输入框中触发（避免与浏览器默认 Alt+F 行为冲突时仍能正常使用）
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!e.altKey || e.repeat) return;
+      if (e.key !== 'f' && e.key !== 'F') return;
+      // 在输入框中不触发（避免影响文本编辑）
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+      e.preventDefault();
+      setShowCommandPalette((prev) => !prev);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   // hydration 完成前显示骨架，避免空画布闪烁
@@ -444,6 +747,48 @@ function EditorInner() {
       {showAutoEvolution && (
         <Suspense fallback={null}>
           <AutoEvolutionDialog onClose={() => setShowAutoEvolution(false)} />
+        </Suspense>
+      )}
+      {skillManagerOpen && (
+        <Suspense fallback={null}>
+          <SkillManager open={skillManagerOpen} onClose={() => setSkillManagerOpen(false)} />
+        </Suspense>
+      )}
+      {showCommandPalette && (
+        <Suspense fallback={null}>
+          <CommandPalette
+            open={showCommandPalette}
+            onClose={() => setShowCommandPalette(false)}
+            onToggleTheme={toggleTheme}
+            onOpenSnapshots={() => setShowSnapshotManager(true)}
+          />
+        </Suspense>
+      )}
+      {showSnapshotManager && (
+        <Suspense fallback={null}>
+          <SnapshotManager
+            open={showSnapshotManager}
+            onClose={() => setShowSnapshotManager(false)}
+          />
+        </Suspense>
+      )}
+      {/* P2-3：冲突决策 Modal，监听 conflict-detected / conflict-decision-requested 后弹出 */}
+      {pendingConflict && (
+        <Suspense fallback={null}>
+          <ConflictDecisionModal
+            open={!!pendingConflict}
+            conflict={pendingConflict}
+            onDecide={(decision: ConflictDecision) => {
+              if (!pendingConflict) return;
+              // 通过 hitl-event-bus 唤醒等待方（useInspectorActions 中的 subscribe handler）
+              hitlEventBus.emit(
+                'conflict-resolution',
+                `conflict:${pendingConflict.id}`,
+                { decision },
+              );
+            }}
+            onClose={() => setPendingConflict(null)}
+          />
         </Suspense>
       )}
       <Suspense fallback={null}>

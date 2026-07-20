@@ -6,7 +6,6 @@ import ReactFlow, {
   MiniMap,
   useReactFlow,
   type Node,
-  type Edge,
   type Viewport,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
@@ -104,6 +103,7 @@ export default function NodeCanvas() {
   const createTurnNode = useDebugStore((s) => s.createTurnNode);
   const updateTurnNode = useDebugStore((s) => s.updateTurnNode);
   const appendAssistantChunk = useDebugStore((s) => s.appendAssistantChunk);
+  const pushHistory = useDebugStore((s) => s.pushHistory);
   const selectedNodeId = useDebugStore((s) => s.selectedNodeId);
   const focusMode = useDebugStore((s) => s.focusMode);
   const toggleFocusMode = useDebugStore((s) => s.toggleFocusMode);
@@ -201,17 +201,10 @@ export default function NodeCanvas() {
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isInitialLoadRef = useRef(true);
 
-  // 撤销/重做历史栈（50 步上限，存 nodes/edges 快照）
-  const historyRef = useRef<{ nodes: Node<TurnNodeData>[]; edges: Edge[] }[]>([]);
-  const redoStackRef = useRef<{ nodes: Node<TurnNodeData>[]; edges: Edge[] }[]>([]);
-  const isUndoRedoRef = useRef(false);
-  const prevSnapshotRef = useRef<{ nodes: Node<TurnNodeData>[]; edges: Edge[] } | null>(null);
-  const lastProjectIdRef = useRef<string | null>(null);
-  const lastPushTimeRef = useRef(0);
+  // 撤销/重做已迁移至 store（P0-1：immer patches 增量历史），
+  // 组件层只需在节点拖动结束时调用 pushHistory()，快捷键由 DebugFlowEditor 监听。
 
   // 快捷键回调 refs（避免 useEffect 频繁重绑 keydown 监听器）
-  const undoRef = useRef<() => void>(() => {});
-  const redoRef = useRef<() => void>(() => {});
   const handleDeleteRef = useRef<() => void>(() => {});
   const fitViewRef = useRef<() => void>(() => {});
 
@@ -279,55 +272,9 @@ export default function NodeCanvas() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode]);
 
-  // 撤销/重做：在 nodes/edges 变化时自动把上一快照推入历史栈
-  // 合并 500ms 内的快速变更（如流式输出），避免历史栈被中间状态填满
-  useEffect(() => {
-    // 项目切换：重置历史栈并记录初始快照
-    if (lastProjectIdRef.current !== currentProjectId) {
-      lastProjectIdRef.current = currentProjectId;
-      historyRef.current = [];
-      redoStackRef.current = [];
-      prevSnapshotRef.current = currentProjectId ? { nodes, edges } : null;
-      isUndoRedoRef.current = false;
-      lastPushTimeRef.current = 0;
-      return;
-    }
-
-    // 草稿态（currentProjectId 为空）不入栈，避免无意义入栈
-    if (!currentProjectId) {
-      prevSnapshotRef.current = null;
-      return;
-    }
-
-    // 撤销/重做触发的变更：仅更新快照引用，不入栈
-    if (isUndoRedoRef.current) {
-      prevSnapshotRef.current = { nodes, edges };
-      isUndoRedoRef.current = false;
-      return;
-    }
-
-    if (!prevSnapshotRef.current) {
-      prevSnapshotRef.current = { nodes, edges };
-      return;
-    }
-
-    // 合并 500ms 内的快速变更（如流式输出），避免历史栈被中间状态填满
-    const now = Date.now();
-    if (now - lastPushTimeRef.current < 500) {
-      return;
-    }
-
-    historyRef.current.push({
-      nodes: prevSnapshotRef.current.nodes.map((n) => ({ ...n, data: { ...n.data } })),
-      edges: prevSnapshotRef.current.edges.map((e) => ({ ...e })),
-    });
-    if (historyRef.current.length > 50) {
-      historyRef.current.shift();
-    }
-    redoStackRef.current = [];
-    lastPushTimeRef.current = now;
-    prevSnapshotRef.current = { nodes, edges };
-  }, [nodes, edges, currentProjectId]);
+  // 撤销/重做历史已迁移至 store（P0-1），组件层无需自动追踪 nodes/edges 变化。
+  // 关键操作（create/delete/branch）在 store action 内部调用 pushHistory(true)，
+  // 节点拖动则通过 onNodeDragStop 事件触发 pushHistory()。
 
   const handleDelete = useCallback(() => {
     const state = useDebugStore.getState();
@@ -348,55 +295,19 @@ export default function NodeCanvas() {
         edges: s.edges.filter((e) => !ids.has(e.id)),
         isDirty: true,
       }));
+      // 边删除走 setState 不经 store action，需手动入栈
+      useDebugStore.getState().pushHistory(true);
     }
   }, [t.confirmPruneNode]);
 
-  // 撤销：弹出历史栈顶快照并恢复，当前状态推入重做栈
-  const handleUndo = useCallback(() => {
-    if (historyRef.current.length === 0) return;
-    const state = useDebugStore.getState();
-    // 当前状态推入重做栈（深拷贝避免引用共享）
-    const currentSnapshot = {
-      nodes: state.nodes.map((n) => ({ ...n, data: { ...n.data } })),
-      edges: state.edges.map((e) => ({ ...e })),
-    };
-    redoStackRef.current.push(currentSnapshot);
-
-    // 弹出历史快照并恢复到 store
-    const prev = historyRef.current.pop()!;
-    isUndoRedoRef.current = true;
-    useDebugStore.setState({
-      nodes: prev.nodes.map((n) => ({ ...n, data: { ...n.data } })),
-      edges: prev.edges.map((e) => ({ ...e })),
-      isDirty: true,
-    });
-  }, []);
-
-  // 重做：弹出重做栈顶快照并恢复，当前状态推入历史栈
-  const handleRedo = useCallback(() => {
-    if (redoStackRef.current.length === 0) return;
-    const state = useDebugStore.getState();
-    // 当前状态推入历史栈（深拷贝避免引用共享）
-    const currentSnapshot = {
-      nodes: state.nodes.map((n) => ({ ...n, data: { ...n.data } })),
-      edges: state.edges.map((e) => ({ ...e })),
-    };
-    historyRef.current.push(currentSnapshot);
-
-    // 弹出重做快照并恢复到 store
-    const next = redoStackRef.current.pop()!;
-    isUndoRedoRef.current = true;
-    useDebugStore.setState({
-      nodes: next.nodes.map((n) => ({ ...n, data: { ...n.data } })),
-      edges: next.edges.map((e) => ({ ...e })),
-      isDirty: true,
-    });
-  }, []);
+  // 节点拖动结束：将拖动产生的新位置入栈（默认 500ms 合并窗口）
+  const handleNodeDragStop = useCallback(() => {
+    pushHistory();
+  }, [pushHistory]);
 
   // 同步快捷键回调到 ref（每次渲染更新，确保回调内读到最新值）
+  // 撤销/重做（Ctrl+Z/Y/Shift+Z）由 DebugFlowEditor 统一监听，调用 store.undo()/redo()
   useEffect(() => {
-    undoRef.current = handleUndo;
-    redoRef.current = handleRedo;
     handleDeleteRef.current = handleDelete;
     fitViewRef.current = () => fitView({ padding: 0.2 });
   });
@@ -410,30 +321,12 @@ export default function NodeCanvas() {
       }
 
       const isCtrl = e.ctrlKey || e.metaKey;
-      const isShift = e.shiftKey;
+      // Ctrl 组合键交给 DebugFlowEditor 处理（撤销/重做），此处跳过避免重复触发
+      if (isCtrl) return;
 
       // Esc 关闭右键菜单（T024，不检查 contextMenu 避免闭包旧值问题）
       if (e.key === 'Escape') {
         setContextMenu(null);
-      }
-
-      // Ctrl+Z 撤销
-      if (isCtrl && !isShift && (e.key === 'z' || e.key === 'Z') && !e.repeat) {
-        e.preventDefault();
-        undoRef.current();
-        return;
-      }
-
-      // Ctrl+Y 或 Ctrl+Shift+Z 重做
-      if (
-        (isCtrl && (e.key === 'y' || e.key === 'Y')) ||
-        (isCtrl && isShift && (e.key === 'z' || e.key === 'Z'))
-      ) {
-        if (!e.repeat) {
-          e.preventDefault();
-          redoRef.current();
-        }
-        return;
       }
 
       if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -442,7 +335,7 @@ export default function NodeCanvas() {
         return;
       }
 
-      if ((e.key === 'f' || e.key === 'F') && !isCtrl && !e.repeat) {
+      if ((e.key === 'f' || e.key === 'F') && !e.repeat) {
         e.preventDefault();
         fitViewRef.current();
         return;
@@ -763,6 +656,7 @@ export default function NodeCanvas() {
           onNodeClick={onNodeClick}
           onPaneClick={onPaneClick}
           onNodeContextMenu={onNodeContextMenu}
+          onNodeDragStop={handleNodeDragStop}
           onMove={onMove}
           nodeTypes={nodeTypes}
           fitView

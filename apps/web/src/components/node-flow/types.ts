@@ -95,8 +95,18 @@ export interface TurnNodeData {
   pathSummaryCacheKey?: string;
   /** 合并来源节点 ID 列表：非空表示此节点由多个分支合并而来（合并节点 parentId 为 null） */
   mergedFromIds?: string[];
-  /** 图片附件 base64 列表（用户消息可含图片） */
+  /** 图片附件 base64 列表（向后兼容：用户消息可含图片，新代码建议用 attachments） */
   images?: string[];
+  /**
+   * 节点附件列表（多模态）：支持任意格式文件。
+   * - image 类型：base64 data URL，会注入到 LLM vision 消息
+   * - text 类型：解析为纯文本，拼接到 userMessage 末尾
+   * - binary 类型：仅记录元信息，告知 LLM 用户上传了该文件（模型无法识别时由 UI 提示用户）
+   * 既有节点无此字段时按 undefined 处理，向后兼容。
+   */
+  attachments?: NodeAttachment[];
+  /** 节点来源：'manual' 用户手动创建 / 'assistant' 由侧边栏助手转发创建 */
+  source?: 'manual' | 'assistant';
   /** 创建时间戳 */
   createdAt: number;
   /** 冲突标注文案：由冲突检测填充，清空则取消标注 */
@@ -131,6 +141,17 @@ export interface TurnNodeData {
    * 既有节点无此字段时按 undefined 处理（空数组与 undefined 等价）。
    */
   tags?: string[];
+  /**
+   * P2-1：节点级 LLM 配置覆盖。
+   * 未设置的字段使用全局 llmConfig 默认值。
+   * 设置后该节点的 LLM 调用使用覆盖值，不影响其他节点。
+   * 既有节点无此字段时按 undefined 处理，向后兼容。
+   */
+  llmOverride?: {
+    model?: string;
+    temperature?: number;
+    maxTokens?: number;
+  };
 }
 
 /** 蛛网项目（一棵对话网络树） */
@@ -171,4 +192,109 @@ export interface AutoEvolutionState {
   currentStep: number;
   maxSteps: number;
   activeBranches: number;
+}
+
+// ============================================================
+// 多模态附件体系（PR-2）
+// ============================================================
+
+/** 附件分类：image 图片 / text 文本类文件 / binary 二进制文件 */
+export type AttachmentKind = 'image' | 'text' | 'binary';
+
+/**
+ * 节点附件：支持任意格式文件。
+ * - image: data 字段为 base64 data URL，注入 LLM vision 消息
+ * - text: data 字段为解析后的纯文本，拼接到 userMessage
+ * - binary: data 字段为空，仅记录元信息告知 LLM
+ */
+export interface NodeAttachment {
+  /** 附件 ID */
+  id: string;
+  /** 原始文件名 */
+  name: string;
+  /** MIME 类型（如 image/png, text/javascript, application/pdf） */
+  mimeType: string;
+  /** 文件大小（字节） */
+  size: number;
+  /** 附件分类 */
+  kind: AttachmentKind;
+  /** 数据内容：image 为 data URL，text 为纯文本，binary 为 undefined */
+  data?: string;
+  /** 解析状态：pending 解析中 / parsed 已完成 / failed 失败 */
+  parseStatus: 'pending' | 'parsed' | 'failed';
+  /** 解析失败原因（parseStatus === 'failed' 时填充） */
+  parseError?: string;
+}
+
+// ============================================================
+// Skill 技能体系（PR-1）
+// ============================================================
+
+/**
+ * Skill 技能定义：可导入的外部技能，用于助手对话上下文压缩与领域专家化。
+ * 借鉴 updream 的 Skill 社区理念：技能本质上是"前人经验的封装"，
+ * 助手加载技能后即获得该领域专家能力，避免在主对话中堆叠所有上下文。
+ */
+export interface Skill {
+  /** 技能 ID */
+  id: string;
+  /** 技能名称 */
+  name: string;
+  /** 技能描述（简短一句话） */
+  description: string;
+  /** 技能图标（emoji 或 lucide icon name） */
+  icon?: string;
+  /** 技能系统提示词模板（支持 {{input}} 变量占位，运行时替换为用户输入） */
+  systemPrompt: string;
+  /** 输入说明：描述技能期望的输入格式 */
+  inputHint?: string;
+  /** 输出说明：描述技能产出格式 */
+  outputHint?: string;
+  /** 创建时间戳 */
+  createdAt: number;
+  /** 更新时间戳 */
+  updatedAt: number;
+  /** 来源：builtin 内置 / imported 导入 / custom 用户创建 */
+  source: 'builtin' | 'imported' | 'custom';
+  /** 是否启用 */
+  enabled: boolean;
+  /** 标签列表（用于分类检索） */
+  tags?: string[];
+}
+
+// ============================================================
+// 助手对话体系（PR-1）
+// ============================================================
+
+/** 助手消息角色 */
+export type AssistantRole = 'user' | 'assistant' | 'system';
+
+/** 助手消息状态 */
+export type AssistantMessageStatus = 'pending' | 'streaming' | 'done' | 'error';
+
+/**
+ * 助手消息：侧边栏助手面板中的对话条目，独立于节点对话。
+ * - 助手不直接修改节点，而是通过转发机制把内容异步发送到节点（避免阻塞）
+ * - relatedNodeId 记录助手消息关联到的节点（转发时填充）
+ * - skillId 记录该轮对话使用的技能（用于上下文压缩）
+ */
+export interface AssistantMessage {
+  /** 消息 ID */
+  id: string;
+  /** 角色 */
+  role: AssistantRole;
+  /** 内容 */
+  content: string;
+  /** 时间戳 */
+  timestamp: number;
+  /** 关联的节点 ID（助手转发到节点时记录） */
+  relatedNodeId?: string;
+  /** 使用的技能 ID */
+  skillId?: string;
+  /** 用户消息可携带的附件 */
+  attachments?: NodeAttachment[];
+  /** 状态：pending 等待 / streaming 流式中 / done 完成 / error 失败 */
+  status: AssistantMessageStatus;
+  /** 错误信息（status === 'error' 时填充） */
+  errorMessage?: string;
 }

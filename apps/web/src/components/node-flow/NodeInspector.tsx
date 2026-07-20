@@ -3,9 +3,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Loader2, GitFork } from 'lucide-react';
+import { Loader2, GitFork, Bookmark, ChevronDown, ChevronUp } from 'lucide-react';
+import { toast } from 'sonner';
 import { useDebugStore } from '@/lib/debug-store';
 import { useTranslation } from '@/components/I18nProvider';
+import { savePreset } from '@/lib/node-presets-store';
 import type { Node } from 'reactflow';
 import type { TurnNodeData } from './types';
 import { truncateStreamingText } from './nodes/node-utils';
@@ -14,8 +16,10 @@ import ConflictCard from './inspector/ConflictCard';
 import MergeSourcesList from './inspector/MergeSourcesList';
 import SuggestionsList from './inspector/SuggestionsList';
 import MessageInput from './inspector/MessageInput';
+import NodeAttachmentsView from './inspector/NodeAttachmentsView';
 import PathSummaryCard from './inspector/PathSummaryCard';
 import EvolutionMetaCard from './inspector/EvolutionMetaCard';
+import ParamRenderer from './inspector/ParamRenderer';
 import { useInspectorActions } from './inspector/useInspectorActions';
 
 /** Markdown 元素样式（项目未启用 tailwindcss/typography，故手动提供基础排版） */
@@ -76,9 +80,13 @@ export default function NodeInspector() {
   const addNodeTag = useDebugStore((s) => s.addNodeTag);
   const removeNodeTag = useDebugStore((s) => s.removeNodeTag);
   const setNodeBranchName = useDebugStore((s) => s.setNodeBranchName);
+  // P2-1：节点级 LLM 配置覆盖写入
+  const updateTurnNode = useDebugStore((s) => s.updateTurnNode);
 
   /** fork 提示态：true 时高亮"从此处分叉"按钮 + 展示提示 banner */
   const [forkHintVisible, setForkHintVisible] = useState(false);
+  /** P2-1：高级参数折叠态（默认折叠） */
+  const [advancedExpanded, setAdvancedExpanded] = useState(false);
 
   const selectedNode = useMemo(
     () => (selectedNodeId ? (nodes.find((n) => n.id === selectedNodeId) ?? null) : null),
@@ -121,6 +129,21 @@ export default function NodeInspector() {
     return path;
   }, [nodes, selectedNode]);
 
+  // P2-2 变量池：构造「最近 5 个可引用节点」列表（按 createdAt 倒序，排除当前节点）。
+  // 用于 MessageInput 的「插入变量引用」按钮下拉。仅纳入已有 assistantMessage 的节点。
+  const variableRefNodes = useMemo(() => {
+    if (!selectedNode) return [] as Array<{ id: string; label: string }>;
+    return nodes
+      .filter((n) => n.id !== selectedNode.id && n.data.assistantMessage.trim().length > 0)
+      .sort((a, b) => b.data.createdAt - a.data.createdAt)
+      .slice(0, 5)
+      .map((n) => ({
+        id: n.id,
+        // 优先用 summary（commit message）作为可读标签，否则截取 userMessage 前 30 字
+        label: n.data.summary?.trim() || n.data.userMessage.slice(0, 30) || n.id,
+      }));
+  }, [nodes, selectedNode]);
+
   if (!selectedNode) return null;
 
   const data = selectedNode.data;
@@ -131,6 +154,26 @@ export default function NodeInspector() {
   const inputEmpty = actions.input.trim() === '';
   const actionDisabled = inputEmpty || isRunning || isAbandoned || isIgnored;
   const regenerateDisabled = isRunning || isAbandoned || isIgnored;
+
+  /**
+   * 保存当前节点为预设：弹出 prompt 让用户输入预设名称，
+   * 调用 savePreset 写入 localStorage，成功后 toast 提示。
+   * 流式请求中（status === 'running'）不触发，避免污染预设库。
+   */
+  const handleSavePreset = () => {
+    if (isRunning) return;
+    const userMessage = data.userMessage;
+    if (!userMessage.trim()) return;
+    const name = window.prompt(t.presetName, t.presetNamePlaceholder);
+    // 用户取消或输入为空时静默退出
+    if (!name || !name.trim()) return;
+    savePreset({
+      name: name.trim(),
+      nodeType: 'turn',
+      userMessage,
+    });
+    toast.success(t.presetSaveSuccess);
+  };
 
   const assistantMessage = data.assistantMessage;
   // 流式渲染时截断尾部 2000 字，避免长对话渲染卡顿
@@ -165,19 +208,33 @@ export default function NodeInspector() {
           复用现有 createChildAndStream 逻辑（提交消息时自动以当前选中节点为 parentId 创建子节点），
           此按钮仅为 UI 提示，不改变 store 状态。 */}
       <div className="px-3 pt-2 flex-shrink-0">
-        <button
-          onClick={() => setForkHintVisible((v) => !v)}
-          className={`w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
-            forkHintVisible
-              ? 'bg-violet-50 dark:bg-violet-900/30 border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-300'
-              : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-violet-300 dark:hover:border-violet-700 hover:text-violet-600 dark:hover:text-violet-400'
-          }`}
-          aria-pressed={forkHintVisible}
-          title={t.forkHint}
-        >
-          <GitFork size={12} />
-          {t.forkFromHere}
-        </button>
+        <div className="flex gap-1.5">
+          <button
+            onClick={() => setForkHintVisible((v) => !v)}
+            className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
+              forkHintVisible
+                ? 'bg-violet-50 dark:bg-violet-900/30 border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-300'
+                : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-violet-300 dark:hover:border-violet-700 hover:text-violet-600 dark:hover:text-violet-400'
+            }`}
+            aria-pressed={forkHintVisible}
+            title={t.forkHint}
+          >
+            <GitFork size={12} />
+            {t.forkFromHere}
+          </button>
+          {/* 保存为预设：节点 userMessage 为空时不显示；流式请求中禁用 */}
+          {data.userMessage.trim() !== '' && (
+            <button
+              onClick={handleSavePreset}
+              disabled={isRunning}
+              className="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium border transition-colors text-slate-500 hover:text-slate-700 dark:text-white/60 dark:hover:text-white bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-amber-300 dark:hover:border-amber-700 hover:text-amber-600 dark:hover:text-amber-400 disabled:opacity-50 disabled:cursor-not-allowed"
+              title={t.presetSave}
+              aria-label={t.presetSave}
+            >
+              <Bookmark size={12} />
+            </button>
+          )}
+        </div>
         {forkHintVisible && (
           <div className="mt-1.5 px-2.5 py-1.5 rounded bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-700/60 text-[11px] text-violet-700 dark:text-violet-300 leading-relaxed">
             {t.forkHint}
@@ -187,7 +244,7 @@ export default function NodeInspector() {
 
       {/* 单页流式内容区（T025：取消三 Tab，合并对话/上下文/操作到一个可滚动区域） */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {/* ① 用户消息 + 图片 */}
+        {/* ① 用户消息 + 图片 + 附件 */}
         <div className="flex flex-col items-end gap-2">
           <div className="max-w-[85%] rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-2 text-slate-800 dark:text-slate-200 text-sm shadow-sm whitespace-pre-wrap break-words">
             {data.userMessage}
@@ -203,6 +260,10 @@ export default function NodeInspector() {
                 />
               ))}
             </div>
+          )}
+          {/* PR-2: 节点多模态附件（image/text/binary）只读展示 */}
+          {data.attachments && data.attachments.length > 0 && (
+            <NodeAttachmentsView attachments={data.attachments} />
           )}
         </div>
 
@@ -243,6 +304,34 @@ export default function NodeInspector() {
             onSuggestionClick={actions.handleSuggestionClick}
           />
         )}
+
+        {/* P2-1：高级参数折叠分组 —— 节点级 LLM 配置覆盖（model / temperature / maxTokens）
+            默认折叠，展开后渲染 ParamRenderer，绑定到 node.data.llmOverride。
+            流式请求中（status === 'running'）禁用编辑。 */}
+        <div className="rounded-lg border border-slate-100 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/40">
+          <button
+            type="button"
+            onClick={() => setAdvancedExpanded((v) => !v)}
+            className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-white transition-colors"
+            aria-expanded={advancedExpanded}
+          >
+            <span>{t.inspectorAdvancedParams}</span>
+            {advancedExpanded ? (
+              <ChevronUp size={14} className="text-slate-400 dark:text-slate-500" />
+            ) : (
+              <ChevronDown size={14} className="text-slate-400 dark:text-slate-500" />
+            )}
+          </button>
+          {advancedExpanded && (
+            <div className="px-3 pb-3 pt-1 border-t border-slate-100 dark:border-slate-700">
+              <ParamRenderer
+                values={data.llmOverride ?? {}}
+                disabled={isRunning}
+                onChange={(next) => updateTurnNode(selectedNode.id, { llmOverride: next })}
+              />
+            </div>
+          )}
+        </div>
 
         {/* ④ 上下文信息：路径摘要 / 推演元数据 / 冲突标注 / 合并来源 / 注入记忆 */}
         <PathSummaryCard pathSummary={data.pathSummary} pathLength={breadcrumb.length} />
@@ -319,6 +408,7 @@ export default function NodeInspector() {
             onPrune={actions.handlePruneNode}
             onIgnore={actions.handleIgnore}
             onClear={actions.handleClearConflict}
+            onManualDecision={actions.handleManualDecision}
           />
         )}
         {mergedFromIds && mergedFromIds.length > 0 && (
@@ -362,7 +452,8 @@ export default function NodeInspector() {
         </div>
       </div>
 
-      {/* ⑤ 底部固定区：操作按钮 + 输入框（T025：剥离放弃/忽略按钮，保留继续追问/重新生成/检测冲突） */}
+      {/* ⑤ 底部固定区：操作按钮 + 输入框（T025：剥离放弃/忽略按钮，保留继续追问/重新生成/检测冲突）
+          PR-2：新增附件预览/拖拽/粘贴/文件选择 */}
       <MessageInput
         input={actions.input}
         onInputChange={actions.setInput}
@@ -374,9 +465,14 @@ export default function NodeInspector() {
         regenerateDisabled={regenerateDisabled}
         checkingConflict={actions.checkingConflict}
         hasMergeSources={!!mergedFromIds && mergedFromIds.length > 0}
+        attachments={actions.attachments}
+        onAttachmentsChange={actions.setAttachments}
         onContinueQuestion={actions.handleContinueQuestion}
         onRegenerate={actions.handleRegenerate}
         onCheckConflict={actions.handleCheckConflict}
+        // P2-2 变量池：仅非根节点（parentId 非空）显示引用提示与插入按钮
+        showVariableHint={data.parentId !== null}
+        variableRefNodes={variableRefNodes}
       />
     </div>
   );

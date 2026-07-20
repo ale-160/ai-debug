@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
 import {
   Plus,
   Trash2,
@@ -17,12 +17,16 @@ import {
   Pin,
   PinOff,
   Clock,
+  Bot,
 } from 'lucide-react';
 import { useDebugStore } from '@/lib/debug-store';
 import { getProject, updateProject, importProject } from '@/lib/project-storage';
 import { analyzeNetwork, derivePrunedProject } from '@/lib/network-pruner';
 import { useTranslation } from '@/components/I18nProvider';
 import type { NetworkProject } from './types';
+
+// 助手面板懒加载：用户切到助手 tab 后才渲染，避免首屏打包
+const AssistantPanel = lazy(() => import('./AssistantPanel'));
 
 export default function NodeSidebar() {
   const { t, tf } = useTranslation();
@@ -45,6 +49,8 @@ export default function NodeSidebar() {
   // 桌面端侧边栏收纳/展开
   const sidebarCollapsed = useDebugStore((s) => s.sidebarCollapsed);
   const toggleSidebarCollapsed = useDebugStore((s) => s.toggleSidebarCollapsed);
+  // 技能管理面板入口（由助手 tab 内的按钮触发）
+  const setSkillManagerOpen = useDebugStore((s) => s.setSkillManagerOpen);
 
   const formatTime = useCallback(
     (ts: number): string => {
@@ -74,8 +80,8 @@ export default function NodeSidebar() {
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   // 项目搜索关键字（匹配项目名 + root 节点 summary）
   const [searchQuery, setSearchQuery] = useState('');
-  // 侧边栏 tab 切换：项目列表 / 时间线
-  const [sidebarTab, setSidebarTab] = useState<'projects' | 'timeline'>('projects');
+  // 侧边栏 tab 切换：项目列表 / 时间线 / 助手
+  const [sidebarTab, setSidebarTab] = useState<'projects' | 'timeline' | 'assistant'>('projects');
   const importFileRef = useRef<HTMLInputElement>(null);
 
   const togglePinProject = useDebugStore((s) => s.togglePinProject);
@@ -436,7 +442,7 @@ export default function NodeSidebar() {
           </button>
         </div>
 
-        {/* 侧边栏 tab 切换：项目 / 时间线 */}
+        {/* 侧边栏 tab 切换：项目 / 时间线 / 助手 */}
         <div className="flex border-b border-slate-200 dark:border-slate-700">
           <button
             onClick={() => setSidebarTab('projects')}
@@ -458,6 +464,19 @@ export default function NodeSidebar() {
           >
             <Clock size={12} className="inline mr-1" />
             {t.timeline}
+          </button>
+          <button
+            onClick={() => setSidebarTab('assistant')}
+            className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
+              sidebarTab === 'assistant'
+                ? 'text-violet-500 border-b-2 border-violet-500'
+                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
+            }`}
+            aria-label={t.assistant}
+            title={t.assistantHint}
+          >
+            <Bot size={12} className="inline mr-1" />
+            {t.assistant}
           </button>
         </div>
 
@@ -590,36 +609,69 @@ export default function NodeSidebar() {
           </div>
         )}
 
-        {/* 底部：自动推演入口 + 从 JSON 文件导入 */}
-        <div className="px-3 pt-2 pb-1 border-t border-slate-100 dark:border-slate-700 space-y-1">
-          <button
-            onClick={handleOpenAutoEvolution}
-            disabled={!selectedNodeId}
-            className="flex items-center gap-2 w-full text-xs font-medium py-2 px-2.5 rounded-lg bg-gradient-to-r from-violet-50 to-amber-50 dark:from-violet-900/20 dark:to-amber-900/20 text-violet-700 dark:text-violet-300 hover:from-violet-100 hover:to-amber-100 dark:hover:from-violet-900/30 dark:hover:to-amber-900/30 border border-violet-200/60 dark:border-violet-700/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:from-violet-50 disabled:hover:to-amber-50 dark:disabled:hover:from-violet-900/20 dark:disabled:hover:to-amber-900/20"
-            aria-label={t.autoEvolutionEntry}
-            title={t.autoEvolutionEntryHint}
-          >
-            <span className="inline-flex items-center justify-center w-5 h-5 rounded bg-gradient-to-br from-violet-500 to-amber-500 text-white shrink-0">
-              <Zap size={12} />
-            </span>
-            {t.autoEvolutionEntry}
-          </button>
-          <input
-            ref={importFileRef}
-            type="file"
-            accept=".json"
-            onChange={handleImportFile}
-            className="hidden"
-          />
-          <button
-            onClick={() => importFileRef.current?.click()}
-            className="flex items-center gap-2 w-full text-xs text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 py-2 px-2 rounded hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors"
-            aria-label={t.importFromJson}
-          >
-            <Upload size={14} />
-            {t.importFromJson}
-          </button>
-        </div>
+        {/* 助手 tab：内嵌助手对话面板（占据整个中间区域） */}
+        {sidebarTab === 'assistant' && (
+          <div className="flex-1 overflow-hidden flex flex-col">
+            {/* 助手 tab 顶部：技能管理入口 */}
+            <div className="px-3 py-1.5 border-b border-slate-100 dark:border-slate-700">
+              <button
+                onClick={() => setSkillManagerOpen(true)}
+                className="flex items-center gap-2 w-full text-xs text-slate-500 dark:text-slate-400 hover:text-violet-600 dark:hover:text-violet-300 py-1 px-2 rounded hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors"
+                aria-label={t.skillManager}
+                title={t.skillManagerTitle}
+              >
+                <Sparkles size={12} />
+                {t.skillManager}
+              </button>
+            </div>
+            {/* 助手对话面板（懒加载） */}
+            <div className="flex-1 overflow-hidden">
+              <Suspense
+                fallback={
+                  <div className="flex items-center justify-center h-full text-xs text-slate-400">
+                    <Loader2 size={12} className="animate-spin mr-1" />
+                    {t.loadingEditor}
+                  </div>
+                }
+              >
+                <AssistantPanel />
+              </Suspense>
+            </div>
+          </div>
+        )}
+
+        {/* 底部：自动推演入口 + 从 JSON 文件导入（助手 tab 下隐藏，避免抢占助手空间） */}
+        {sidebarTab !== 'assistant' && (
+          <div className="px-3 pt-2 pb-1 border-t border-slate-100 dark:border-slate-700 space-y-1">
+            <button
+              onClick={handleOpenAutoEvolution}
+              disabled={!selectedNodeId}
+              className="flex items-center gap-2 w-full text-xs font-medium py-2 px-2.5 rounded-lg bg-gradient-to-r from-violet-50 to-amber-50 dark:from-violet-900/20 dark:to-amber-900/20 text-violet-700 dark:text-violet-300 hover:from-violet-100 hover:to-amber-100 dark:hover:from-violet-900/30 dark:hover:to-amber-900/30 border border-violet-200/60 dark:border-violet-700/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:from-violet-50 disabled:hover:to-amber-50 dark:disabled:hover:from-violet-900/20 dark:disabled:hover:to-amber-900/20"
+              aria-label={t.autoEvolutionEntry}
+              title={t.autoEvolutionEntryHint}
+            >
+              <span className="inline-flex items-center justify-center w-5 h-5 rounded bg-gradient-to-br from-violet-500 to-amber-500 text-white shrink-0">
+                <Zap size={12} />
+              </span>
+              {t.autoEvolutionEntry}
+            </button>
+            <input
+              ref={importFileRef}
+              type="file"
+              accept=".json"
+              onChange={handleImportFile}
+              className="hidden"
+            />
+            <button
+              onClick={() => importFileRef.current?.click()}
+              className="flex items-center gap-2 w-full text-xs text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 py-2 px-2 rounded hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors"
+              aria-label={t.importFromJson}
+            >
+              <Upload size={14} />
+              {t.importFromJson}
+            </button>
+          </div>
+        )}
       </div>
     </>
   );

@@ -1,11 +1,13 @@
 import type { Node } from 'reactflow';
-import type { TurnNodeData, Suggestion, TurnStatus } from '@/components/node-flow/types';
+import type { TurnNodeData, Suggestion, TurnStatus, NodeAttachment } from '@/components/node-flow/types';
 import { quickCallLLM, buildVisionMessage } from './llm-helpers';
 import { type LLMMessage, RequestPoolError } from './llm-client';
 import { describeError } from './request';
 import { createTurnNodeData } from '@/components/node-flow/node-definitions';
 import { SUMMARY_THRESHOLD, RECENT_KEEP } from './context-config';
 import { generatePathSummary } from './path-summary-engine';
+import { formatFileSize } from './attachment-helpers';
+import { variablePool, resolveVariableReferences, hasVariableReferences } from './variable-pool';
 
 /** 系统提示词，引导 AI 给出回答并在末尾附上后续探索方向 */
 export const SYSTEM_PROMPT = `你是一位资深的问题排查助手，帮助用户分析各类问题（bug、技术疑问、方案决策等）。
@@ -24,6 +26,8 @@ interface ContextPathItem {
   userMessage: string;
   assistantMessage: string;
   images?: string[];
+  /** 多模态附件（PR-2）：image 注入 vision、text 拼到 userMessage、binary 仅告知模型 */
+  attachments?: NodeAttachment[];
   /** 节点状态：ignored 节点在 buildLLMMessages 时跳过 */
   status: TurnStatus;
   /** 路径摘要（rolling summary）：混合模式下前段节点用此字段替代完整内容 */
@@ -36,6 +40,7 @@ function toContextPathItem(node: Node<TurnNodeData>): ContextPathItem {
     userMessage: node.data.userMessage,
     assistantMessage: node.data.assistantMessage,
     images: node.data.images,
+    attachments: node.data.attachments,
     status: node.data.status,
     pathSummary: node.data.pathSummary,
   };
@@ -165,17 +170,53 @@ function computeTotalPathLength(segments: ContextPathItem[][]): number {
 /**
  * 将单个节点条目拼接为 LLM 消息（user + assistant）。
  * - ignored 节点跳过（返回空数组，路径视为断点）。
- * - 含图片的节点用 buildVisionMessage 构造多模态消息。
+ * - 多模态附件处理（PR-2）：
+ *   - image 类型附件 + 老 images 字段：合并为 imageBase64List，用 buildVisionMessage 构造多模态消息
+ *   - text 类型附件：内容以代码块格式拼接到 userMessage 末尾
+ *   - binary 类型附件：在 userMessage 末尾追加元信息提示（模型可能无法识别）
  * - assistantMessage 为空则只拼 user。
  */
 function pushItemMessages(item: ContextPathItem): LLMMessage[] {
   if (item.status === 'ignored') return [];
   const result: LLMMessage[] = [];
+
+  // 收集所有图片源：兼容老 images 字段 + 新 attachments 中的 image 类型
+  const imageBase64List: string[] = [];
   if (item.images && item.images.length > 0) {
-    const visionMessages = buildVisionMessage(item.userMessage, item.images);
+    imageBase64List.push(...item.images);
+  }
+  if (item.attachments) {
+    for (const att of item.attachments) {
+      if (att.kind === 'image' && att.parseStatus === 'parsed' && att.data) {
+        imageBase64List.push(att.data);
+      }
+    }
+  }
+
+  // 文本/二进制附件内容拼接到 userMessage 末尾
+  let userMsg = item.userMessage;
+  if (item.attachments) {
+    const textParts: string[] = [];
+    const binaryParts: string[] = [];
+    for (const att of item.attachments) {
+      if (att.parseStatus !== 'parsed') continue;
+      if (att.kind === 'text' && att.data) {
+        textParts.push(`\n\n[附件: ${att.name}]\n\`\`\`\n${att.data}\n\`\`\`\n`);
+      } else if (att.kind === 'binary') {
+        binaryParts.push(
+          `\n\n[附件: ${att.name} (${att.mimeType}, ${formatFileSize(att.size)})] 注意：此文件为二进制格式，模型可能无法识别其内容。`,
+        );
+      }
+    }
+    if (textParts.length > 0) userMsg += textParts.join('');
+    if (binaryParts.length > 0) userMsg += binaryParts.join('');
+  }
+
+  if (imageBase64List.length > 0) {
+    const visionMessages = buildVisionMessage(userMsg, imageBase64List);
     result.push(visionMessages[0]);
   } else {
-    result.push({ role: 'user', content: item.userMessage });
+    result.push({ role: 'user', content: userMsg });
   }
   if (item.assistantMessage.trim().length > 0) {
     result.push({ role: 'assistant', content: item.assistantMessage });
@@ -420,9 +461,31 @@ export async function streamTurnResponse(
   failed?: boolean;
 }> {
   try {
-    const contextPath = collectContextPath(nodeId, nodes);
+    // P2-2 变量池：发起请求前解析当前节点 userMessage 中的 {{#nodeId.varName#}} 引用。
+    // - 仅在当前节点 userMessage 含引用语法时构造一份替换后的 nodes 副本，
+    //   不修改 store 中的原 userMessage（用户在 UI 上仍看到带 {{#...#}} 的原文）。
+    // - 流式输出中的节点不参与解析（避免循环引用）；变量池只在节点执行完成后写入。
+    const currentNode = nodes.find((n) => n.id === nodeId);
+    let nodesForContext = nodes;
+    if (currentNode && hasVariableReferences(currentNode.data.userMessage)) {
+      const { text: resolvedUserMessage } = resolveVariableReferences(
+        currentNode.data.userMessage,
+      );
+      nodesForContext = nodes.map((n) =>
+        n.id === nodeId
+          ? { ...n, data: { ...n.data, userMessage: resolvedUserMessage } }
+          : n,
+      );
+    }
+    const contextPath = collectContextPath(nodeId, nodesForContext);
     const { messages } = buildLLMMessages(contextPath, extraContext);
-    const fullText = await quickCallLLM(messages, onDelta, signal);
+    // P2-1：取出当前节点的 LLM 覆盖配置（model / temperature / maxTokens），
+    // 未设置字段在 quickCallLLM 内部回退到全局 llmConfig。
+    const llmOverride = currentNode?.data.llmOverride;
+    const fullText = await quickCallLLM(messages, onDelta, signal, llmOverride);
+    // P2-2 变量池：节点执行完成后写入变量池，供后续节点的引用解析读取。
+    // 每个节点只有 'text' 一个变量（= assistantMessage），type 固定 'string'。
+    variablePool.set(nodeId, 'text', fullText, 'string');
     const suggestions = parseSuggestions(fullText);
     // 旁路 1：流式结束后异步生成摘要标题（非阻塞，失败静默跳过，不影响主流程）
     void (async () => {

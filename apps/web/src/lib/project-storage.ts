@@ -6,6 +6,7 @@
 // ============================================================
 import type { Node, Edge } from 'reactflow';
 import type { NetworkProject, TurnNodeData } from '@/components/node-flow/types';
+import { generateId } from '@/lib/id';
 
 /** localStorage 存储键 */
 export const PROJECTS_KEY = 'ai-debug:network-projects';
@@ -61,7 +62,7 @@ export function createProject(
 ): NetworkProject {
   const now = Date.now();
   const project: NetworkProject = {
-    id: `project-${now}-${Math.random().toString(36).slice(2, 8)}`,
+    id: generateId('project'),
     name: name.trim() || '未命名项目',
     nodes: [],
     edges: [],
@@ -130,7 +131,7 @@ export function importProject(
 ): NetworkProject {
   const now = Date.now();
   const project: NetworkProject = {
-    id: `project-${now}-${Math.random().toString(36).slice(2, 8)}`,
+    id: generateId('project'),
     name: name.trim() || '导入的项目',
     nodes,
     edges,

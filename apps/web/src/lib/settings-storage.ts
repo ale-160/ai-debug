@@ -5,6 +5,7 @@
 // 项目级记忆存储在 NetworkProject.memory 中，由 project-storage 管理。
 // ============================================================
 import type { AppSettings, MemoryEntry } from '@/components/node-flow/types';
+import { generateId } from '@/lib/id';
 
 /** 应用设置 localStorage key */
 export const APP_SETTINGS_KEY = 'ai-debug:app-settings';
@@ -23,6 +24,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   globalRules: '',
   hoverShowPathSummary: false,
   nodeActionsStyle: 'both',
+  assistantAutoCreateNodes: false,
 };
 
 /**
@@ -87,7 +89,7 @@ export function addGlobalMemory(
   source: 'auto' | 'manual' = 'manual',
 ): MemoryEntry {
   const entry: MemoryEntry = {
-    id: `mem-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    id: generateId('mem'),
     content: content.trim(),
     createdAt: Date.now(),
     source,

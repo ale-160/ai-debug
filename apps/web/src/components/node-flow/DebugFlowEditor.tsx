@@ -15,6 +15,7 @@ import {
   Globe,
   Paperclip,
   Loader2,
+  Bot,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -35,8 +36,9 @@ import type { NodeAttachment } from './types';
 import { processFiles, MAX_FILE_SIZE } from '@/lib/attachment-helpers';
 import AttachmentChips from './inspector/AttachmentChips';
 
-// 快捷键帮助面板懒加载，用户点击帮助按钮后才渲染
-const KeyboardShortcuts = lazy(() => import('./KeyboardShortcuts'));
+// 应用内帮助中心懒加载：完整使用说明，顶栏帮助按钮触发
+// （HelpCenter 含快捷键章节，原 KeyboardShortcuts 速查面板不再挂载）
+const HelpCenter = lazy(() => import('./HelpCenter'));
 // P1-1 命令面板懒加载：用户按 Alt+F 后才加载
 const CommandPalette = lazy(() => import('./CommandPalette'));
 // P1-3 快照管理面板懒加载：用户从命令面板或工具栏入口打开后才加载
@@ -55,6 +57,8 @@ const SkillManager = lazy(() => import('./SkillManager'));
 // 侧边栏/检查器懒加载：首屏只需画布，侧边栏/Inspector 延迟加载
 const NodeSidebar = lazy(() => import('./NodeSidebar'));
 const NodeInspector = lazy(() => import('./NodeInspector'));
+// 助手面板懒加载：用户点击顶栏助手按钮后才渲染，避免首屏打包
+const AssistantPanel = lazy(() => import('./AssistantPanel'));
 // Toaster 懒加载：用户可能根本看不到 toast，延迟加载 sonner 的 Toaster 组件
 const Toaster = lazy(() => import('sonner').then((m) => ({ default: m.Toaster })));
 
@@ -65,6 +69,9 @@ function TopNav({ onShowHelp }: { onShowHelp: () => void }) {
   const llmConfig = useDebugStore((s) => s.llmConfig);
   const setShowSettings = useDebugStore((s) => s.setShowSettings);
   const toggleMobileSidebar = useDebugStore((s) => s.toggleMobileSidebar);
+  // 助手面板切换（独立右侧侧边栏）
+  const assistantPanelOpen = useDebugStore((s) => s.assistantPanelOpen);
+  const setAssistantPanelOpen = useDebugStore((s) => s.setAssistantPanelOpen);
 
   // SSR/CSR 一致：初始值 'light'（与 resolveTheme('system') SSR 返回值一致），
   // 客户端挂载后 useEffect 中重新 resolve 获取真实主题（可能为 'dark'）。
@@ -160,6 +167,20 @@ function TopNav({ onShowHelp }: { onShowHelp: () => void }) {
           aria-label={t.language}
         >
           <Globe size={16} />
+        </button>
+        {/* 助手面板切换：独立右侧侧边栏入口（参考 spark-flow AgentPanel 布局） */}
+        <button
+          onClick={() => setAssistantPanelOpen(!assistantPanelOpen)}
+          className={`p-1.5 rounded transition-colors dark:hover:bg-slate-800 ${
+            assistantPanelOpen
+              ? 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-300'
+              : 'text-slate-400 hover:text-violet-500 hover:bg-violet-50'
+          }`}
+          title={assistantPanelOpen ? t.toggleAssistantClose : t.toggleAssistantOpen}
+          aria-label={t.toggleAssistant}
+          aria-pressed={assistantPanelOpen}
+        >
+          <Bot size={16} />
         </button>
         <button
           onClick={handleHelp}
@@ -464,9 +485,12 @@ function EditorInner() {
   // 自动推演对话框可见性（懒加载，由 NodeSidebar 入口按钮触发）
   const showAutoEvolution = useDebugStore((s) => s.showAutoEvolution);
   const setShowAutoEvolution = useDebugStore((s) => s.setShowAutoEvolution);
-  // 技能管理面板可见性（懒加载，由 NodeSidebar 助手 tab 内入口触发）
+  // 技能管理面板可见性（懒加载，由助手面板内入口触发）
   const skillManagerOpen = useDebugStore((s) => s.skillManagerOpen);
   const setSkillManagerOpen = useDebugStore((s) => s.setSkillManagerOpen);
+  // 助手面板可见性（独立右侧侧边栏，由顶栏按钮触发）
+  const assistantPanelOpen = useDebugStore((s) => s.assistantPanelOpen);
+  const setAssistantPanelOpen = useDebugStore((s) => s.setAssistantPanelOpen);
   // 客户端挂载后从 localStorage 加载技能列表（SSR 安全）
   const refreshSkills = useDebugStore((s) => s.refreshSkills);
   const refreshLlmConfig = useDebugStore((s) => s.refreshLlmConfig);
@@ -478,8 +502,8 @@ function EditorInner() {
 
   // hydration 守卫：客户端从 localStorage 加载数据完成前显示骨架，避免闪烁
   const [isHydrated, setIsHydrated] = useState(false);
-  // 快捷键帮助面板可见性（懒加载，仅用户点击帮助按钮后渲染）
-  const [showShortcuts, setShowShortcuts] = useState(false);
+  // 应用内帮助中心可见性（懒加载，顶栏帮助按钮触发；含完整使用说明）
+  const [showHelpCenter, setShowHelpCenter] = useState(false);
   // P1-1 命令面板可见性（Alt+F 触发）
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   // P1-3 快照管理面板可见性
@@ -676,7 +700,7 @@ function EditorInner() {
           {t.skipToInspector}
         </a>
       )}
-      <TopNav onShowHelp={() => setShowShortcuts(true)} />
+      <TopNav onShowHelp={() => setShowHelpCenter(true)} />
       <div className="flex-1 flex overflow-hidden relative">
         <Suspense fallback={<div className="w-64 bg-slate-100 dark:bg-slate-900 animate-pulse" />}>
           <NodeSidebar />
@@ -689,6 +713,34 @@ function EditorInner() {
             </div>
           )}
         </div>
+        {/* 助手面板：独立右侧侧边栏（参考 spark-flow AgentPanel 布局）
+            - 桌面端：400px flex 项，与 NodeInspector 共存
+            - 移动端：fixed 浮层覆盖画布，带半透明背景 */}
+        {assistantPanelOpen && (
+          <>
+            {/* 移动端半透明背景（点击关闭） */}
+            <div
+              className="fixed inset-0 top-14 z-40 bg-black/30 md:hidden"
+              onClick={() => setAssistantPanelOpen(false)}
+              aria-hidden="true"
+            />
+            <aside
+              className="fixed top-14 inset-x-0 bottom-0 z-40 md:static md:top-auto md:inset-auto md:z-auto md:w-[400px] md:shrink-0 bg-white dark:bg-slate-900 md:border-l border-slate-200 dark:border-slate-700 flex flex-col shadow-2xl md:shadow-none"
+              aria-label={t.assistantTitle}
+            >
+              <Suspense
+                fallback={
+                  <div className="flex-1 flex items-center justify-center text-xs text-slate-400">
+                    <Loader2 size={14} className="animate-spin mr-1.5" />
+                    {t.loadingEditor}
+                  </div>
+                }
+              >
+                <AssistantPanel />
+              </Suspense>
+            </aside>
+          </>
+        )}
         <Suspense fallback={<div className="w-80 bg-white dark:bg-slate-900 animate-pulse" />}>
           <NodeInspector />
         </Suspense>
@@ -745,9 +797,9 @@ function EditorInner() {
         </Suspense>
       )}
       <ExecutionStatusBar />
-      {showShortcuts && (
+      {showHelpCenter && (
         <Suspense fallback={null}>
-          <KeyboardShortcuts onClose={() => setShowShortcuts(false)} />
+          <HelpCenter onClose={() => setShowHelpCenter(false)} />
         </Suspense>
       )}
       {showAutoEvolution && (

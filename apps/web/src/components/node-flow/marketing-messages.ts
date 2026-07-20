@@ -3,6 +3,7 @@
 // 按状态随机选取营销式文案，避免在组件中硬编码"思考中"。
 // ============================================================
 import type { Language } from '@/data/i18n';
+import { pickRandom } from '@/lib/id';
 
 /** 运行中：AI 正在沿蛛网路径工作的多种表达 */
 const RUNNING_MESSAGES_ZH = [
@@ -24,10 +25,8 @@ const COMPLETE_MESSAGES_ZH = ['分支已就绪', '蛛网已更新'];
 
 const COMPLETE_MESSAGES_EN = ['Branch is ready', 'Web updated'];
 
-/** 从数组中随机取一项 */
-function pickRandom<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
+/** 从数组中随机取一项（复用 @/lib/id 的 pickRandom） */
+// pickRandom 已迁移至 @/lib/id
 
 /** 按语言与状态返回随机友好文案 */
 export function pickStatusMessage(status: 'running' | 'complete', lang: Language = 'zh'): string {

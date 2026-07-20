@@ -124,6 +124,8 @@ export default function NodeCanvas() {
   // 侧边栏收起态（右上角工具栏按钮控制）
   const sidebarCollapsed = useDebugStore((s) => s.sidebarCollapsed);
   const setSidebarCollapsed = useDebugStore((s) => s.setSidebarCollapsed);
+  const nodeDisplayMode = useDebugStore((s) => s.nodeDisplayMode);
+  const toggleNodeDisplayMode = useDebugStore((s) => s.toggleNodeDisplayMode);
 
   const { zoomIn, zoomOut, fitView, setViewport: rfSetViewport, getViewport } = useReactFlow();
 
@@ -800,7 +802,7 @@ export default function NodeCanvas() {
           </div>
         )}
 
-        {/* 画布右上角胶囊工具栏：模式 / 缩放 / 自动排列 / 路径隔离 / 侧边栏 / 全屏 / 撤销重做 */}
+        {/* 画布右上角胶囊工具栏：模式 / 缩放 / 自动排列 / 节点收纳 / 路径隔离 / 侧边栏 / 全屏 / 撤销重做 */}
         <CanvasToolbar
           interactionMode={interactionMode}
           setInteractionMode={setInteractionMode}
@@ -815,12 +817,13 @@ export default function NodeCanvas() {
           onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
           isFullscreen={isFullscreen}
           onToggleFullscreen={toggleFullscreen}
+          nodeDisplayMode={nodeDisplayMode}
+          onToggleNodeDisplayMode={toggleNodeDisplayMode}
           canUndo={undoCount > 0}
           canRedo={redoCount > 0}
           onUndo={undo}
           onRedo={redo}
         />
-        {/* TODO: NodeDisplayModeToggle（详细 / 紧凑模式）原位于左下角工具栏末尾，后续可在 CanvasToolbar 增设设置弹出层时迁入 */}
 
         {/* 浮动工具条（T024）：至少 1 个节点选中时显示在画布底部居中 */}
         {(appSettings.nodeActionsStyle === 'toolbar' || appSettings.nodeActionsStyle === 'both') &&

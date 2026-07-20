@@ -281,6 +281,115 @@ export const STRINGS_ZH = {
   copied: '已复制到剪贴板',
   copyFailed: '复制失败',
 
+  helpCenterTitle: '使用帮助',
+  helpCenterSubtitle: '从入门到精通，一份说明书全搞定',
+  helpSearchPlaceholder: '搜索帮助内容...',
+  helpNoMatch: '没有匹配的内容',
+  helpFooterTip: '仍有疑问？打开右侧助手面板，切换到「蛛网使用向导」技能获得即时引导。',
+
+  helpQuickstartTitle: '快速入门',
+  helpQuickstartIntro:
+    '蛛网 · AI Debug 是把 AI 对话从线性列表变成 git 仓库式的蛛网结构。每个分支独立维护自己的上下文路径，互不污染。',
+  helpQuickstartSteps: [
+    '1. 顶部设置按钮配置 LLM 服务商（OpenAI 兼容协议），输入 API Key',
+    '2. 画布上 NodeInspector 输入框输入第一条问题，回车发送，自动创建根节点',
+    '3. 选中任意节点后再次输入，会自动作为该节点的子分支（分叉）',
+    '4. 右上角胶囊工具栏切换选择/抓手/缩放/适应视图/自动排列/路径隔离等操作',
+    '5. 顶栏 Bot 图标打开助手面板，开启 Zap 自动建图模式可让助手对话直接建节点',
+  ],
+  helpQuickstartTip:
+    '提示：草稿态（未绑定项目）下首条消息会自动派生项目名并绑定画布，无需手动新建项目。',
+
+  helpConceptsTitle: '核心概念',
+  helpConceptsIntro: '蛛网采用 git 风格的对话组织模型，下列概念是理解整个系统的钥匙：',
+  helpConceptsItems: [
+    '节点（Turn）：一条用户消息 + AI 回答构成一个节点，类似 git commit',
+    '分支：从任意节点可分叉出新支线，独立维护上下文路径',
+    '合并节点：把多条支线汇合成新根，合并意图作为根的用户消息',
+    '上下文路径：从根沿 parentId 链收集，只把当前路径喂给 LLM，不污染其他分支',
+    'pathSummary：路径过长时前段压缩为摘要，后段保留完整内容',
+    'ignored 节点：构建上下文时跳过，子节点照常运行',
+    'abandoned 节点：标记为废弃的支线，默认隐藏，可恢复',
+    '草稿态：currentProjectId 为空时，首条消息自动派生项目名并绑定画布',
+  ],
+
+  helpCanvasTitle: '画布操作',
+  helpCanvasIntro: '画布是蛛网的主要工作区，所有节点以放射状/树状布局展开。常用操作：',
+  helpCanvasOps: [
+    '新建节点：NodeInspector 输入框输入消息 → Enter 发送；助手面板开启自动建图模式后对话即可建节点',
+    '分叉：选中任意节点 → 在 Inspector 输入新消息，自动作为该节点的子分支',
+    '合并：右键节点 → 选「合并节点」→ 选多个来源 → 输入合并意图',
+    '删除/废弃/忽略：右键节点或 Inspector 底部操作区',
+    '自动排列：右上角胶囊工具栏 → LayoutGrid 图标（dagre 重排）',
+    '路径隔离：右上角 Focus 图标（仅高亮当前路径，隐藏其他支线）',
+    '节点收纳：右上角 ListCollapse 图标（详细/紧凑模式切换）',
+    '适应视图：右上角 Maximize2 图标或按 F',
+    '全屏：右上角 Expand 图标（浏览器全屏）',
+    '撤销/重做：Ctrl+Z / Ctrl+Y（基于 immer patches，支持 200 步历史）',
+    '命令面板：Alt+F（搜索项目、技能、节点等）',
+  ],
+
+  helpAssistantTitle: '助手工作流',
+  helpAssistantIntro:
+    '顶栏 Bot 图标打开助手面板（独立右侧侧边栏）。助手能感知画布状态并提供建议，是日常排查的最佳搭档。',
+  helpAssistantOps: [
+    '画布感知：助手自动接收画布快照（项目名/节点数/最近 5 个节点/选中节点路径）',
+    '自动建图模式（Zap 图标）：开启后每次助手回答都自动把用户消息转发为新节点',
+    '协议转发：助手回答中含 `### 转发到节点` 标记时自动建节点（支持多次）',
+    '技能（Sparkles 图标）：选择专家技能（问题拆解/方案对比/代码评审/根因分析/摘要生成/提问优化/使用向导）',
+    '多会话：顶栏助手面板内的会话切换器可创建/切换/删除会话（最多 50 个）',
+    '多模型：助手面板顶部的模型选择器可切换 LLM 配置（最多 20 个）',
+  ],
+  helpAssistantTip:
+    '提示：若助手回答与画布无关，先选中一个相关节点再对话，助手会基于当前路径给出建议。',
+
+  helpShortcutsTitle: '快捷键速查',
+  helpShortcutsIntro: '画布所有快捷键速查表（Mac 用户 Ctrl 替换为 ⌘）：',
+  helpShortcutsItems: [
+    { text: '选择工具', keys: ['V'] },
+    { text: '抓手工具', keys: ['H'] },
+    { text: '临时抓手（按住）', keys: ['Space'] },
+    { text: '适应视图', keys: ['F'] },
+    { text: '删除选中节点', keys: ['Delete', 'Backspace'] },
+    { text: '撤销', keys: ['Ctrl', 'Z'] },
+    { text: '重做', keys: ['Ctrl', 'Y'] },
+    { text: '命令面板', keys: ['Alt', 'F'] },
+    { text: '缩放画布', keys: ['Ctrl', '滚轮'] },
+    { text: '多选节点', keys: ['Shift', '点击'] },
+  ],
+
+  helpFaqTitle: '常见问题',
+  helpFaqItems: [
+    {
+      q: '如何对比两个方案？',
+      a: '从同一父节点分叉两个分支分别深入探索，最后用合并节点（右键节点 → 合并节点）汇总结论。合并节点的父路径会同时包含两路上下文。',
+    },
+    {
+      q: '助手为什么不知道我画布上的内容？',
+      a: '助手会自动接收画布快照（项目名/节点数/最近 5 个节点/选中节点路径）。如果回答与画布无关，请先选中一个节点再对话，并确认助手面板顶部显示的是当前项目。',
+    },
+    {
+      q: '节点太多看不清？',
+      a: '三种方案：① 开启 ListCollapse 紧凑模式只看摘要；② 开启 Focus 路径隔离模式只看当前分支；③ 用 Ctrl+滚轮缩小画布。',
+    },
+    {
+      q: '如何导出项目？',
+      a: '左侧项目列表 → 项目卡片右上角三点菜单 → 导出 JSON。也可以在存储管理面板批量清理或导出。',
+    },
+    {
+      q: '草稿态没保存怎么办？',
+      a: '草稿态（currentProjectId 为空）不会保存。发送首条消息后会自动派生项目名并绑定画布，之后所有改动自动防抖保存（500ms）。',
+    },
+    {
+      q: '如何切换 LLM 服务商？',
+      a: '顶栏设置按钮 → 模型配置。可保存最多 20 个 LLM 配置，助手面板顶部可快速切换。节点 Inspector 也能用 llmOverride 为单个节点指定不同模型。',
+    },
+    {
+      q: '自动推演和助手有什么区别？',
+      a: '自动推演是按设定的步数自动展开多条分支（适合发散探索），助手是对话式建议（适合分析决策）。两者可结合：先用助手拆解问题，再用自动推演并行验证。',
+    },
+  ],
+
   shortcutTitle: '画布操作指南',
   shortcutSubtitle: '快捷键 & 操作说明',
   shortcutGroupCanvas: '画布操作',
@@ -421,6 +530,12 @@ export const STRINGS_ZH = {
   assistant: '助手',
   assistantTitle: 'AI 助手',
   assistantHint: '与助手对话，助手自动转发到节点，不阻塞你的思路',
+  toggleAssistant: '切换助手面板',
+  toggleAssistantOpen: '打开助手',
+  toggleAssistantClose: '关闭助手',
+  assistantAutoCreate: '自动建图模式',
+  assistantAutoCreateOn: '自动建图已开启：每次助手回答都会自动创建节点',
+  assistantAutoCreateOff: '自动建图已关闭：仅当助手输出转发标记时才创建节点',
   assistantEmpty: '与助手开始对话，或选择一个技能以获得专业建议',
   assistantInputPlaceholder: '向助手提问... (Enter 发送, Shift+Enter 换行)',
   assistantSend: '发送',
@@ -912,6 +1027,118 @@ export const STRINGS_EN = {
   copied: 'Copied to clipboard',
   copyFailed: 'Copy failed',
 
+  helpCenterTitle: 'Help Center',
+  helpCenterSubtitle: 'From onboarding to mastery, all in one guide',
+  helpSearchPlaceholder: 'Search help...',
+  helpNoMatch: 'No matching content',
+  helpFooterTip:
+    'Still have questions? Open the assistant panel on the right and switch to the "Web Guide" skill for instant guidance.',
+
+  helpQuickstartTitle: 'Quick Start',
+  helpQuickstartIntro:
+    'AI Debug turns AI conversations from a linear list into a git-repo-like web structure. Each branch independently maintains its own context path without polluting others.',
+  helpQuickstartSteps: [
+    '1. Configure your LLM provider (OpenAI-compatible) via the Settings button in the top bar, enter your API Key',
+    '2. Type your first question in the NodeInspector input on the canvas and press Enter to create the root node',
+    '3. Select any node and type again — the new message automatically becomes a child branch (fork)',
+    '4. Use the top-right capsule toolbar to switch between select/hand/zoom/fit-view/auto-layout/path-isolation',
+    '5. Click the Bot icon in the top bar to open the assistant panel; enable Zap auto-create mode to build nodes from chat',
+  ],
+  helpQuickstartTip:
+    'Tip: In draft state (no project bound), the first message auto-derives a project name and binds the canvas — no need to manually create a project.',
+
+  helpConceptsTitle: 'Core Concepts',
+  helpConceptsIntro:
+    'AI Debug uses a git-style conversation model. The following concepts are key to understanding the system:',
+  helpConceptsItems: [
+    'Node (Turn): A user message + AI reply forms a node, similar to a git commit',
+    'Branch: Fork a new branch from any node, with its own independent context path',
+    'Merge Node: Combine multiple branches into a new root, with the merge intent as the root user message',
+    'Context Path: Collected along parentId from the root; only the current path is fed to the LLM',
+    'pathSummary: When the path is too long, earlier segments are compressed into summaries',
+    'ignored node: Skipped when building context, but its children still run',
+    'abandoned node: Marked as discarded branch, hidden by default, can be restored',
+    'Draft state: When currentProjectId is empty, the first message auto-derives a project name and binds the canvas',
+  ],
+
+  helpCanvasTitle: 'Canvas Operations',
+  helpCanvasIntro:
+    'The canvas is the main workspace of AI Debug. All nodes expand in a radial/tree layout. Common operations:',
+  helpCanvasOps: [
+    'New node: Type in NodeInspector input → Enter; or chat in the assistant panel with auto-create mode enabled',
+    'Fork: Select any node → type a new message in Inspector → automatically becomes a child branch',
+    'Merge: Right-click a node → select "Merge Nodes" → pick multiple sources → enter merge intent',
+    'Delete/Abandon/Ignore: Right-click a node or use the Inspector bottom action area',
+    'Auto Layout: LayoutGrid icon in the top-right capsule toolbar (dagre re-layout)',
+    'Path Isolation: Focus icon in the top-right (highlights only the current path)',
+    'Node Display Mode: ListCollapse icon in the top-right (toggle detailed/compact)',
+    'Fit View: Maximize2 icon in the top-right, or press F',
+    'Fullscreen: Expand icon in the top-right (browser fullscreen)',
+    'Undo/Redo: Ctrl+Z / Ctrl+Y (based on immer patches, up to 200 steps of history)',
+    'Command Palette: Alt+F (search projects, skills, nodes, etc.)',
+  ],
+
+  helpAssistantTitle: 'Assistant Workflow',
+  helpAssistantIntro:
+    'The Bot icon in the top bar opens the assistant panel (independent right sidebar). The assistant senses canvas state and provides suggestions — your best partner for daily debugging.',
+  helpAssistantOps: [
+    'Canvas awareness: The assistant automatically receives a canvas snapshot (project name/node count/last 5 nodes/selected node path)',
+    'Auto-create mode (Zap icon): When enabled, every assistant reply auto-forwards the user message as a new node',
+    'Protocol forwarding: When the assistant reply contains a `### Forward to Node` marker, a node is auto-created (supports multiple)',
+    'Skills (Sparkles icon): Choose an expert skill (Problem Decomposition/Plan Comparison/Code Review/Root Cause Analysis/Summary/Question Optimization/Web Guide)',
+    'Multi-session: The session switcher in the assistant panel creates/switches/deletes sessions (up to 50)',
+    'Multi-model: The model selector at the top of the assistant panel switches LLM configs (up to 20)',
+  ],
+  helpAssistantTip:
+    'Tip: If the assistant reply seems unrelated to the canvas, select a relevant node first — the assistant will give advice based on the current path.',
+
+  helpShortcutsTitle: 'Keyboard Shortcuts',
+  helpShortcutsIntro: 'Quick reference for all canvas shortcuts (Mac users: replace Ctrl with ⌘):',
+  helpShortcutsItems: [
+    { text: 'Select tool', keys: ['V'] },
+    { text: 'Hand tool', keys: ['H'] },
+    { text: 'Temporary hand (hold)', keys: ['Space'] },
+    { text: 'Fit view', keys: ['F'] },
+    { text: 'Delete selected node', keys: ['Delete', 'Backspace'] },
+    { text: 'Undo', keys: ['Ctrl', 'Z'] },
+    { text: 'Redo', keys: ['Ctrl', 'Y'] },
+    { text: 'Command palette', keys: ['Alt', 'F'] },
+    { text: 'Zoom canvas', keys: ['Ctrl', 'Wheel'] },
+    { text: 'Multi-select', keys: ['Shift', 'Click'] },
+  ],
+
+  helpFaqTitle: 'FAQ',
+  helpFaqItems: [
+    {
+      q: 'How to compare two solutions?',
+      a: "Fork two branches from the same parent node, explore each in depth, then use a merge node (right-click → Merge Nodes) to summarize. The merged node's parent path includes both branches' context.",
+    },
+    {
+      q: "Why doesn't the assistant know my canvas content?",
+      a: 'The assistant automatically receives a canvas snapshot (project name/node count/last 5 nodes/selected node path). If the reply seems unrelated, select a node first and verify the assistant panel shows the current project.',
+    },
+    {
+      q: 'Too many nodes, hard to see?',
+      a: 'Three options: ① Enable ListCollapse compact mode to see only summaries; ② Enable Focus path-isolation mode to see only the current branch; ③ Zoom out with Ctrl+wheel.',
+    },
+    {
+      q: 'How to export a project?',
+      a: 'Left project list → three-dot menu on the project card → Export JSON. You can also batch clean or export in the Storage Manager panel.',
+    },
+    {
+      q: 'Draft state not saved?',
+      a: 'Draft state (currentProjectId is empty) is not saved. After sending the first message, a project name is auto-derived and the canvas is bound; all subsequent changes are auto-saved with 500ms debounce.',
+    },
+    {
+      q: 'How to switch LLM providers?',
+      a: 'Top bar Settings → Model Config. You can save up to 20 LLM configs; the assistant panel top has a quick switcher. Node Inspector also supports llmOverride for per-node model selection.',
+    },
+    {
+      q: 'Difference between Auto Evolution and Assistant?',
+      a: 'Auto Evolution automatically expands multiple branches in set steps (good for divergent exploration); the assistant provides conversational advice (good for analysis). They can be combined: use the assistant to decompose the problem first, then use Auto Evolution for parallel validation.',
+    },
+  ],
+
   shortcutTitle: 'Canvas Guide',
   shortcutSubtitle: 'Shortcuts & Operations',
   shortcutGroupCanvas: 'Canvas',
@@ -1055,6 +1282,13 @@ export const STRINGS_EN = {
   assistantTitle: 'AI Assistant',
   assistantHint:
     'Chat with the assistant — it forwards to nodes automatically without blocking your flow',
+  toggleAssistant: 'Toggle assistant panel',
+  toggleAssistantOpen: 'Open assistant',
+  toggleAssistantClose: 'Close assistant',
+  assistantAutoCreate: 'Auto-create nodes',
+  assistantAutoCreateOn: 'Auto-create ON: every assistant reply creates a node',
+  assistantAutoCreateOff:
+    'Auto-create OFF: nodes are created only when the assistant emits the forward marker',
   assistantEmpty: 'Start a conversation, or pick a skill for expert guidance',
   assistantInputPlaceholder: 'Ask the assistant... (Enter to send, Shift+Enter for newline)',
   assistantSend: 'Send',

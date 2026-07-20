@@ -4,6 +4,7 @@
 // ============================================================
 
 import type { PathSummaryConfig } from '@/components/node-flow/types';
+import { obfuscateJSON, deobfuscateJSON } from '@/lib/crypto';
 
 /** 支持的 LLM 服务商 */
 export type LLMProvider = 'mimo' | 'volcengine' | 'openrouter' | 'deepseek' | 'openai' | 'custom';
@@ -111,13 +112,16 @@ export const LLM_CONFIG_KEY = 'ai-debug:llm-config';
 /**
  * 从 localStorage 读取 LLM 配置。
  * 在非浏览器环境（SSR）下返回 null。
+ * 读取时自动解混淆，兼容旧版明文存储的数据。
  */
 export function loadConfig(): LLMConfig | null {
   if (typeof window === 'undefined') return null;
   try {
     const raw = window.localStorage.getItem(LLM_CONFIG_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as LLMConfig;
+    // 自动检测：混淆格式（enc: 前缀）用 deobfuscateJSON，否则按明文 JSON 解析（兼容旧数据）
+    const parsed = deobfuscateJSON<LLMConfig>(raw);
+    if (!parsed) return null;
     // 基本字段校验
     if (
       !parsed ||
@@ -135,13 +139,13 @@ export function loadConfig(): LLMConfig | null {
 }
 
 /**
- * 将 LLM 配置写入 localStorage。
+ * 将 LLM 配置写入 localStorage（混淆存储，避免明文 API Key）。
  * 在非浏览器环境下静默跳过。
  */
 export function saveConfig(config: LLMConfig): void {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(LLM_CONFIG_KEY, JSON.stringify(config));
+    window.localStorage.setItem(LLM_CONFIG_KEY, obfuscateJSON(config));
   } catch {
     // 写入失败（隐私模式 / 配额满）时静默忽略
   }

@@ -10,6 +10,8 @@
 // ============================================================
 
 import type { LLMConfig, LLMProvider } from './llm-config';
+import { generateId } from '@/lib/id';
+import { obfuscateJSON, deobfuscateJSON } from '@/lib/crypto';
 
 /** 单个命名的 LLM 配置组合 */
 export interface LLMConfigEntry {
@@ -38,23 +40,22 @@ function notify(): void {
   subscribers.forEach((cb) => cb());
 }
 
-/** 生成配置 ID：`cfg-${timestamp}-${rand}` */
-function generateId(): string {
-  return `cfg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
+// generateId 已迁移至 @/lib/id（统一 CSPRNG ID 生成）
 
 /**
  * 从 localStorage 读取配置列表。
  * - SSR（typeof window === 'undefined'）时返回空数组
  * - JSON 解析失败或格式不合法也返回空数组
+ * - 读取时自动解混淆，兼容旧版明文存储的数据
  */
 function readFromStorage(): LLMConfigEntry[] {
   if (typeof window === 'undefined') return [];
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
+    // 自动检测：混淆格式（enc: 前缀）用 deobfuscateJSON，否则按明文 JSON 解析（兼容旧数据）
+    const parsed = deobfuscateJSON<LLMConfigEntry[]>(raw);
+    if (!parsed || !Array.isArray(parsed)) return [];
     // 字段兼容性过滤：只保留合法条目
     return parsed.filter(
       (e): e is LLMConfigEntry =>
@@ -76,11 +77,11 @@ function readFromStorage(): LLMConfigEntry[] {
   }
 }
 
-/** 写入 localStorage，失败时静默忽略（隐私模式 / 配额满） */
+/** 写入 localStorage（混淆存储，避免明文 API Key），失败时静默忽略 */
 function writeToStorage(entries: LLMConfigEntry[]): void {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+    window.localStorage.setItem(STORAGE_KEY, obfuscateJSON(entries));
   } catch {
     // 静默忽略
   }
@@ -199,7 +200,7 @@ export function saveLlmConfig(
         updatedAt: now,
       }
     : {
-        id: input.id || generateId(),
+        id: input.id || generateId('cfg'),
         name: input.name,
         config: { ...input.config, provider },
         createdAt: now,
@@ -294,7 +295,7 @@ export function migrateFromLegacyIfNeeded(): void {
     // 迁移为「默认」条目
     const now = Date.now();
     const entry: LLMConfigEntry = {
-      id: generateId(),
+      id: generateId('cfg'),
       name: '默认',
       config: {
         provider: legacy.provider as LLMProvider,

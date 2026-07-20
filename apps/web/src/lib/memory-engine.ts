@@ -7,6 +7,7 @@
 import { quickCallLLM } from './llm-helpers';
 import type { LLMMessage } from './llm-client';
 import type { MemoryEntry } from '@/components/node-flow/types';
+import { generateId } from '@/lib/id';
 
 /** 提取记忆的 System Prompt：约束输出 JSON 数组 */
 const EXTRACT_MEMORY_PROMPT = `你是一位记忆提取助手。用户会给你一段对话（用户问题 + AI 回答），请从中提取值得长期记忆的关键事实、规则或结论，供未来对话参考。
@@ -89,7 +90,7 @@ export async function extractMemory(
  */
 export function toMemoryEntries(contents: string[]): MemoryEntry[] {
   return contents.map((content) => ({
-    id: `mem-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    id: generateId('mem'),
     content,
     createdAt: Date.now(),
     source: 'auto' as const,

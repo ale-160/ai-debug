@@ -120,6 +120,7 @@ export function StorageManager() {
       nodeDisplayMode: 'detailed' as const,
       hoverShowPathSummary: false,
       nodeActionsStyle: 'both' as const,
+      assistantAutoCreateNodes: false,
     };
     saveAppSettings(defaults);
     refreshAppSettings();

@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { useDebugStore } from '@/lib/debug-store';
 import { useTranslation } from '@/components/I18nProvider';
 import { useDialogA11y } from '@/hooks/useDialogA11y';
+import { generateId } from '@/lib/id';
 import type { Skill } from './types';
 
 /** Skill JSON 文件版本 */
@@ -39,10 +40,8 @@ function emptySkillForm(): SkillFormState {
   };
 }
 
-/** 生成技能 ID */
-function genSkillId(): string {
-  return `skill-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
+/** 生成技能 ID（统一使用 @/lib/id 的 CSPRNG 方案） */
+const genSkillId = () => generateId('skill');
 
 /** 解析标签字符串为标签数组（逗号分隔，去空白去重） */
 function parseTags(tagStr: string): string[] {

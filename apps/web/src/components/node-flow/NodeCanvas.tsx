@@ -10,17 +10,10 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import {
-  ZoomIn,
-  ZoomOut,
-  Maximize2,
   GitMerge,
   GitBranch,
   GitCompare,
   Network,
-  MousePointer2,
-  Hand,
-  AlignJustify,
-  Rows3,
   Ban,
   RotateCcw,
   EyeOff,
@@ -36,11 +29,13 @@ import { nodeTypes } from './nodes';
 import { getStatusColor } from './nodes/node-utils';
 import { layoutRadial } from './radial-layout';
 import { layoutGit } from './git-layout';
+import CanvasToolbar from './CanvasToolbar';
 import type { TurnNodeData } from './types';
 import { useDebugStore } from '@/lib/debug-store';
 import { streamTurnResponse } from '@/lib/network-engine';
 import { isConfigured } from '@/lib/llm-config';
 import { updateProject } from '@/lib/project-storage';
+import { autoLayout } from '@/lib/auto-layout';
 import { useTranslation } from '@/components/I18nProvider';
 
 // diff 视图懒加载：react-diff-viewer-continued 较大，用户点击"对比"后才加载
@@ -127,11 +122,23 @@ export default function NodeCanvas() {
   const refreshProjects = useDebugStore((s) => s.refreshProjects);
   const currentProject = projects.find((p) => p.id === currentProjectId);
 
+  // 撤销/重做计数与 action（P0-1）：右上角工具栏按钮根据 canUndo/canRedo 启用
+  const undoCount = useDebugStore((s) => s.undoCount);
+  const redoCount = useDebugStore((s) => s.redoCount);
+  const undo = useDebugStore((s) => s.undo);
+  const redo = useDebugStore((s) => s.redo);
+  // 侧边栏收起态（右上角工具栏按钮控制）
+  const sidebarCollapsed = useDebugStore((s) => s.sidebarCollapsed);
+  const setSidebarCollapsed = useDebugStore((s) => s.setSidebarCollapsed);
+
   const { zoomIn, zoomOut, fitView, setViewport: rfSetViewport, getViewport } = useReactFlow();
 
   const abortRef = useRef<AbortController | null>(null);
   const registerAbortController = useDebugStore((s) => s.registerAbortController);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
+  // 全屏容器 ref：绑在最外层包裹 div，全屏时包含顶栏 + 画布 + 工具栏 + minimap
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
@@ -446,6 +453,36 @@ export default function NodeCanvas() {
     fitView({ padding: 0.2 });
   }, [fitView]);
 
+  // 全屏：监听 fullscreenchange 同步 state（用户按 Esc 退出时也要更新按钮态）
+  useEffect(() => {
+    const handleChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener('fullscreenchange', handleChange);
+    return () => document.removeEventListener('fullscreenchange', handleChange);
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen?.();
+    } else {
+      workspaceRef.current?.requestFullscreen?.();
+    }
+  }, []);
+
+  // 自动排列：dagre 计算拓扑层级布局 → 写回 store → fitView 居中
+  const handleAutoLayout = useCallback(() => {
+    const state = useDebugStore.getState();
+    if (state.nodes.length === 0) {
+      toast(t.autoLayoutEmpty);
+      return;
+    }
+    const laidOut = autoLayout(state.nodes, state.edges, { direction: 'TB' });
+    useDebugStore.setState({ nodes: laidOut, isDirty: true });
+    // 自动排列属于结构性变更，立即入栈（合并窗口不合适）
+    state.pushHistory(true);
+    toast(t.autoLayoutSuccess);
+    requestAnimationFrame(() => fitView({ padding: 0.2 }));
+  }, [fitView, t]);
+
   const selectedNodes = useMemo(() => nodes.filter((n) => n.selected), [nodes]);
   const canMerge = selectedNodes.length >= 2;
 
@@ -597,6 +634,7 @@ export default function NodeCanvas() {
 
   return (
     <div
+      ref={workspaceRef}
       className="flex-1 h-full flex flex-col bg-slate-50 dark:bg-slate-900"
       role="main"
       aria-label={t.projectName}
@@ -768,63 +806,27 @@ export default function NodeCanvas() {
           </div>
         )}
 
-        <div className="absolute bottom-4 left-4 z-10 flex flex-col gap-1 bg-white border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-lg shadow-sm overflow-hidden">
-          <div className="flex border-b border-slate-100 dark:border-slate-700">
-            <button
-              onClick={() => setInteractionMode('select')}
-              className={`flex flex-col items-center justify-center w-10 h-10 transition-colors ${
-                interactionMode === 'select' && !spacePressed
-                  ? 'bg-violet-50 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400'
-                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200'
-              }`}
-              title={t.selectTool}
-              aria-label={t.selectTool}
-            >
-              <MousePointer2 size={15} />
-              <span className="text-[9px] mt-0.5">V</span>
-            </button>
-            <button
-              onClick={() => setInteractionMode('hand')}
-              className={`flex flex-col items-center justify-center w-10 h-10 border-l border-slate-100 dark:border-slate-700 transition-colors ${
-                interactionMode === 'hand' || spacePressed
-                  ? 'bg-violet-50 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400'
-                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200'
-              }`}
-              title={t.handTool}
-              aria-label={t.handTool}
-            >
-              <Hand size={15} />
-              <span className="text-[9px] mt-0.5">H</span>
-            </button>
-          </div>
-          <div className="flex flex-col">
-            <button
-              onClick={() => zoomIn()}
-              className="flex items-center justify-center w-10 h-8 text-slate-500 hover:bg-slate-50 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200 transition-colors border-b border-slate-100 dark:border-slate-700"
-              title={t.zoomIn}
-              aria-label={t.zoomIn}
-            >
-              <ZoomIn size={15} />
-            </button>
-            <button
-              onClick={() => zoomOut()}
-              className="flex items-center justify-center w-10 h-8 text-slate-500 hover:bg-slate-50 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200 transition-colors border-b border-slate-100 dark:border-slate-700"
-              title={t.zoomOut}
-              aria-label={t.zoomOut}
-            >
-              <ZoomOut size={15} />
-            </button>
-            <button
-              onClick={handleFitView}
-              className="flex items-center justify-center w-10 h-8 text-slate-500 hover:bg-slate-50 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200 transition-colors"
-              title={t.fitView}
-              aria-label={t.fitView}
-            >
-              <Maximize2 size={15} />
-            </button>
-          </div>
-          <NodeDisplayModeToggle />
-        </div>
+        {/* 画布右上角胶囊工具栏：模式 / 缩放 / 自动排列 / 路径隔离 / 侧边栏 / 全屏 / 撤销重做 */}
+        <CanvasToolbar
+          interactionMode={interactionMode}
+          setInteractionMode={setInteractionMode}
+          spacePressed={spacePressed}
+          onZoomIn={() => zoomIn()}
+          onZoomOut={() => zoomOut()}
+          onFitView={handleFitView}
+          onAutoLayout={handleAutoLayout}
+          focusMode={focusMode}
+          onToggleFocusMode={toggleFocusMode}
+          sidebarCollapsed={sidebarCollapsed}
+          onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
+          isFullscreen={isFullscreen}
+          onToggleFullscreen={toggleFullscreen}
+          canUndo={undoCount > 0}
+          canRedo={redoCount > 0}
+          onUndo={undo}
+          onRedo={redo}
+        />
+        {/* TODO: NodeDisplayModeToggle（详细 / 紧凑模式）原位于左下角工具栏末尾，后续可在 CanvasToolbar 增设设置弹出层时迁入 */}
 
         {/* 浮动工具条（T024）：至少 1 个节点选中时显示在画布底部居中 */}
         {(appSettings.nodeActionsStyle === 'toolbar' || appSettings.nodeActionsStyle === 'both') &&
@@ -1074,26 +1076,5 @@ export default function NodeCanvas() {
         </Suspense>
       )}
     </div>
-  );
-}
-
-function NodeDisplayModeToggle() {
-  const { t } = useTranslation();
-  const nodeDisplayMode = useDebugStore((s) => s.nodeDisplayMode);
-  const toggleNodeDisplayMode = useDebugStore((s) => s.toggleNodeDisplayMode);
-  const isCompact = nodeDisplayMode === 'compact';
-  return (
-    <button
-      onClick={toggleNodeDisplayMode}
-      className={`flex items-center justify-center w-10 h-9 border-t border-slate-100 dark:border-slate-700 transition-colors ${
-        isCompact
-          ? 'bg-violet-50 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400'
-          : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200'
-      }`}
-      title={isCompact ? t.detailedMode : t.compactMode}
-      aria-label={isCompact ? t.detailedMode : t.compactMode}
-    >
-      {isCompact ? <Rows3 size={15} /> : <AlignJustify size={15} />}
-    </button>
   );
 }

@@ -4,11 +4,19 @@ import { useState, useRef } from 'react';
 import type { Node } from 'reactflow';
 import { useDebugStore } from '@/lib/debug-store';
 import { streamTurnResponse } from '@/lib/network-engine';
-import { detectConflicts } from '@/lib/conflict-engine';
+import { detectConflicts, type ConflictMark } from '@/lib/conflict-engine';
 import { extractMemory, buildMemoryContext } from '@/lib/memory-engine';
 import { isConfigured } from '@/lib/llm-config';
+import { hitlEventBus } from '@/lib/hitl-event-bus';
 import { useTranslation } from '@/components/I18nProvider';
-import type { TurnNodeData, Suggestion } from '../types';
+import type { TurnNodeData, Suggestion, NodeAttachment } from '../types';
+import { emit as emitNodeEvent, NODE_EVENTS, type ConflictDecisionPayload } from '../event-bus';
+import type { ConflictDecision } from '../ConflictDecisionModal';
+
+/** HITL 决策会话 runId：所有冲突决策共享同一会话，便于 clearRun 统一清理 */
+const CONFLICT_RESOLUTION_RUN_ID = 'conflict-resolution';
+/** 冲突决策超时时间：5 分钟未决策自动按 ignore 处理 */
+const CONFLICT_DECISION_TIMEOUT_MS = 5 * 60 * 1000;
 
 /**
  * Inspector 操作逻辑 hook：托管输入框状态、流式请求 AbortController、
@@ -18,6 +26,8 @@ import type { TurnNodeData, Suggestion } from '../types';
 export function useInspectorActions(selectedNode: Node<TurnNodeData> | null) {
   const { t } = useTranslation();
   const [input, setInput] = useState('');
+  /** 当前编辑中的附件列表（提交后清空，由 createTurnNode 携带到节点 data） */
+  const [attachments, setAttachments] = useState<NodeAttachment[]>([]);
   const [checkingConflict, setCheckingConflict] = useState(false);
   /** 当前流式请求的 AbortController：用于在发起新请求前取消旧请求 */
   const abortRef = useRef<AbortController | null>(null);
@@ -53,6 +63,97 @@ export function useInspectorActions(selectedNode: Node<TurnNodeData> | null) {
     const rules = appSettings.globalRules;
     const ctx = buildMemoryContext(rules, globalMem, projectMem);
     return ctx || undefined;
+  };
+
+  /**
+   * 应用冲突决策：在 HITL handler 中根据用户选择执行对应副作用。
+   * - keep-a：保留前序主干 → 弃用冲突节点所属分支
+   * - keep-b：保留冲突节点 → 仅清除标注（让当前结论成立）
+   * - merge：合并两者 → 暂同 keep-b（合并流程待后续实现）
+   * - ignore：忽略 → 清除标注
+   */
+  const applyConflictDecision = (conflictId: string, decision: ConflictDecision) => {
+    switch (decision) {
+      case 'keep-a':
+        // 保留 A：放弃冲突节点所属分支（含子树）
+        abandonBranch(conflictId);
+        break;
+      case 'keep-b':
+      case 'merge':
+      case 'ignore':
+      default:
+        // 保留 B / 合并 / 忽略：清除冲突标注（合并流程待后续实现）
+        updateTurnNode(conflictId, { conflictNote: undefined });
+        break;
+    }
+  };
+
+  /**
+   * 构造冲突决策 payload：从节点列表解析分支名等展示信息。
+   * 分支 A 取被标注节点的父节点（前序主干），分支 B 取被标注节点自身。
+   * 无显式 branchName 时回退到 summary 或 userMessage 摘要。
+   */
+  const buildConflictPayload = (
+    mark: ConflictMark,
+    nodes: Node<TurnNodeData>[],
+  ): ConflictDecisionPayload => {
+    const conflictNode = nodes.find((n) => n.id === mark.nodeId);
+    const fallbackB =
+      conflictNode?.data.branchName ??
+      conflictNode?.data.summary ??
+      conflictNode?.data.userMessage.slice(0, 20) ??
+      'B';
+    const parentId = conflictNode?.data.parentId;
+    const parentNode = parentId ? nodes.find((n) => n.id === parentId) : null;
+    const fallbackA =
+      parentNode?.data.branchName ??
+      parentNode?.data.summary ??
+      parentNode?.data.userMessage.slice(0, 20) ??
+      'A';
+    return {
+      id: mark.nodeId,
+      nodeId: mark.nodeId,
+      branchAName: fallbackA,
+      branchBName: fallbackB,
+      description: mark.note,
+    };
+  };
+
+  /**
+   * 订阅冲突决策 HITL：等待 DebugFlowEditor 通过 emit 唤醒。
+   * 同 (runId, eventName) 覆盖语义，重复订阅安全。
+   * 超时 5 分钟未决策自动按 ignore 处理（清除标注）。
+   */
+  const subscribeConflictDecision = (conflictId: string) => {
+    const eventName = `conflict:${conflictId}`;
+    hitlEventBus.subscribe(
+      CONFLICT_RESOLUTION_RUN_ID,
+      eventName,
+      (payload) => {
+        const { decision } = (payload ?? {}) as { decision?: ConflictDecision };
+        if (!decision) return;
+        applyConflictDecision(conflictId, decision);
+      },
+      () => {
+        // 超时：自动按 ignore 处理
+        updateTurnNode(conflictId, { conflictNote: undefined });
+      },
+      CONFLICT_DECISION_TIMEOUT_MS,
+    );
+  };
+
+  /**
+   * 冲突检测命中后的统一接入点：
+   * 1. 写入 conflictNote（已有行为）
+   * 2. 订阅 HITL 等待用户决策
+   * 3. 派发 conflict-detected 事件，DebugFlowEditor 监听后弹 Modal
+   */
+  const handleConflictDetected = (marks: ConflictMark[], nodes: Node<TurnNodeData>[]) => {
+    for (const m of marks) {
+      subscribeConflictDecision(m.nodeId);
+      const payload = buildConflictPayload(m, nodes);
+      emitNodeEvent(NODE_EVENTS.ConflictDetected, payload);
+    }
   };
 
   /**
@@ -94,19 +195,34 @@ export function useInspectorActions(selectedNode: Node<TurnNodeData> | null) {
         for (const m of marks) {
           updateTurnNode(m.nodeId, { conflictNote: m.note });
         }
+        // P2-3：检测命中后接入 HITL 决策流（订阅 + 派发 conflict-detected 事件）
+        if (marks.length > 0) {
+          const nodesAfter = useDebugStore.getState().nodes;
+          handleConflictDetected(marks, nodesAfter);
+        }
       })();
     }
   };
 
-  /** 创建子节点并流式生成 AI 回答（继续追问 / 分叉 / 建议方向 共用） */
-  const createChildAndStream = async (userMsg: string) => {
+  /** 创建子节点并流式生成 AI 回答（继续追问 / 分叉 / 建议方向 共用）
+   *  @param userMsg  用户消息文本
+   *  @param attachs  可选附件列表（仅 parsed 项会持久化到节点 data） */
+  const createChildAndStream = async (userMsg: string, attachs?: NodeAttachment[]) => {
     if (!isConfigured()) {
       alert(t.pleaseConfigureApiKey);
       return;
     }
     const parentId = selectedNodeId;
     if (!parentId) return;
-    const newId = createTurnNode(userMsg, parentId);
+    // 仅持久化 parseStatus=parsed 的附件，failed 项不写入节点（避免污染 localStorage）
+    const parsedAttachments = attachs?.filter((a) => a.parseStatus === 'parsed');
+    const newId = createTurnNode(
+      userMsg,
+      parentId,
+      parsedAttachments && parsedAttachments.length > 0
+        ? { attachments: parsedAttachments }
+        : undefined,
+    );
     setSelectedNode(newId);
     updateTurnNode(newId, { status: 'running' });
     const currentNodes = useDebugStore.getState().nodes;
@@ -137,8 +253,11 @@ export function useInspectorActions(selectedNode: Node<TurnNodeData> | null) {
   const handleContinueQuestion = () => {
     const text = input.trim();
     if (!text) return;
+    // 提交时把当前附件一起带走，然后清空输入与附件
+    const currentAttachments = attachments;
     setInput('');
-    void createChildAndStream(text);
+    setAttachments([]);
+    void createChildAndStream(text, currentAttachments);
   };
 
   /** 重新生成当前节点的 AI 回答；输入框有内容时作为补充并入 userMessage */
@@ -243,9 +362,31 @@ export function useInspectorActions(selectedNode: Node<TurnNodeData> | null) {
       for (const m of marks) {
         updateTurnNode(m.nodeId, { conflictNote: m.note });
       }
+      // P2-3：检测命中后接入 HITL 决策流（订阅 + 派发 conflict-detected 事件）
+      if (marks.length > 0) {
+        const nodesAfter = useDebugStore.getState().nodes;
+        handleConflictDetected(marks, nodesAfter);
+      }
     } finally {
       setCheckingConflict(false);
     }
+  };
+
+  /**
+   * 人工决策入口：在 ConflictCard 中点击「人工决策」时调用。
+   * 重新订阅 HITL（覆盖语义，若已订阅则刷新；若已超时则重建），
+   * 然后派发 conflict-decision-requested 事件让 DebugFlowEditor 弹 Modal。
+   */
+  const handleManualDecision = () => {
+    if (!selectedNodeId || !selectedNode) return;
+    const note = selectedNode.data.conflictNote;
+    if (!note) return;
+    // 重新订阅（覆盖语义安全）：处理超时后用户再次唤起的场景
+    subscribeConflictDecision(selectedNodeId);
+    // 构造 payload：与自动检测共用 buildConflictPayload
+    const nodesNow = useDebugStore.getState().nodes;
+    const payload = buildConflictPayload({ nodeId: selectedNodeId, note }, nodesNow);
+    emitNodeEvent(NODE_EVENTS.ConflictDecisionRequested, payload);
   };
 
   /** 清除当前节点的冲突标注 */
@@ -279,6 +420,8 @@ export function useInspectorActions(selectedNode: Node<TurnNodeData> | null) {
   return {
     input,
     setInput,
+    attachments,
+    setAttachments,
     checkingConflict,
     handleContinueQuestion,
     handleRegenerate,
@@ -291,6 +434,7 @@ export function useInspectorActions(selectedNode: Node<TurnNodeData> | null) {
     handleClearConflict,
     handleClearEvolutionMeta,
     handlePruneNode,
+    handleManualDecision,
     handleKeyDown,
   };
 }

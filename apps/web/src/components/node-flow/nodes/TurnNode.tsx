@@ -1,7 +1,15 @@
 'use client';
 import React, { memo, useMemo, useState } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
-import { Loader2, GitMerge, AlertTriangle, Zap, ChevronLeft, ChevronRight } from 'lucide-react';
+import {
+  Loader2,
+  GitMerge,
+  AlertTriangle,
+  Zap,
+  ChevronLeft,
+  ChevronRight,
+  Paperclip,
+} from 'lucide-react';
 import type { TurnNodeData } from '../types';
 import { statusColors, truncateStreamingText } from './node-utils';
 import { pickStatusMessage } from '../marketing-messages';
@@ -65,6 +73,14 @@ function TurnNodeComponent({ id, data, selected }: TurnNodeProps) {
         confidence: evolutionMeta.confidence.toFixed(2),
       })
     : '';
+
+  // PR-2: 附件角标 —— 仅统计 parseStatus=parsed 的附件（failed 项不展示在节点上）
+  const parsedAttachments = data.attachments?.filter((a) => a.parseStatus === 'parsed') ?? [];
+  const attachmentsCount = parsedAttachments.length;
+  const attachmentTooltip =
+    attachmentsCount > 0
+      ? `${t.nodeAttachmentsLabel}: ${parsedAttachments.map((a) => a.name).join(', ')}`
+      : '';
 
   // 分支切换器：订阅当前节点的子节点列表（csv 字符串避免数组引用变化）。
   // 仅当子节点数 > 1 时显示分支徽标；点击展开 `< 1/N >` 切换器。
@@ -296,13 +312,24 @@ function TurnNodeComponent({ id, data, selected }: TurnNodeProps) {
       {/* 详细模式：用户消息 + AI 回答摘要 */}
       {!isCompact && (
         <>
-          {/* 用户消息摘要 */}
+          {/* 用户消息摘要 + PR-2 附件角标（右侧） */}
           <div
-            className={`text-sm text-sky-600 dark:text-sky-400 mb-1 ${
+            className={`text-sm text-sky-600 dark:text-sky-400 mb-1 flex items-center gap-1 ${
               isAbandoned || isIgnored ? 'line-through' : ''
             }`}
           >
-            {t.you}：{truncate(userMessage, 30)}
+            <span className="truncate flex-1">
+              {t.you}：{truncate(userMessage, 30)}
+            </span>
+            {attachmentsCount > 0 && (
+              <span
+                className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] bg-sky-100 dark:bg-sky-900/40 text-sky-600 dark:text-sky-300 shrink-0"
+                title={attachmentTooltip}
+              >
+                <Paperclip size={9} />
+                {attachmentsCount}
+              </span>
+            )}
           </div>
 
           {/* AI 回答摘要 / 思考中 / 流式生成中 */}

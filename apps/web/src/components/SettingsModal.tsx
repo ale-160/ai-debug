@@ -14,17 +14,30 @@ import {
   Brain,
   Key,
   Database,
+  Palette,
+  Plus,
+  Pencil,
+  Trash2,
+  Power,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   loadConfig,
   saveConfig,
   PROVIDER_PRESETS,
+  maskKey,
   type LLMConfig,
   type LLMProvider,
 } from '@/lib/llm-config';
 import { testLLMConnection } from '@/lib/llm-client';
 import { useDebugStore } from '@/lib/debug-store';
+import type { LLMConfigEntry } from '@/lib/multi-llm-config';
+import {
+  THEME_PRESETS,
+  loadThemePresetId,
+  setThemePreset,
+  type ThemePresetId,
+} from '@/lib/theme-presets';
 import { StorageManager } from './StorageManager';
 import { useTranslation } from '@/components/I18nProvider';
 import type { AppSettings, PathSummaryConfig } from './node-flow/types';
@@ -41,7 +54,7 @@ interface TestResult {
   message: string;
 }
 
-type SettingsTab = 'api' | 'memory' | 'data';
+type SettingsTab = 'api' | 'memory' | 'data' | 'appearance';
 
 export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const { t, tf } = useTranslation();
@@ -67,6 +80,18 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const setShowMemoryPanel = useDebugStore((s) => s.setShowMemoryPanel);
   const [settingsDraft, setSettingsDraft] = useState<AppSettings>(appSettings);
 
+  // 多 LLM 配置管理（PR-3）
+  const llmConfigs = useDebugStore((s) => s.llmConfigs);
+  const activeLlmConfigId = useDebugStore((s) => s.activeLlmConfigId);
+  const addLlmConfig = useDebugStore((s) => s.addLlmConfig);
+  const removeLlmConfig = useDebugStore((s) => s.removeLlmConfig);
+  const switchLlmConfig = useDebugStore((s) => s.switchLlmConfig);
+  // 编辑中的配置 id（null = 新增模式）
+  const [editingConfigId, setEditingConfigId] = useState<string | null>(null);
+
+  // 主题色预设：从 localStorage 读取，点击色块时即时切换
+  const [themePresetId, setThemePresetId] = useState<ThemePresetId>('blue');
+
   // 打开弹窗时从 localStorage 读取当前配置初始化表单
   useEffect(() => {
     if (!open) return;
@@ -86,6 +111,8 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     }
     // 同步应用设置到本地草稿
     setSettingsDraft(appSettings);
+    // 同步当前主题色预设
+    setThemePresetId(loadThemePresetId());
     // 重置测试状态
     setTestResult(null);
     setShowKey(false);
@@ -181,6 +208,80 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     onClose();
   };
 
+  // ===== 多 LLM 配置管理（PR-3）=====
+
+  /** 把当前表单内容保存为新的预设配置 */
+  const handleSaveAsPreset = () => {
+    const name = window.prompt(t.llmConfigNamePrompt);
+    if (!name || !name.trim()) return;
+    const config: LLMConfig = {
+      provider,
+      apiKey: apiKey.trim(),
+      baseUrl: baseUrl.trim(),
+      model: model.trim(),
+    };
+    const entry = addLlmConfig({ name: name.trim(), config });
+    // 自动激活新增的配置
+    switchLlmConfig(entry.id);
+    emit(NODE_EVENTS.LlmConfigUpdated);
+    toast.success(t.llmConfigSaved);
+  };
+
+  /** 把当前表单内容写回编辑中的配置 */
+  const handleSavePresetEdit = () => {
+    if (!editingConfigId) return;
+    const config: LLMConfig = {
+      provider,
+      apiKey: apiKey.trim(),
+      baseUrl: baseUrl.trim(),
+      model: model.trim(),
+    };
+    const entry = addLlmConfig({ id: editingConfigId, name: nameFromId(editingConfigId), config });
+    switchLlmConfig(entry.id);
+    emit(NODE_EVENTS.LlmConfigUpdated);
+    toast.success(t.llmConfigSaved);
+    setEditingConfigId(null);
+  };
+
+  /** 根据 id 从 llmConfigs 取 name */
+  function nameFromId(id: string): string {
+    return llmConfigs.find((c) => c.id === id)?.name ?? '未命名';
+  }
+
+  /** 激活某个配置：调用 switchLlmConfig，同时把表单字段更新为该配置的值 */
+  const handleActivatePreset = (entry: LLMConfigEntry) => {
+    setProvider(entry.config.provider);
+    setApiKey(entry.config.apiKey);
+    setBaseUrl(entry.config.baseUrl);
+    setModel(entry.config.model);
+    switchLlmConfig(entry.id);
+    saveConfig(entry.config);
+    emit(NODE_EVENTS.LlmConfigUpdated);
+    toast.success(tf('llmConfigActivated', { name: entry.name }));
+  };
+
+  /** 编辑某个配置：把表单字段填充为该配置的值 */
+  const handleEditPreset = (entry: LLMConfigEntry) => {
+    setProvider(entry.config.provider);
+    setApiKey(entry.config.apiKey);
+    setBaseUrl(entry.config.baseUrl);
+    setModel(entry.config.model);
+    setEditingConfigId(entry.id);
+    setTestResult(null);
+    setShowModelHelp(false);
+  };
+
+  /** 删除某个配置 */
+  const handleDeletePreset = (entry: LLMConfigEntry) => {
+    removeLlmConfig(entry.id);
+    emit(NODE_EVENTS.LlmConfigUpdated);
+    toast.success(t.llmConfigDeleted);
+    // 若编辑中的配置被删除，退出编辑模式
+    if (editingConfigId === entry.id) {
+      setEditingConfigId(null);
+    }
+  };
+
   const dialogRef = useDialogA11y(open, onClose);
 
   if (!open) return null;
@@ -252,6 +353,18 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           >
             <Database className="h-4 w-4" />
             {t.dataManagement}
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('appearance')}
+            className={`flex items-center gap-1.5 px-6 py-2.5 text-sm font-medium transition-colors ${
+              activeTab === 'appearance'
+                ? 'border-b-2 border-pink-500 text-pink-600 dark:text-pink-300'
+                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+            }`}
+          >
+            <Palette className="h-4 w-4" />
+            {t.settingsTabAppearance}
           </button>
         </div>
 
@@ -407,6 +520,118 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 {testing && <Loader2 className="h-4 w-4 animate-spin" />}
                 {testing ? t.testing : t.testConnection}
               </button>
+
+              {/* ========== 多 LLM 配置管理（PR-3） ========== */}
+              <div className="border-t border-slate-200 pt-4 dark:border-slate-700">
+                <div className="mb-2 flex items-center justify-between">
+                  <h3 className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                    {t.llmConfigList}
+                  </h3>
+                  <div className="flex items-center gap-1.5">
+                    {/* 编辑模式下的「保存编辑」按钮 */}
+                    {editingConfigId && (
+                      <button
+                        type="button"
+                        onClick={handleSavePresetEdit}
+                        className="inline-flex items-center gap-1 rounded bg-violet-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-violet-700"
+                      >
+                        <Check className="h-3 w-3" />
+                        {t.save}
+                      </button>
+                    )}
+                    {/* 「保存当前为预设」按钮 */}
+                    <button
+                      type="button"
+                      onClick={handleSaveAsPreset}
+                      className="inline-flex items-center gap-1 rounded border border-violet-200 bg-violet-50 px-2 py-1 text-[11px] font-medium text-violet-700 hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-900/30 dark:text-violet-300"
+                    >
+                      <Plus className="h-3 w-3" />
+                      {t.llmConfigSaveCurrent}
+                    </button>
+                  </div>
+                </div>
+
+                {/* 已保存的配置列表 */}
+                {llmConfigs.length === 0 ? (
+                  <p className="rounded border border-dashed border-slate-200 px-3 py-3 text-center text-[11px] text-slate-400 dark:border-slate-700">
+                    {t.assistantModelEmpty}
+                  </p>
+                ) : (
+                  <ul className="space-y-1.5">
+                    {llmConfigs.map((entry) => {
+                      const isActive = entry.id === activeLlmConfigId;
+                      const isEditing = entry.id === editingConfigId;
+                      return (
+                        <li
+                          key={entry.id}
+                          className={`flex items-center gap-2 rounded border px-2.5 py-1.5 text-xs ${
+                            isActive
+                              ? 'border-violet-300 bg-violet-50 dark:border-violet-700 dark:bg-violet-900/20'
+                              : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800'
+                          }`}
+                        >
+                          {/* 名称 + 元信息 */}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="truncate font-medium text-slate-700 dark:text-slate-100">
+                                {entry.name}
+                              </span>
+                              {isActive && (
+                                <span className="inline-flex items-center rounded bg-violet-100 px-1 py-0.5 text-[9px] font-semibold leading-none text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
+                                  {t.assistantSessionActive}
+                                </span>
+                              )}
+                              {isEditing && (
+                                <span className="inline-flex items-center rounded bg-amber-100 px-1 py-0.5 text-[9px] font-semibold leading-none text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                                  {t.llmConfigEdit}
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-0.5 truncate text-[10px] text-slate-500 dark:text-slate-400">
+                              {PROVIDER_PRESETS[entry.config.provider]?.label ??
+                                entry.config.provider}
+                              {' · '}
+                              {entry.config.model}
+                              {' · '}
+                              <span className="font-mono">{maskKey(entry.config.apiKey)}</span>
+                            </div>
+                          </div>
+
+                          {/* 操作按钮组 */}
+                          <div className="flex shrink-0 items-center gap-0.5">
+                            {!isActive && (
+                              <button
+                                type="button"
+                                onClick={() => handleActivatePreset(entry)}
+                                title={t.llmConfigActivate}
+                                className="rounded p-1 text-violet-600 hover:bg-violet-100 dark:text-violet-300 dark:hover:bg-violet-900/30"
+                              >
+                                <Power className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleEditPreset(entry)}
+                              title={t.llmConfigEdit}
+                              className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeletePreset(entry)}
+                              title={t.llmConfigDeleted}
+                              className="rounded p-1 text-slate-500 hover:bg-red-50 hover:text-red-600 dark:text-slate-400 dark:hover:bg-red-900/30 dark:hover:text-red-400"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
             </div>
           )}
 
@@ -669,6 +894,55 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           {activeTab === 'data' && (
             <div className="space-y-4">
               <StorageManager />
+            </div>
+          )}
+
+          {activeTab === 'appearance' && (
+            <div className="space-y-6">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">
+                  {t.appearanceThemePreset}
+                </label>
+                <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+                  {t.appearanceThemePresetHint}
+                </p>
+                <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
+                  {THEME_PRESETS.map((preset) => {
+                    const isActive = preset.id === themePresetId;
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => {
+                          setThemePresetId(preset.id);
+                          setThemePreset(preset.id);
+                        }}
+                        aria-label={t[preset.labelKey as keyof typeof t] as string}
+                        title={t[preset.labelKey as keyof typeof t] as string}
+                        className={`relative flex flex-col items-center gap-1.5 rounded-md border p-3 transition-all ${
+                          isActive
+                            ? 'border-slate-800 ring-2 ring-slate-800/20 dark:border-white dark:ring-white/20'
+                            : 'border-slate-200 hover:border-slate-400 dark:border-slate-700 dark:hover:border-slate-500'
+                        }`}
+                      >
+                        <span
+                          className="block h-8 w-8 rounded-full shadow-sm"
+                          style={{ backgroundColor: preset.swatch }}
+                        />
+                        <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                          {t[preset.labelKey as keyof typeof t] as string}
+                        </span>
+                        {isActive && (
+                          <Check
+                            className="absolute right-1 top-1 text-slate-700 dark:text-white"
+                            style={{ width: 14, height: 14 }}
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           )}
         </div>

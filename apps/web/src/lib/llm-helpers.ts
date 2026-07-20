@@ -4,7 +4,13 @@
 // ============================================================
 
 import { loadConfig } from './llm-config';
-import { callLLM, callLLMStream, type LLMMessage } from './llm-client';
+import {
+  callLLM,
+  callLLMStream,
+  mergeOverride,
+  type LLMMessage,
+  type LLMOverride,
+} from './llm-client';
 
 /**
  * 从 localStorage 加载配置并发起调用（便捷函数）。
@@ -13,21 +19,27 @@ import { callLLM, callLLMStream, type LLMMessage } from './llm-client';
  * - 若传入 onDelta，使用 callLLMStream 流式调用，逐块回调并累加返回完整文本
  * - 否则使用 callLLM 非流式调用
  * - signal 会透传给底层 fetch，可真正中止 HTTP 请求
+ * - override（P2-1）可选：节点级 LLM 配置覆盖，未设置字段回退到全局 llmConfig
  *
  * @param prompt   文本 prompt 或完整消息数组（支持多模态）
  * @param onDelta  可选的流式回调，每收到一块文本即触发
  * @param signal   可选的 AbortSignal，可中止底层 HTTP 请求
+ * @param override 可选的节点级 LLM 覆盖（model / temperature / maxTokens）
  * @returns        完整的 LLM 响应文本
  */
 export async function quickCallLLM(
   prompt: string | LLMMessage[],
   onDelta?: (text: string) => void,
   signal?: AbortSignal,
+  override?: LLMOverride,
 ): Promise<string> {
   const config = loadConfig();
   if (!config || !config.apiKey) {
     throw new Error('请先配置 LLM API Key');
   }
+
+  // P2-1：合并节点级覆盖到全局配置（model 覆盖 config.model，temperature/maxTokens 透传）
+  const { config: effectiveConfig, temperature, maxTokens } = mergeOverride(config, override);
 
   // 字符串则包装为单条 user 消息，数组则直接使用
   const messages: LLMMessage[] = Array.isArray(prompt)
@@ -37,7 +49,13 @@ export async function quickCallLLM(
   // 传入 onDelta 时走流式调用，并把 signal 透传给底层 fetch
   if (onDelta) {
     let accumulated = '';
-    for await (const chunk of callLLMStream({ config, messages, signal })) {
+    for await (const chunk of callLLMStream({
+      config: effectiveConfig,
+      messages,
+      signal,
+      temperature,
+      maxTokens,
+    })) {
       accumulated += chunk;
       onDelta(chunk);
     }
@@ -45,7 +63,7 @@ export async function quickCallLLM(
   }
 
   // 否则走非流式调用，同样透传 signal
-  return callLLM({ config, messages, signal });
+  return callLLM({ config: effectiveConfig, messages, signal, temperature, maxTokens });
 }
 
 /**

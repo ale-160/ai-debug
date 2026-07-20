@@ -17,6 +17,15 @@ import {
   type EdgeChange,
   type Connection,
 } from 'reactflow';
+import {
+  applyPatches,
+  enablePatches,
+  isDraft,
+  original,
+  produceWithPatches,
+  setAutoFreeze,
+  type Patch,
+} from 'immer';
 import type {
   TurnNodeData,
   Suggestion,
@@ -24,11 +33,36 @@ import type {
   MemoryEntry,
   AppSettings,
   AutoEvolutionState,
+  NodeAttachment,
+  Skill,
+  AssistantMessage,
 } from '@/components/node-flow/types';
 import { createTurnNodeData } from '@/components/node-flow/node-definitions';
 import { mergeBranches } from './network-engine';
 import { incrementalLayout } from '@/components/node-flow/radial-layout';
-import { loadConfig, type LLMConfig } from './llm-config';
+import { loadConfig, saveConfig, type LLMConfig } from './llm-config';
+import {
+  listLlmConfigs,
+  getActiveLlmConfig,
+  getActiveLlmConfigId,
+  saveLlmConfig as saveLlmConfigEntry,
+  deleteLlmConfig as deleteLlmConfigEntry,
+  setActiveLlmConfigId,
+  migrateFromLegacyIfNeeded,
+  type LLMConfigEntry,
+} from './multi-llm-config';
+import {
+  listChatSessions,
+  getActiveChatSessionId,
+  getChatSession,
+  createChatSession as createChatSessionEntry,
+  saveChatSession as saveChatSessionEntry,
+  deleteChatSession as deleteChatSessionEntry,
+  renameChatSession as renameChatSessionEntry,
+  setActiveChatSessionId as setActiveChatSessionIdEntry,
+  type ChatSession,
+} from './chat-session-store';
+import { createBuiltinSkills, shouldInjectBuiltinSkills } from './skill-seed';
 import {
   loadSettings,
   saveSettings,
@@ -36,12 +70,100 @@ import {
   saveGlobalMemory,
   DEFAULT_SETTINGS,
 } from './settings-storage';
+import { saveSnapshot as saveSnapshotToStore, getSnapshotById } from './canvas-snapshots-store';
+
+// immer patches 全局初始化：
+// - enablePatches：开启 patch 序列化能力（produceWithPatches 依赖）
+// - setAutoFreeze(false)：draft 结果与 React Flow 的 node 对象共享引用，
+//   冻结会导致 React Flow 内部就地更新报错，故关闭
+enablePatches();
+setAutoFreeze(false);
 
 /** 画布视口 */
 export interface FlowViewport {
   x: number;
   y: number;
   zoom: number;
+}
+
+// ============================================================
+// P0-1：基于 immer patches 的增量撤销/重做
+//
+// 设计：
+// - 历史栈维护在 store 内（_undoStack / _redoStack），不持久化、不进 React 视图
+// - pushHistory 读取当前 nodes/edges，与 _lastHistoryState 做 produceWithPatches
+//   生成 forward/backward patch，push 到 _undoStack 并清空 _redoStack
+// - undo 应用 backward patch，redo 应用 forward patch
+// - 历史栈上限 200 步，500ms 合并窗口（force=true 绕过）
+// - 流式输出不入栈：检测到任意节点 status==='running' 时跳过
+// - undoCount / redoCount 为响应式计数器，UI 据此显示 canUndo / canRedo
+// ============================================================
+
+/** 历史栈上限 */
+const MAX_HISTORY = 200;
+/** 合并窗口（毫秒）：500ms 内的连续变更合并为一条历史 */
+const MERGE_WINDOW_MS = 500;
+
+/** 单条历史条目：forward 用于 redo，backward 用于 undo */
+interface HistoryEntry {
+  forward: Patch[];
+  backward: Patch[];
+}
+
+/** 历史快照状态：patch 计算的 base */
+interface HistoryState {
+  nodes: Node<TurnNodeData>[];
+  edges: Edge[];
+}
+
+/**
+ * 按 id 同步 draft 数组到 newArr，产生最小 patch：
+ * - 移除：newArr 中不存在于 draft 的元素（splice）
+ * - 更新：同 id 但引用变化（内容被替换）的元素就地替换
+ * - 新增：newArr 中新增的元素 push 到末尾
+ *
+ * 假设：调用方不重排数组顺序。本项目内 setNodes/setEdges 均保持顺序
+ * （filter/map/concat），故按 id 同步后顺序与 newArr 一致。
+ *
+ * 注：original() 在运行时按 proxy 标识识别 draft，与静态类型无关，
+ * 此处用 `as unknown` 绕过 immer 复杂的 WritableDraft 嵌套类型，
+ * 避免静态类型不兼容（Draft<T> vs WritableDraft<T>）。
+ */
+function syncArrayById<T extends { id: string }>(draftArr: T[], newArr: T[]) {
+  const newIds = new Set(newArr.map((n) => n.id));
+  // 倒序 splice 移除已删除元素，避免索引错位
+  for (let i = draftArr.length - 1; i >= 0; i--) {
+    const item = draftArr[i];
+    const orig = isDraft(item)
+      ? (original(item as unknown) as { id: string } | undefined)
+      : (item as { id: string });
+    if (!orig || !newIds.has(orig.id)) {
+      draftArr.splice(i, 1);
+    }
+  }
+  // 构建 id → 当前索引映射（基于移除后的数组）
+  const existingIdx = new Map<string, number>();
+  draftArr.forEach((n, i) => {
+    const orig = isDraft(n)
+      ? (original(n as unknown) as { id: string } | undefined)
+      : (n as { id: string });
+    if (orig) existingIdx.set(orig.id, i);
+  });
+  // 更新已存在元素（仅引用变化时替换）或追加新增元素
+  for (const item of newArr) {
+    const idx = existingIdx.get(item.id);
+    if (idx === undefined) {
+      draftArr.push(item);
+    } else {
+      const draftItem = draftArr[idx];
+      const origDraft = isDraft(draftItem)
+        ? (original(draftItem as unknown) as { id: string } | undefined)
+        : (draftItem as { id: string });
+      if (origDraft !== item) {
+        draftArr[idx] = item;
+      }
+    }
+  }
 }
 
 /**
@@ -108,8 +230,21 @@ interface NetworkState {
   onConnect: (connection: Connection) => void;
 
   // ========== 节点操作 ==========
-  /** 创建一个 Turn 节点，返回新节点 id */
-  createTurnNode: (userMessage: string, parentId: string | null) => string;
+  /**
+   * 创建一个 Turn 节点，返回新节点 id。
+   * @param userMessage  用户消息文本
+   * @param parentId     父节点 ID（根节点为 null）
+   * @param options      可选：images 图片 base64 列表 / attachments 多模态附件 / source 来源标记
+   */
+  createTurnNode: (
+    userMessage: string,
+    parentId: string | null,
+    options?: {
+      images?: string[];
+      attachments?: NodeAttachment[];
+      source?: 'manual' | 'assistant';
+    },
+  ) => string;
   /** 创建合并节点（多选节点合并为新支线根），返回新节点 id。LLM 调用由调用方触发 */
   createMergedNode: (sourceIds: string[], intent: string) => string;
   /** 更新节点 data 的部分字段 */
@@ -242,6 +377,129 @@ interface NetworkState {
   removeNodeTag: (nodeId: string, tag: string) => void;
   /** 设置节点命名分支名 */
   setNodeBranchName: (nodeId: string, branchName: string) => void;
+
+  // ========== 撤销 / 重做（P0-1：immer patches 增量历史） ==========
+  /** 撤销栈计数器（响应式，UI 据此判断 canUndo）。不持久化 */
+  undoCount: number;
+  /** 重做栈计数器（响应式，UI 据此判断 canRedo）。不持久化 */
+  redoCount: number;
+  /** 撤销栈（运行时态，不持久化、不进 React 视图） */
+  _undoStack: HistoryEntry[];
+  /** 重做栈（运行时态，不持久化、不进 React 视图） */
+  _redoStack: HistoryEntry[];
+  /** 上次入栈时的完整状态（patch 计算的 base）。不持久化 */
+  _lastHistoryState: HistoryState | null;
+  /** undo/redo 进行中标记：避免 set nodes/edges 触发的订阅者再次入栈 */
+  _isUndoRedoing: boolean;
+  /** 上次 pushHistory 时间戳（500ms 合并窗口用）。不持久化 */
+  _lastPushTime: number;
+  /**
+   * 推当前画布状态入历史栈。
+   * - 读取当前 nodes/edges 与 _lastHistoryState 做 produceWithPatches 生成增量 patch
+   * - 检测到任意节点 status==='running' 时跳过（流式输出不入栈）
+   * - force=true 绕过 500ms 合并窗口（用于 create/delete/branch 等关键操作）
+   */
+  pushHistory: (force?: boolean) => void;
+  /** 撤销：应用栈顶 backward patch 回滚到上一状态 */
+  undo: () => void;
+  /** 重做：应用栈顶 forward patch 重做到下一状态 */
+  redo: () => void;
+  /** 清空历史栈（切换项目 / 新建项目时调用） */
+  clearHistory: () => void;
+
+  // ========== 命名画布快照（P1-3） ==========
+  /**
+   * 保存当前画布为命名快照（剥离运行时字段）。
+   * 草稿态（currentProjectId 为空）拒绝保存。
+   * 流式请求中拒绝保存（避免捕获中间态）。
+   * 返回新快照 id，失败返回 null。
+   */
+  saveSnapshot: (name: string) => string | null;
+  /**
+   * 恢复到指定快照：清空 undo/redo 栈 + 替换画布 + 重置历史 base。
+   * 流式请求中拒绝恢复。
+   * 快照不存在时静默返回 false。
+   * 成功返回 true。
+   */
+  restoreSnapshot: (snapshotId: string) => boolean;
+
+  // ========== 助手对话（PR-1：侧边栏 Agent 助手） ==========
+  /** 助手消息列表：独立于节点对话，侧边栏助手面板用 */
+  assistantMessages: AssistantMessage[];
+  /** 助手面板可见性 */
+  assistantPanelOpen: boolean;
+  /** 助手当前激活的技能 ID（null 表示不使用技能） */
+  activeSkillId: string | null;
+  /** 助手流式请求的 AbortController（不持久化） */
+  _assistantAbortController: AbortController | null;
+  /** 添加助手消息 */
+  addAssistantMessage: (message: AssistantMessage) => void;
+  /** 更新助手消息的部分字段 */
+  updateAssistantMessage: (id: string, partial: Partial<AssistantMessage>) => void;
+  /** 流式追加助手消息内容 */
+  appendAssistantMessageChunk: (id: string, delta: string) => void;
+  /** 清空助手消息列表 */
+  clearAssistantMessages: () => void;
+  /** 设置助手面板可见性 */
+  setAssistantPanelOpen: (open: boolean) => void;
+  /** 设置当前激活的技能 ID */
+  setActiveSkillId: (skillId: string | null) => void;
+  /** 注册助手的 AbortController */
+  registerAssistantAbortController: (controller: AbortController | null) => void;
+  /** 中止助手正在进行的流式请求 */
+  abortAssistantStream: () => void;
+
+  // ========== Skill 技能体系（PR-1） ==========
+  /** 技能列表 */
+  skills: Skill[];
+  /** 技能管理面板可见性 */
+  skillManagerOpen: boolean;
+  /** 添加技能 */
+  addSkill: (skill: Skill) => void;
+  /** 更新技能的部分字段 */
+  updateSkill: (id: string, partial: Partial<Skill>) => void;
+  /** 删除技能 */
+  deleteSkill: (id: string) => void;
+  /** 批量导入技能（覆盖式） */
+  importSkills: (skills: Skill[]) => void;
+  /** 设置技能管理面板可见性 */
+  setSkillManagerOpen: (open: boolean) => void;
+  /** 从 storage 重新加载技能列表 */
+  refreshSkills: () => void;
+
+  // ========== 多 LLM 配置（PR-3） ==========
+  /** 多 LLM 配置列表 */
+  llmConfigs: LLMConfigEntry[];
+  /** 当前激活的配置 id（null 表示未激活） */
+  activeLlmConfigId: string | null;
+  /** 从 storage 重新加载 llmConfigs + activeLlmConfigId，同时同步全局 llmConfig */
+  refreshLlmConfigs: () => void;
+  /** 新增 / 更新 LLM 配置（input.id 存在则更新） */
+  addLlmConfig: (
+    input: Omit<LLMConfigEntry, 'id' | 'createdAt' | 'updatedAt'> & { id?: string },
+  ) => LLMConfigEntry;
+  /** 删除 LLM 配置；若删除的是 active，自动切到第一个 */
+  removeLlmConfig: (id: string) => void;
+  /** 切换激活的 LLM 配置：setActive + refreshLlmConfigs + 同步全局 llmConfig */
+  switchLlmConfig: (id: string) => void;
+
+  // ========== 助手会话（PR-3） ==========
+  /** 助手会话列表 */
+  chatSessions: ChatSession[];
+  /** 当前激活的会话 id（null 表示未激活） */
+  activeChatSessionId: string | null;
+  /** 从 storage 重新加载 chatSessions + activeChatSessionId */
+  refreshChatSessions: () => void;
+  /** 新建会话：把当前 assistantMessages 保存到新会话并激活 */
+  createChatSession: (title?: string) => ChatSession;
+  /** 切换会话：先保存当前 assistantMessages 到当前会话，再加载目标会话的 messages */
+  switchChatSession: (id: string) => void;
+  /** 删除会话；若删除的是 active，自动切到第一个或清空 */
+  deleteChatSession: (id: string) => void;
+  /** 重命名会话 */
+  renameChatSession: (id: string, title: string) => void;
+  /** 把当前 assistantMessages 持久化到当前激活的会话（流式结束后调用） */
+  persistCurrentChatSession: () => void;
 }
 
 /**
@@ -273,6 +531,8 @@ function collectDescendants(nodeId: string, nodes: Node<TurnNodeData>[]): Set<st
 export const STORE_PERSIST_KEY = 'ai-debug-store';
 /** 旧项目数据 key（project-storage 历史使用） */
 const LEGACY_PROJECTS_KEY = 'ai-debug:network-projects';
+/** Skill 技能列表独立持久化 key（避免污染主 persist key） */
+export const SKILLS_STORAGE_KEY = 'ai-debug:skills';
 
 /**
  * 迁移旧 key `ai-debug:network-projects` 到新 persist key `ai-debug-store`。
@@ -298,6 +558,35 @@ export function migrateLegacyProjectsKey(): void {
     }
   } catch {
     // 旧数据损坏，静默跳过（persist 会用默认空状态）
+  }
+}
+
+/**
+ * 从 localStorage 加载技能列表。
+ * 非浏览器环境（SSR）返回空数组。
+ */
+function loadSkillsFromStorage(): Skill[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(SKILLS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 把技能列表持久化到 localStorage。
+ * 非浏览器环境（SSR）静默跳过。
+ */
+function persistSkills(skills: Skill[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(SKILLS_STORAGE_KEY, JSON.stringify(skills));
+  } catch {
+    // 容量超限或禁用，静默跳过
   }
 }
 
@@ -381,16 +670,17 @@ export const useDebugStore = create<NetworkState>()(
             edges: addEdge({ ...connection, animated: false }, state.edges),
             isDirty: true,
           }));
+          get().pushHistory(true);
         },
 
         // ========== 节点操作 ==========
-        createTurnNode: (userMessage, parentId) => {
+        createTurnNode: (userMessage, parentId, options) => {
           const id = generateNodeId('turn');
           const newNode: Node<TurnNodeData> = {
             id,
             type: 'turn',
             position: { x: 0, y: 0 },
-            data: createTurnNodeData(userMessage, parentId),
+            data: createTurnNodeData(userMessage, parentId, options),
           };
           // 先 append 节点，再视情况补 edge，最后增量布局
           set((state) => {
@@ -416,6 +706,8 @@ export const useDebugStore = create<NetworkState>()(
           if (parentId !== null) {
             get().setSelectedChild(parentId, id);
           }
+          // 节点创建为离散操作：force=true 绕过合并窗口
+          get().pushHistory(true);
           return id;
         },
 
@@ -442,6 +734,7 @@ export const useDebugStore = create<NetworkState>()(
             const positioned = newNodes.map((n) => (n.id === id ? { ...n, position } : n));
             return { nodes: positioned, isDirty: true };
           });
+          get().pushHistory(true);
           return id;
         },
 
@@ -526,6 +819,7 @@ export const useDebugStore = create<NetworkState>()(
               isDirty: true,
             };
           });
+          get().pushHistory(true);
         },
 
         // 删除本次推演产生的所有节点（按 evolutionMeta.startNodeId 匹配）。
@@ -548,6 +842,7 @@ export const useDebugStore = create<NetworkState>()(
               isDirty: true,
             };
           });
+          get().pushHistory(true);
         },
 
         // ========== 支线操作 ==========
@@ -564,6 +859,7 @@ export const useDebugStore = create<NetworkState>()(
               isDirty: true,
             };
           });
+          get().pushHistory(true);
         },
 
         reactivateBranch: (nodeId) => {
@@ -586,6 +882,7 @@ export const useDebugStore = create<NetworkState>()(
               isDirty: true,
             };
           });
+          get().pushHistory(true);
         },
 
         // 忽略节点：仅标记单节点，不级联子节点。子节点照常运行，但构建 LLM
@@ -597,6 +894,7 @@ export const useDebugStore = create<NetworkState>()(
             ),
             isDirty: true,
           }));
+          get().pushHistory(true);
         },
 
         // 取消忽略：依据 assistantMessage 是否非空恢复为 success/idle
@@ -618,6 +916,7 @@ export const useDebugStore = create<NetworkState>()(
             ),
             isDirty: true,
           }));
+          get().pushHistory(true);
         },
 
         // ========== 选中 / 视口 ==========
@@ -668,6 +967,8 @@ export const useDebugStore = create<NetworkState>()(
             // 清空分支切换器选中状态（UI 临时态不跨项目）
             selectedChildIdMap: {},
           });
+          // 切换项目清空历史栈（草稿态不入栈，等绑定项目后再记录 base）
+          get().clearHistory();
         },
 
         loadProject: (id) => {
@@ -692,6 +993,8 @@ export const useDebugStore = create<NetworkState>()(
             // 清空分支切换器选中状态（UI 临时态不跨项目）
             selectedChildIdMap: {},
           });
+          // 切换项目清空历史栈，并以新项目画布作为下次 push 的 base
+          get().clearHistory();
         },
 
         // 立即保存当前项目的未保存改动（persist 接管后：更新 store.projects 中对应项目，
@@ -851,7 +1154,26 @@ export const useDebugStore = create<NetworkState>()(
           set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
         setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
 
-        refreshLlmConfig: () => set({ llmConfig: loadConfig() }),
+        refreshLlmConfig: () => {
+          // 优先用 multi-llm-configs 中激活的配置；否则回退到旧的 single llm-config（向后兼容）
+          const activeEntry = getActiveLlmConfig();
+          if (activeEntry) {
+            // 同步写入旧 key 保证其他依赖 llm-config 的模块正常工作
+            saveConfig(activeEntry.config);
+            set({
+              llmConfig: activeEntry.config,
+              llmConfigs: listLlmConfigs(),
+              activeLlmConfigId: getActiveLlmConfigId(),
+            });
+            return;
+          }
+          // 回退：旧的 single llm-config
+          set({
+            llmConfig: loadConfig(),
+            llmConfigs: listLlmConfigs(),
+            activeLlmConfigId: getActiveLlmConfigId(),
+          });
+        },
 
         setShowMemoryPanel: (show) => set({ showMemoryPanel: show }),
 
@@ -924,7 +1246,7 @@ export const useDebugStore = create<NetworkState>()(
         viewMode: 'web',
         setViewMode: (mode) => set({ viewMode: mode }),
         // 给节点打标签：使用 Set 去重，避免重复标签
-        addNodeTag: (nodeId, tag) =>
+        addNodeTag: (nodeId, tag) => {
           set((state) => ({
             nodes: state.nodes.map((n) =>
               n.id === nodeId
@@ -938,9 +1260,11 @@ export const useDebugStore = create<NetworkState>()(
                 : n,
             ),
             isDirty: true,
-          })),
+          }));
+          get().pushHistory(true);
+        },
         // 移除节点标签：过滤掉目标 tag，空数组保留（与 undefined 等价处理）
-        removeNodeTag: (nodeId, tag) =>
+        removeNodeTag: (nodeId, tag) => {
           set((state) => ({
             nodes: state.nodes.map((n) =>
               n.id === nodeId
@@ -954,15 +1278,521 @@ export const useDebugStore = create<NetworkState>()(
                 : n,
             ),
             isDirty: true,
-          })),
+          }));
+          get().pushHistory(true);
+        },
         // 设置节点命名分支名：分支名挂在代表节点上（HEAD），空串等价于清除
-        setNodeBranchName: (nodeId, branchName) =>
+        setNodeBranchName: (nodeId, branchName) => {
           set((state) => ({
             nodes: state.nodes.map((n) =>
               n.id === nodeId ? { ...n, data: { ...n.data, branchName } } : n,
             ),
             isDirty: true,
+          }));
+          get().pushHistory(true);
+        },
+
+        // ========== 撤销 / 重做（P0-1：immer patches 增量历史） ==========
+        // 初始计数器为 0，挂载/切换项目时由 clearHistory 重置
+        undoCount: 0,
+        redoCount: 0,
+        // 历史栈与 base state 不持久化、不进 React 视图（仅靠计数器触发响应式）
+        _undoStack: [],
+        _redoStack: [],
+        _lastHistoryState: null,
+        _isUndoRedoing: false,
+        _lastPushTime: 0,
+
+        /**
+         * 推当前画布状态入历史栈。
+         * 流式输出（任意节点 status==='running'）不入栈；
+         * 500ms 合并窗口（force=true 绕过，用于 create/delete/branch 等关键操作）。
+         */
+        pushHistory: (force = false) => {
+          const state = get();
+          // undo/redo 进行中：避免 set nodes/edges 触发的订阅者再次入栈
+          if (state._isUndoRedoing) return;
+          // 流式输出不入栈（项目硬约束）
+          if (state.nodes.some((n) => n.data.status === 'running')) return;
+          // 500ms 合并窗口
+          if (!force && Date.now() - state._lastPushTime < MERGE_WINDOW_MS) return;
+
+          const base = state._lastHistoryState;
+          // 首次入栈：仅记录 base，不产生 patch（无前序状态可对比）
+          if (!base) {
+            set({
+              _lastHistoryState: { nodes: state.nodes, edges: state.edges },
+              _lastPushTime: Date.now(),
+            });
+            return;
+          }
+
+          const currentNodes = state.nodes;
+          const currentEdges = state.edges;
+          // 计算 base → current 的增量 patch
+          const [nextState, patches, inversePatches] = produceWithPatches(base, (draft) => {
+            syncArrayById(draft.nodes, currentNodes);
+            syncArrayById(draft.edges, currentEdges);
+          });
+          // 无变更则不入栈
+          if (patches.length === 0) return;
+
+          const newUndoStack = [
+            ...state._undoStack,
+            { forward: patches, backward: inversePatches },
+          ];
+          // 上限 200 步：超出时丢弃最早的历史
+          if (newUndoStack.length > MAX_HISTORY) {
+            newUndoStack.shift();
+          }
+          set({
+            _undoStack: newUndoStack,
+            _redoStack: [],
+            _lastHistoryState: nextState,
+            _lastPushTime: Date.now(),
+            undoCount: newUndoStack.length,
+            redoCount: 0,
+          });
+        },
+
+        /** 撤销：弹出 _undoStack 栈顶，应用 backward patch 回滚 nodes/edges */
+        undo: () => {
+          const state = get();
+          if (state._undoStack.length === 0 || state._isUndoRedoing) return;
+          const entry = state._undoStack[state._undoStack.length - 1];
+          const base = state._lastHistoryState;
+          if (!base) return;
+          // 应用 backward patch 回滚到上一个状态
+          const reverted = applyPatches(base, entry.backward);
+          set({
+            _undoStack: state._undoStack.slice(0, -1),
+            _redoStack: [...state._redoStack, entry],
+            _lastHistoryState: reverted,
+            _isUndoRedoing: true,
+            nodes: reverted.nodes,
+            edges: reverted.edges,
+            isDirty: true,
+            undoCount: state._undoStack.length - 1,
+            redoCount: state._redoStack.length + 1,
+          });
+          // 同步释放标记：使用微任务确保本次 set 触发的订阅者跳过入栈
+          Promise.resolve().then(() => {
+            set({ _isUndoRedoing: false });
+          });
+        },
+
+        /** 重做：弹出 _redoStack 栈顶，应用 forward patch 重做 nodes/edges */
+        redo: () => {
+          const state = get();
+          if (state._redoStack.length === 0 || state._isUndoRedoing) return;
+          const entry = state._redoStack[state._redoStack.length - 1];
+          const base = state._lastHistoryState;
+          if (!base) return;
+          // 应用 forward patch 重做到下一个状态
+          const applied = applyPatches(base, entry.forward);
+          set({
+            _redoStack: state._redoStack.slice(0, -1),
+            _undoStack: [...state._undoStack, entry],
+            _lastHistoryState: applied,
+            _isUndoRedoing: true,
+            nodes: applied.nodes,
+            edges: applied.edges,
+            isDirty: true,
+            undoCount: state._undoStack.length + 1,
+            redoCount: state._redoStack.length - 1,
+          });
+          Promise.resolve().then(() => {
+            set({ _isUndoRedoing: false });
+          });
+        },
+
+        /** 清空历史栈：切换项目 / 新建项目 / 加载项目时调用 */
+        clearHistory: () => {
+          const state = get();
+          set({
+            _undoStack: [],
+            _redoStack: [],
+            _lastHistoryState: state.currentProjectId
+              ? { nodes: state.nodes, edges: state.edges }
+              : null,
+            _isUndoRedoing: false,
+            _lastPushTime: 0,
+            undoCount: 0,
+            redoCount: 0,
+          });
+        },
+
+        // ========== 命名画布快照（P1-3） ==========
+        /**
+         * 保存当前画布为命名快照。
+         * - 草稿态（currentProjectId 为空）拒绝保存
+         * - 流式请求中拒绝保存（避免捕获中间态）
+         * - 剥离运行时字段 status/result/errorMessage，保证快照是干净状态
+         */
+        saveSnapshot: (name) => {
+          const state = get();
+          // 草稿态拒绝保存
+          if (!state.currentProjectId) return null;
+          // 流式请求中拒绝保存
+          if (state.nodes.some((n) => n.data.status === 'running')) return null;
+
+          // 剥离运行时字段，避免快照残留 running/success/result 等执行态
+          const cleanNodes = state.nodes.map((n) => ({
+            ...n,
+            data: {
+              ...n.data,
+              status: 'idle' as const,
+              errorMessage: undefined,
+            },
+          }));
+          const cleanEdges = state.edges;
+
+          const snap = saveSnapshotToStore({
+            name: name.trim() || `快照 ${new Date().toLocaleString()}`,
+            nodes: cleanNodes,
+            edges: cleanEdges,
+            viewport: state.viewport ?? undefined,
+            projectId: state.currentProjectId,
+            nodeCount: cleanNodes.length,
+            edgeCount: cleanEdges.length,
+          });
+          return snap.id;
+        },
+
+        /**
+         * 恢复到指定快照。
+         * - 流式请求中拒绝恢复
+         * - 快照不存在时静默返回 false
+         * - 恢复时清空 undo/redo 栈（状态完全切换，无法逐步回退）
+         * - 重置 _lastHistoryState 为快照状态，作为后续 push 的 base
+         * - 使用 _isUndoRedoing 守卫避免替换过程中触发 pushHistory
+         */
+        restoreSnapshot: (snapshotId) => {
+          const state = get();
+          // 流式请求中拒绝恢复
+          if (state.nodes.some((n) => n.data.status === 'running')) return false;
+
+          const snap = getSnapshotById(snapshotId);
+          if (!snap) return false;
+
+          // 还原节点：剥离运行时字段，确保回滚后画布是干净状态
+          const cleanNodes = snap.nodes.map((n) => ({
+            ...n,
+            data: {
+              ...n.data,
+              status: 'idle' as const,
+              errorMessage: undefined,
+            },
+          }));
+          const cleanEdges = snap.edges;
+
+          set({
+            nodes: cleanNodes,
+            edges: cleanEdges,
+            viewport: snap.viewport ?? null,
+            selectedNodeId: null,
+            isDirty: true,
+            // 清空 undo/redo 栈（状态完全切换）
+            _undoStack: [],
+            _redoStack: [],
+            _lastHistoryState: { nodes: cleanNodes, edges: cleanEdges },
+            _isUndoRedoing: true,
+            _lastPushTime: 0,
+            undoCount: 0,
+            redoCount: 0,
+          });
+          // 同步释放守卫：使用微任务确保本次 set 触发的订阅者跳过入栈
+          Promise.resolve().then(() => {
+            set({ _isUndoRedoing: false });
+          });
+          return true;
+        },
+
+        // ========== 助手对话（PR-1） ==========
+        // 助手消息列表默认空数组，不持久化（切换项目/刷新即清空）
+        assistantMessages: [],
+        // 助手面板默认关闭
+        assistantPanelOpen: false,
+        // 默认不激活任何技能
+        activeSkillId: null,
+        // 流式 AbortController 不持久化
+        _assistantAbortController: null,
+
+        addAssistantMessage: (message) =>
+          set((state) => ({ assistantMessages: [...state.assistantMessages, message] })),
+        updateAssistantMessage: (id, partial) =>
+          set((state) => ({
+            assistantMessages: state.assistantMessages.map((m) =>
+              m.id === id ? { ...m, ...partial } : m,
+            ),
           })),
+        // 流式追加：content += delta；同时兜底确保 status 为 streaming
+        appendAssistantMessageChunk: (id, delta) =>
+          set((state) => ({
+            assistantMessages: state.assistantMessages.map((m) =>
+              m.id === id
+                ? {
+                    ...m,
+                    content: m.content + delta,
+                    status: 'streaming' as const,
+                  }
+                : m,
+            ),
+          })),
+        clearAssistantMessages: () => set({ assistantMessages: [] }),
+        setAssistantPanelOpen: (open) => set({ assistantPanelOpen: open }),
+        setActiveSkillId: (skillId) => set({ activeSkillId: skillId }),
+        registerAssistantAbortController: (controller) => {
+          const state = get();
+          // 覆盖前先 abort 旧的，避免悬挂请求
+          if (state._assistantAbortController && !state._assistantAbortController.signal.aborted) {
+            state._assistantAbortController.abort();
+          }
+          // 不触发 set（不进 React 视图，避免无谓重渲染）
+          state._assistantAbortController = controller;
+        },
+        abortAssistantStream: () => {
+          const state = get();
+          if (state._assistantAbortController && !state._assistantAbortController.signal.aborted) {
+            state._assistantAbortController.abort();
+          }
+        },
+
+        // ========== Skill 技能体系（PR-1） ==========
+        // SSR 安全：初始为空数组，客户端挂载时由 refreshSkills() 从 localStorage 加载
+        skills: [],
+        skillManagerOpen: false,
+
+        addSkill: (skill) => {
+          set((state) => ({ skills: [...state.skills, skill] }));
+          // 持久化到独立 storage（避免污染主 persist key）
+          persistSkills(get().skills);
+        },
+        updateSkill: (id, partial) => {
+          set((state) => ({
+            skills: state.skills.map((s) =>
+              s.id === id ? { ...s, ...partial, updatedAt: Date.now() } : s,
+            ),
+          }));
+          persistSkills(get().skills);
+        },
+        deleteSkill: (id) => {
+          set((state) => ({ skills: state.skills.filter((s) => s.id !== id) }));
+          // 若删除的是当前激活技能，清空激活态
+          if (get().activeSkillId === id) {
+            set({ activeSkillId: null });
+          }
+          persistSkills(get().skills);
+        },
+        importSkills: (skills) => {
+          set({ skills });
+          persistSkills(skills);
+        },
+        setSkillManagerOpen: (open) => set({ skillManagerOpen: open }),
+        refreshSkills: () => {
+          const existing = loadSkillsFromStorage();
+          // 首次启动（用户技能列表为空）自动注入内置技能
+          if (shouldInjectBuiltinSkills(existing)) {
+            const builtin = createBuiltinSkills();
+            persistSkills(builtin);
+            set({ skills: builtin });
+          } else {
+            set({ skills: existing });
+          }
+        },
+
+        // ========== 多 LLM 配置（PR-3） ==========
+        // SSR 安全：初始为空数组，客户端挂载时由 refreshLlmConfigs() 从 localStorage 加载
+        llmConfigs: [],
+        activeLlmConfigId: null,
+
+        refreshLlmConfigs: () => {
+          // 一次性迁移旧 llm-config → multi-llm-configs（若有）
+          migrateFromLegacyIfNeeded();
+          const activeEntry = getActiveLlmConfig();
+          if (activeEntry) {
+            // 同步写入旧 key 保证其他依赖 llm-config 的模块正常工作
+            saveConfig(activeEntry.config);
+            set({
+              llmConfig: activeEntry.config,
+              llmConfigs: listLlmConfigs(),
+              activeLlmConfigId: getActiveLlmConfigId(),
+            });
+            return;
+          }
+          // 回退：旧 single llm-config（向后兼容）
+          set({
+            llmConfig: loadConfig(),
+            llmConfigs: listLlmConfigs(),
+            activeLlmConfigId: getActiveLlmConfigId(),
+          });
+        },
+
+        addLlmConfig: (input) => {
+          const entry = saveLlmConfigEntry(input);
+          // 若尚无激活配置，自动激活新增的
+          if (!getActiveLlmConfigId()) {
+            setActiveLlmConfigId(entry.id);
+            saveConfig(entry.config);
+            set({
+              llmConfigs: listLlmConfigs(),
+              activeLlmConfigId: entry.id,
+              llmConfig: entry.config,
+            });
+          } else {
+            set({ llmConfigs: listLlmConfigs() });
+          }
+          return entry;
+        },
+
+        removeLlmConfig: (id) => {
+          deleteLlmConfigEntry(id);
+          // 若删除的是 active，自动切到第一个
+          if (get().activeLlmConfigId === id) {
+            const remaining = listLlmConfigs();
+            const next = remaining[0] ?? null;
+            if (next) {
+              setActiveLlmConfigId(next.id);
+              saveConfig(next.config);
+              set({
+                llmConfigs: remaining,
+                activeLlmConfigId: next.id,
+                llmConfig: next.config,
+              });
+            } else {
+              setActiveLlmConfigId(null);
+              set({
+                llmConfigs: remaining,
+                activeLlmConfigId: null,
+                llmConfig: loadConfig(),
+              });
+            }
+          } else {
+            set({ llmConfigs: listLlmConfigs() });
+          }
+        },
+
+        switchLlmConfig: (id) => {
+          const entry = listLlmConfigs().find((e) => e.id === id);
+          if (!entry) return;
+          setActiveLlmConfigId(id);
+          // 同步旧 key 保证兼容
+          saveConfig(entry.config);
+          set({
+            activeLlmConfigId: id,
+            llmConfig: entry.config,
+            llmConfigs: listLlmConfigs(),
+          });
+        },
+
+        // ========== 助手会话（PR-3） ==========
+        // SSR 安全：初始为空数组，客户端挂载时由 refreshChatSessions() 从 localStorage 加载
+        chatSessions: [],
+        activeChatSessionId: null,
+
+        refreshChatSessions: () => {
+          set({
+            chatSessions: listChatSessions(),
+            activeChatSessionId: getActiveChatSessionId(),
+          });
+        },
+
+        createChatSession: (title) => {
+          // 先把当前 assistantMessages 保存到当前激活会话（如有）
+          const currentId = get().activeChatSessionId;
+          if (currentId) {
+            const currentSession = getChatSession(currentId);
+            if (currentSession) {
+              saveChatSessionEntry({
+                ...currentSession,
+                messages: get().assistantMessages,
+              });
+            }
+          }
+          const session = createChatSessionEntry(title);
+          setActiveChatSessionIdEntry(session.id);
+          // 新会话 messages 为空，清空当前 assistantMessages
+          set({
+            chatSessions: listChatSessions(),
+            activeChatSessionId: session.id,
+            assistantMessages: [],
+          });
+          return session;
+        },
+
+        switchChatSession: (id) => {
+          if (id === get().activeChatSessionId) return;
+          // 先保存当前 assistantMessages 到当前激活会话
+          const currentId = get().activeChatSessionId;
+          if (currentId) {
+            const currentSession = getChatSession(currentId);
+            if (currentSession) {
+              saveChatSessionEntry({
+                ...currentSession,
+                messages: get().assistantMessages,
+              });
+            }
+          }
+          // 切换并加载目标会话的 messages
+          const target = getChatSession(id);
+          if (!target) return;
+          setActiveChatSessionIdEntry(id);
+          set({
+            activeChatSessionId: id,
+            chatSessions: listChatSessions(),
+            assistantMessages: target.messages,
+          });
+        },
+
+        deleteChatSession: (id) => {
+          const wasActive = get().activeChatSessionId === id;
+          deleteChatSessionEntry(id);
+          const remaining = listChatSessions();
+          if (wasActive) {
+            // 切到第一个；若无则清空
+            const next = remaining[0] ?? null;
+            if (next) {
+              setActiveChatSessionIdEntry(next.id);
+              set({
+                chatSessions: remaining,
+                activeChatSessionId: next.id,
+                assistantMessages: next.messages,
+              });
+            } else {
+              setActiveChatSessionIdEntry(null);
+              set({
+                chatSessions: remaining,
+                activeChatSessionId: null,
+                assistantMessages: [],
+              });
+            }
+          } else {
+            set({ chatSessions: remaining });
+          }
+        },
+
+        renameChatSession: (id, title) => {
+          renameChatSessionEntry(id, title);
+          set({ chatSessions: listChatSessions() });
+        },
+
+        persistCurrentChatSession: () => {
+          const currentId = get().activeChatSessionId;
+          if (!currentId) return;
+          const currentSession = getChatSession(currentId);
+          if (!currentSession) return;
+          // 只在非流式状态下持久化（避免捕获中间态）
+          if (
+            get().assistantMessages.some((m) => m.status === 'streaming' || m.status === 'pending')
+          ) {
+            return;
+          }
+          saveChatSessionEntry({
+            ...currentSession,
+            messages: get().assistantMessages,
+          });
+          set({ chatSessions: listChatSessions() });
+        },
       }),
       // persist 中间件配置：只持久化 projects + currentProjectId
       // 排除所有 UI 临时态：nodes/edges/selectedNodeId/viewport/focusMode/isDirty/
@@ -971,6 +1801,9 @@ export const useDebugStore = create<NetworkState>()(
       // highlightedPathIds/autoEvolutionState/_abortControllers/
       // selectedChildIdMap（T017 将新增，已预留排除）
       // viewMode（T026 git 模式视图切换，UI 临时态不持久化）
+      // assistantMessages/assistantPanelOpen/activeSkillId/_assistantAbortController
+      //   助手对话临时态不持久化，切换项目/刷新即清空
+      // skills/skillManagerOpen 由 SKILLS_STORAGE_KEY 独立管理（refreshSkills 兼容）
       // appSettings/globalMemory 由 settings-storage 独立管理（保留 refresh* 兼容）
       {
         name: STORE_PERSIST_KEY,

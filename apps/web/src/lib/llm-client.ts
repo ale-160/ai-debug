@@ -28,6 +28,35 @@ export interface CallLLMOptions {
 }
 
 /**
+ * P2-1：节点级 LLM 配置覆盖值。
+ * 未设置的字段使用全局 llmConfig 默认值。
+ * 与 TurnNodeData.llmOverride 结构一致，通过 TypeScript 结构类型兼容。
+ */
+export interface LLMOverride {
+  model?: string;
+  temperature?: number;
+  maxTokens?: number;
+}
+
+/**
+ * P2-1：合并节点级 LLM 覆盖到全局配置。
+ * - model：覆盖 config.model（undefined 时保持全局 model）
+ * - temperature / maxTokens：透传给 callLLM/callLLMStream（undefined 时由其使用默认值）
+ * 调用方将返回的 config 与可选 temperature/maxTokens 直接传入 CallLLMOptions 即可。
+ */
+export function mergeOverride(
+  config: LLMConfig,
+  override?: LLMOverride,
+): { config: LLMConfig; temperature?: number; maxTokens?: number } {
+  if (!override) return { config };
+  return {
+    config: override.model ? { ...config, model: override.model } : config,
+    temperature: override.temperature,
+    maxTokens: override.maxTokens,
+  };
+}
+
+/**
  * LLM HTTP 错误。携带 status 与可选 retryAfterMs（来自 Retry-After 头），
  * 供并发池识别可重试错误（429/5xx）与计算退避时间。
  */

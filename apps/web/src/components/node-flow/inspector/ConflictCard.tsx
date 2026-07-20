@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle, Ban, ScanSearch, EyeOff } from 'lucide-react';
+import { AlertTriangle, Ban, ScanSearch, EyeOff, Scale } from 'lucide-react';
 import { useTranslation } from '@/components/I18nProvider';
 
 interface ConflictCardProps {
@@ -18,9 +18,11 @@ interface ConflictCardProps {
   onIgnore: () => void;
   /** 清除冲突标注 */
   onClear: () => void;
+  /** 人工决策：弹出 ConflictDecisionModal 让用户选择处理方式 */
+  onManualDecision?: () => void;
 }
 
-/** 冲突标注卡片：当前节点被标记冲突时显示，提供处理操作（弃用/裁剪/忽略/清除） */
+/** 冲突标注卡片：当前节点被标记冲突时显示，提供处理操作（弃用/裁剪/忽略/清除/人工决策） */
 export default function ConflictCard({
   conflictNote,
   isAbandoned,
@@ -29,6 +31,7 @@ export default function ConflictCard({
   onPrune,
   onIgnore,
   onClear,
+  onManualDecision,
 }: ConflictCardProps) {
   const { t } = useTranslation();
   return (
@@ -72,6 +75,16 @@ export default function ConflictCard({
         >
           {t.clearLabel}
         </button>
+        {/* 人工决策入口：触发 ConflictDecisionModal 让用户在 4 种处理方式中选择 */}
+        {onManualDecision && (
+          <button
+            onClick={onManualDecision}
+            className="inline-flex items-center gap-1 rounded bg-violet-500 px-2 py-1 text-xs text-white hover:bg-violet-600"
+          >
+            <Scale size={12} />
+            {t.conflictDecision}
+          </button>
+        )}
       </div>
     </div>
   );

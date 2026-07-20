@@ -40,7 +40,28 @@ import type {
 import { createTurnNodeData } from '@/components/node-flow/node-definitions';
 import { mergeBranches } from './network-engine';
 import { incrementalLayout } from '@/components/node-flow/radial-layout';
-import { loadConfig, type LLMConfig } from './llm-config';
+import { loadConfig, saveConfig, type LLMConfig } from './llm-config';
+import {
+  listLlmConfigs,
+  getActiveLlmConfig,
+  getActiveLlmConfigId,
+  saveLlmConfig as saveLlmConfigEntry,
+  deleteLlmConfig as deleteLlmConfigEntry,
+  setActiveLlmConfigId,
+  migrateFromLegacyIfNeeded,
+  type LLMConfigEntry,
+} from './multi-llm-config';
+import {
+  listChatSessions,
+  getActiveChatSessionId,
+  getChatSession,
+  createChatSession as createChatSessionEntry,
+  saveChatSession as saveChatSessionEntry,
+  deleteChatSession as deleteChatSessionEntry,
+  renameChatSession as renameChatSessionEntry,
+  setActiveChatSessionId as setActiveChatSessionIdEntry,
+  type ChatSession,
+} from './chat-session-store';
 import { createBuiltinSkills, shouldInjectBuiltinSkills } from './skill-seed';
 import {
   loadSettings,
@@ -448,6 +469,40 @@ interface NetworkState {
   setSkillManagerOpen: (open: boolean) => void;
   /** 从 storage 重新加载技能列表 */
   refreshSkills: () => void;
+
+  // ========== 多 LLM 配置（PR-3） ==========
+  /** 多 LLM 配置列表 */
+  llmConfigs: LLMConfigEntry[];
+  /** 当前激活的配置 id（null 表示未激活） */
+  activeLlmConfigId: string | null;
+  /** 从 storage 重新加载 llmConfigs + activeLlmConfigId，同时同步全局 llmConfig */
+  refreshLlmConfigs: () => void;
+  /** 新增 / 更新 LLM 配置（input.id 存在则更新） */
+  addLlmConfig: (
+    input: Omit<LLMConfigEntry, 'id' | 'createdAt' | 'updatedAt'> & { id?: string },
+  ) => LLMConfigEntry;
+  /** 删除 LLM 配置；若删除的是 active，自动切到第一个 */
+  removeLlmConfig: (id: string) => void;
+  /** 切换激活的 LLM 配置：setActive + refreshLlmConfigs + 同步全局 llmConfig */
+  switchLlmConfig: (id: string) => void;
+
+  // ========== 助手会话（PR-3） ==========
+  /** 助手会话列表 */
+  chatSessions: ChatSession[];
+  /** 当前激活的会话 id（null 表示未激活） */
+  activeChatSessionId: string | null;
+  /** 从 storage 重新加载 chatSessions + activeChatSessionId */
+  refreshChatSessions: () => void;
+  /** 新建会话：把当前 assistantMessages 保存到新会话并激活 */
+  createChatSession: (title?: string) => ChatSession;
+  /** 切换会话：先保存当前 assistantMessages 到当前会话，再加载目标会话的 messages */
+  switchChatSession: (id: string) => void;
+  /** 删除会话；若删除的是 active，自动切到第一个或清空 */
+  deleteChatSession: (id: string) => void;
+  /** 重命名会话 */
+  renameChatSession: (id: string, title: string) => void;
+  /** 把当前 assistantMessages 持久化到当前激活的会话（流式结束后调用） */
+  persistCurrentChatSession: () => void;
 }
 
 /**
@@ -1102,7 +1157,26 @@ export const useDebugStore = create<NetworkState>()(
           set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
         setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
 
-        refreshLlmConfig: () => set({ llmConfig: loadConfig() }),
+        refreshLlmConfig: () => {
+          // 优先用 multi-llm-configs 中激活的配置；否则回退到旧的 single llm-config（向后兼容）
+          const activeEntry = getActiveLlmConfig();
+          if (activeEntry) {
+            // 同步写入旧 key 保证其他依赖 llm-config 的模块正常工作
+            saveConfig(activeEntry.config);
+            set({
+              llmConfig: activeEntry.config,
+              llmConfigs: listLlmConfigs(),
+              activeLlmConfigId: getActiveLlmConfigId(),
+            });
+            return;
+          }
+          // 回退：旧的 single llm-config
+          set({
+            llmConfig: loadConfig(),
+            llmConfigs: listLlmConfigs(),
+            activeLlmConfigId: getActiveLlmConfigId(),
+          });
+        },
 
         setShowMemoryPanel: (show) => set({ showMemoryPanel: show }),
 
@@ -1525,6 +1599,197 @@ export const useDebugStore = create<NetworkState>()(
           } else {
             set({ skills: existing });
           }
+        },
+
+        // ========== 多 LLM 配置（PR-3） ==========
+        // SSR 安全：初始为空数组，客户端挂载时由 refreshLlmConfigs() 从 localStorage 加载
+        llmConfigs: [],
+        activeLlmConfigId: null,
+
+        refreshLlmConfigs: () => {
+          // 一次性迁移旧 llm-config → multi-llm-configs（若有）
+          migrateFromLegacyIfNeeded();
+          const activeEntry = getActiveLlmConfig();
+          if (activeEntry) {
+            // 同步写入旧 key 保证其他依赖 llm-config 的模块正常工作
+            saveConfig(activeEntry.config);
+            set({
+              llmConfig: activeEntry.config,
+              llmConfigs: listLlmConfigs(),
+              activeLlmConfigId: getActiveLlmConfigId(),
+            });
+            return;
+          }
+          // 回退：旧 single llm-config（向后兼容）
+          set({
+            llmConfig: loadConfig(),
+            llmConfigs: listLlmConfigs(),
+            activeLlmConfigId: getActiveLlmConfigId(),
+          });
+        },
+
+        addLlmConfig: (input) => {
+          const entry = saveLlmConfigEntry(input);
+          // 若尚无激活配置，自动激活新增的
+          if (!getActiveLlmConfigId()) {
+            setActiveLlmConfigId(entry.id);
+            saveConfig(entry.config);
+            set({
+              llmConfigs: listLlmConfigs(),
+              activeLlmConfigId: entry.id,
+              llmConfig: entry.config,
+            });
+          } else {
+            set({ llmConfigs: listLlmConfigs() });
+          }
+          return entry;
+        },
+
+        removeLlmConfig: (id) => {
+          deleteLlmConfigEntry(id);
+          // 若删除的是 active，自动切到第一个
+          if (get().activeLlmConfigId === id) {
+            const remaining = listLlmConfigs();
+            const next = remaining[0] ?? null;
+            if (next) {
+              setActiveLlmConfigId(next.id);
+              saveConfig(next.config);
+              set({
+                llmConfigs: remaining,
+                activeLlmConfigId: next.id,
+                llmConfig: next.config,
+              });
+            } else {
+              setActiveLlmConfigId(null);
+              set({
+                llmConfigs: remaining,
+                activeLlmConfigId: null,
+                llmConfig: loadConfig(),
+              });
+            }
+          } else {
+            set({ llmConfigs: listLlmConfigs() });
+          }
+        },
+
+        switchLlmConfig: (id) => {
+          const entry = listLlmConfigs().find((e) => e.id === id);
+          if (!entry) return;
+          setActiveLlmConfigId(id);
+          // 同步旧 key 保证兼容
+          saveConfig(entry.config);
+          set({
+            activeLlmConfigId: id,
+            llmConfig: entry.config,
+            llmConfigs: listLlmConfigs(),
+          });
+        },
+
+        // ========== 助手会话（PR-3） ==========
+        // SSR 安全：初始为空数组，客户端挂载时由 refreshChatSessions() 从 localStorage 加载
+        chatSessions: [],
+        activeChatSessionId: null,
+
+        refreshChatSessions: () => {
+          set({
+            chatSessions: listChatSessions(),
+            activeChatSessionId: getActiveChatSessionId(),
+          });
+        },
+
+        createChatSession: (title) => {
+          // 先把当前 assistantMessages 保存到当前激活会话（如有）
+          const currentId = get().activeChatSessionId;
+          if (currentId) {
+            const currentSession = getChatSession(currentId);
+            if (currentSession) {
+              saveChatSessionEntry({
+                ...currentSession,
+                messages: get().assistantMessages,
+              });
+            }
+          }
+          const session = createChatSessionEntry(title);
+          setActiveChatSessionIdEntry(session.id);
+          // 新会话 messages 为空，清空当前 assistantMessages
+          set({
+            chatSessions: listChatSessions(),
+            activeChatSessionId: session.id,
+            assistantMessages: [],
+          });
+          return session;
+        },
+
+        switchChatSession: (id) => {
+          if (id === get().activeChatSessionId) return;
+          // 先保存当前 assistantMessages 到当前激活会话
+          const currentId = get().activeChatSessionId;
+          if (currentId) {
+            const currentSession = getChatSession(currentId);
+            if (currentSession) {
+              saveChatSessionEntry({
+                ...currentSession,
+                messages: get().assistantMessages,
+              });
+            }
+          }
+          // 切换并加载目标会话的 messages
+          const target = getChatSession(id);
+          if (!target) return;
+          setActiveChatSessionIdEntry(id);
+          set({
+            activeChatSessionId: id,
+            chatSessions: listChatSessions(),
+            assistantMessages: target.messages,
+          });
+        },
+
+        deleteChatSession: (id) => {
+          const wasActive = get().activeChatSessionId === id;
+          deleteChatSessionEntry(id);
+          const remaining = listChatSessions();
+          if (wasActive) {
+            // 切到第一个；若无则清空
+            const next = remaining[0] ?? null;
+            if (next) {
+              setActiveChatSessionIdEntry(next.id);
+              set({
+                chatSessions: remaining,
+                activeChatSessionId: next.id,
+                assistantMessages: next.messages,
+              });
+            } else {
+              setActiveChatSessionIdEntry(null);
+              set({
+                chatSessions: remaining,
+                activeChatSessionId: null,
+                assistantMessages: [],
+              });
+            }
+          } else {
+            set({ chatSessions: remaining });
+          }
+        },
+
+        renameChatSession: (id, title) => {
+          renameChatSessionEntry(id, title);
+          set({ chatSessions: listChatSessions() });
+        },
+
+        persistCurrentChatSession: () => {
+          const currentId = get().activeChatSessionId;
+          if (!currentId) return;
+          const currentSession = getChatSession(currentId);
+          if (!currentSession) return;
+          // 只在非流式状态下持久化（避免捕获中间态）
+          if (get().assistantMessages.some((m) => m.status === 'streaming' || m.status === 'pending')) {
+            return;
+          }
+          saveChatSessionEntry({
+            ...currentSession,
+            messages: get().assistantMessages,
+          });
+          set({ chatSessions: listChatSessions() });
         },
       }),
       // persist 中间件配置：只持久化 projects + currentProjectId

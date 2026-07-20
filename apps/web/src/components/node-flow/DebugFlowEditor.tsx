@@ -117,8 +117,22 @@ function TopNav({ onShowHelp }: { onShowHelp: () => void }) {
         </div>
       </div>
 
-      {/* 右侧：API Key 徽章 + 主题切换 + 帮助 */}
+      {/* 右侧：助手入口（最显眼）→ API Key 徽章 → 主题 → 语言 → 帮助 → 设置 */}
       <div className="flex items-center gap-1">
+        {/* 助手面板切换：使用粉色/玫瑰色高亮，确保深浅色主题下都明显可见 */}
+        <button
+          onClick={() => setAssistantPanelOpen(!assistantPanelOpen)}
+          className={`p-1.5 rounded-md transition-all ${
+            assistantPanelOpen
+              ? 'text-white bg-gradient-to-br from-pink-500 to-rose-500 shadow-md shadow-pink-500/30 ring-1 ring-pink-400/50'
+              : 'text-pink-600 hover:text-white hover:bg-gradient-to-br hover:from-pink-500 hover:to-rose-500 bg-pink-50 dark:bg-pink-900/30 dark:text-pink-300 dark:hover:bg-gradient-to-br dark:hover:from-pink-500 dark:hover:to-rose-500 ring-1 ring-pink-200 dark:ring-pink-800'
+          }`}
+          title={assistantPanelOpen ? t.toggleAssistantClose : t.toggleAssistantOpen}
+          aria-label={t.toggleAssistant}
+          aria-pressed={assistantPanelOpen}
+        >
+          <Bot size={16} />
+        </button>
         {configured ? (
           <button
             onClick={() => setShowSettings(true)}
@@ -167,20 +181,6 @@ function TopNav({ onShowHelp }: { onShowHelp: () => void }) {
           aria-label={t.language}
         >
           <Globe size={16} />
-        </button>
-        {/* 助手面板切换：独立右侧侧边栏入口（参考 spark-flow AgentPanel 布局） */}
-        <button
-          onClick={() => setAssistantPanelOpen(!assistantPanelOpen)}
-          className={`p-1.5 rounded transition-colors dark:hover:bg-slate-800 ${
-            assistantPanelOpen
-              ? 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-300'
-              : 'text-slate-400 hover:text-violet-500 hover:bg-violet-50'
-          }`}
-          title={assistantPanelOpen ? t.toggleAssistantClose : t.toggleAssistantOpen}
-          aria-label={t.toggleAssistant}
-          aria-pressed={assistantPanelOpen}
-        >
-          <Bot size={16} />
         </button>
         <button
           onClick={handleHelp}

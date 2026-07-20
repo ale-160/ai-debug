@@ -27,7 +27,10 @@ import {
   streamAssistantResponse,
   messagesToHistory,
   type CanvasContextSnapshot,
+  type ForwardedNodeSpec,
+  type NodeOperationSpec,
 } from '@/lib/agent-engine';
+import { SUMMARY_THRESHOLD } from '@/lib/context-config';
 import { generateId } from '@/lib/id';
 import type { AssistantMessage, TurnNodeData } from './types';
 import type { Node } from 'reactflow';
@@ -109,6 +112,11 @@ export default function AssistantPanel() {
   const abortAssistantStream = useDebugStore((s) => s.abortAssistantStream);
   const createTurnNode = useDebugStore((s) => s.createTurnNode);
   const setSkillManagerOpen = useDebugStore((s) => s.setSkillManagerOpen);
+  // 助手协议扩展：项目兜底 + 节点操作（合并/弃用/忽略）
+  const createProject = useDebugStore((s) => s.createProject);
+  const createMergedNode = useDebugStore((s) => s.createMergedNode);
+  const abandonBranch = useDebugStore((s) => s.abandonBranch);
+  const ignoreNode = useDebugStore((s) => s.ignoreNode);
 
   // 会话与多 LLM 配置 actions（PR-3）
   const createChatSession = useDebugStore((s) => s.createChatSession);
@@ -159,9 +167,11 @@ export default function AssistantPanel() {
 
   /**
    * 构建画布上下文快照（注入助手 system prompt，让助手感知画布状态）。
-   * - 项目名/ID 来自 currentProjectId + projects
-   * - 最近节点：按 createdAt 倒序取前 5 个，提取 userMessage 前 120 字
-   * - 选中节点路径：从选中节点沿 parentId 链回溯到根，每项取 userMessage 前 80 字
+   *
+   * v3 增强：分支隔离 + 上下文膨胀防护
+   * - 主分支路径：从选中节点沿 parentId 回溯到根（无选中则用最近节点的路径）
+   * - pathSummaryEnabled：路径长度 > SUMMARY_THRESHOLD 时为 true，提示助手前段已压缩
+   * - otherBranchNodes：其他分支关键节点（前 3 个，排除主分支节点），供助手引用
    *
    * 节点变化 / 选中节点变化 / 项目切换时重新计算。
    */
@@ -184,11 +194,15 @@ export default function AssistantPanel() {
         status: n.data.status ?? 'active',
       }));
 
-    // 选中节点路径：从选中节点沿 parentId 回溯到根
+    // 主分支路径：从选中节点沿 parentId 回溯到根
+    // 无选中节点时，用最近一个非 ignored 节点的路径作为主分支
     const selectedPathPreview: Array<{ id: string; userMessagePreview: string }> = [];
-    if (selectedNodeId) {
-      const byId = new Map(turnNodes.map((n) => [n.id, n]));
-      let currentId: string | null = selectedNodeId;
+    const mainBranchIdSet = new Set<string>(); // 主分支上所有节点 id，用于排除 otherBranchNodes
+    const byId = new Map(turnNodes.map((n) => [n.id, n]));
+    const fallbackStartId =
+      selectedNodeId ?? recentNodes.find((n) => n.status !== 'ignored')?.id ?? null;
+    if (fallbackStartId) {
+      let currentId: string | null = fallbackStartId;
       const visited = new Set<string>(); // 防御环路
       while (currentId && !visited.has(currentId)) {
         visited.add(currentId);
@@ -198,9 +212,25 @@ export default function AssistantPanel() {
           id: n.id,
           userMessagePreview: (n.data.userMessage ?? '').slice(0, 80),
         });
+        mainBranchIdSet.add(n.id);
         currentId = n.data.parentId ?? null;
       }
     }
+
+    // 主分支路径长度 + pathSummary 状态（路径长度 > SUMMARY_THRESHOLD 时启用混合模式）
+    const mainBranchPathLength = selectedPathPreview.length;
+    const pathSummaryEnabled = mainBranchPathLength > SUMMARY_THRESHOLD;
+
+    // 其他分支节点：排除主分支节点后，按 createdAt 倒序取前 3 个
+    const otherBranchNodes = turnNodes
+      .filter((n) => !mainBranchIdSet.has(n.id) && n.data.status !== 'abandoned')
+      .sort((a, b) => (b.data.createdAt ?? 0) - (a.data.createdAt ?? 0))
+      .slice(0, 3)
+      .map((n) => ({
+        id: n.id,
+        userMessagePreview: (n.data.userMessage ?? '').slice(0, 80),
+        parentId: n.data.parentId ?? null,
+      }));
 
     return {
       projectName: currentProject?.name ?? null,
@@ -209,6 +239,9 @@ export default function AssistantPanel() {
       selectedNodeId: selectedNodeId ?? null,
       recentNodes,
       selectedPathPreview,
+      mainBranchPathLength,
+      pathSummaryEnabled,
+      otherBranchNodes,
     };
   }, [nodes, currentProjectId, projects, selectedNodeId]);
 
@@ -329,16 +362,121 @@ export default function AssistantPanel() {
       onDelta: (delta) => {
         appendAssistantMessageChunk(assistantMessageId, delta);
       },
-      onForwarded: (forwardedText) => {
-        // 转发到节点：取选中节点为父节点，否则作为根节点
-        const parentId = selectedNodeId ?? null;
+      onForwarded: (spec: ForwardedNodeSpec) => {
         try {
-          const newNodeId = createTurnNode(forwardedText, parentId, { source: 'assistant' });
+          // 无项目兜底：草稿态下助手转发时自动创建新项目，避免覆盖最近项目
+          // 项目名取消息前 20 字（去除换行），缺失时用时间戳兜底
+          const state = useDebugStore.getState();
+          if (!state.currentProjectId) {
+            const projectName =
+              spec.text.split('\n')[0].slice(0, 20).trim() ||
+              `助手对话 ${new Date().toLocaleString()}`;
+            createProject(projectName);
+          }
+
+          // 解析 forkFrom 引用为实际 parentId
+          // - 'selected' → 选中节点
+          // - 'root' → null（作为新根）
+          // - 'recent' → 最近一个非 ignored 节点
+          // - '#id前缀' → 在 nodes 中查找前缀匹配的节点
+          // - null → 自动推断（选中节点 → 最近节点 → null 根节点）
+          const turnNodes = state.nodes.filter((n): n is Node<TurnNodeData> =>
+            Boolean(n.data && typeof n.data === 'object'),
+          );
+          const findByPrefix = (prefix: string): string | null => {
+            const matched = turnNodes.find((n) => n.id.startsWith(prefix));
+            return matched ? matched.id : null;
+          };
+          const findRecentNonIgnored = (): string | null => {
+            const sorted = [...turnNodes]
+              .sort((a, b) => (b.data.createdAt ?? 0) - (a.data.createdAt ?? 0))
+              .find((n) => n.data.status !== 'ignored' && n.data.status !== 'abandoned');
+            return sorted ? sorted.id : null;
+          };
+
+          let parentId: string | null;
+          switch (spec.forkFrom) {
+            case 'selected':
+              parentId = state.selectedNodeId ?? findRecentNonIgnored();
+              break;
+            case 'root':
+              parentId = null;
+              break;
+            case 'recent':
+              parentId = findRecentNonIgnored();
+              break;
+            default:
+              if (spec.forkFrom && spec.forkFrom.startsWith('#')) {
+                parentId = findByPrefix(spec.forkFrom.slice(1));
+              } else {
+                // null：自动推断
+                parentId = state.selectedNodeId ?? findRecentNonIgnored() ?? null;
+              }
+          }
+
+          const newNodeId = createTurnNode(spec.text, parentId, { source: 'assistant' });
           updateAssistantMessage(assistantMessageId, { relatedNodeId: newNodeId });
           toast.success(t.assistantForwarded);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           toast.error(tf('assistantForwardFailed', { message: msg }));
+        }
+      },
+      onNodeOperation: (op: NodeOperationSpec) => {
+        try {
+          const state = useDebugStore.getState();
+          const turnNodes = state.nodes.filter((n): n is Node<TurnNodeData> =>
+            Boolean(n.data && typeof n.data === 'object'),
+          );
+          // 按 id 前缀匹配实际节点 id（前缀至少 4 字符避免误匹配）
+          const resolveIds = (prefixes: string[]): string[] => {
+            const ids: string[] = [];
+            for (const prefix of prefixes) {
+              const matched = turnNodes.find((n) => n.id.startsWith(prefix));
+              if (matched) ids.push(matched.id);
+            }
+            return ids;
+          };
+
+          switch (op.type) {
+            case 'abandon': {
+              const ids = resolveIds(op.targetIds);
+              if (ids.length === 0) {
+                toast.error(t.assistantOpNoTarget);
+                return;
+              }
+              ids.forEach((id) => abandonBranch(id));
+              toast.success(t.assistantOpAbandoned);
+              break;
+            }
+            case 'ignore': {
+              const ids = resolveIds(op.targetIds);
+              if (ids.length === 0) {
+                toast.error(t.assistantOpNoTarget);
+                return;
+              }
+              ids.forEach((id) => ignoreNode(id));
+              toast.success(t.assistantOpIgnored);
+              break;
+            }
+            case 'merge': {
+              const ids = resolveIds(op.targetIds);
+              if (ids.length < 2) {
+                toast.error(t.assistantOpMergeNeedTwo);
+                return;
+              }
+              if (!op.mergeIntent || !op.mergeIntent.trim()) {
+                toast.error(t.assistantOpMergeNeedIntent);
+                return;
+              }
+              createMergedNode(ids, op.mergeIntent.trim());
+              toast.success(t.assistantOpMerged);
+              break;
+            }
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          toast.error(tf('assistantOpFailed', { message: msg }));
         }
       },
     });
@@ -376,6 +514,10 @@ export default function AssistantPanel() {
     appendAssistantMessageChunk,
     updateAssistantMessage,
     createTurnNode,
+    createProject,
+    createMergedNode,
+    abandonBranch,
+    ignoreNode,
     persistCurrentChatSession,
     canvasSnapshot,
     autoCreateNodes,

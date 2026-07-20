@@ -160,9 +160,20 @@ export function incrementalLayout(
   const newNode = nodeMap.get(newNodeId);
   if (!newNode) return nodes;
 
-  // 新增节点为根节点：定位 (0, 0)
+  // 新增节点为根节点：
+  // - 首个根节点定位 (0, 0)
+  // - 后续根节点水平偏移放置，避免堆叠遮挡（间距 = BASE_RADIUS * 2.2）
+  // 偏移方向取现有根节点中心的反方向，让多根节点向右铺开
   if (newNode.data.parentId === null) {
-    return nodes.map((n) => (n.id === newNodeId ? { ...n, position: { x: 0, y: 0 } } : n));
+    const existingRoots = nodes.filter((n) => n.data.parentId === null && n.id !== newNodeId);
+    if (existingRoots.length === 0) {
+      return nodes.map((n) => (n.id === newNodeId ? { ...n, position: { x: 0, y: 0 } } : n));
+    }
+    // 计算新根节点位置：现有根节点数量 * 间距，y 轴轻微扰动避免完全水平
+    const offset = BASE_RADIUS * 2.2;
+    const newX = offset * existingRoots.length;
+    const newY = (existingRoots.length % 2 === 0 ? 0 : 1) * 80; // 交替轻微上下偏移
+    return nodes.map((n) => (n.id === newNodeId ? { ...n, position: { x: newX, y: newY } } : n));
   }
 
   const parentId = newNode.data.parentId;

@@ -10,6 +10,11 @@ import {
   type Theme,
   THEME_STORAGE_KEY,
 } from '@/lib/theme';
+import {
+  applyThemePreset,
+  loadThemePresetId,
+  THEME_PRESET_STORAGE_KEY,
+} from '@/lib/theme-presets';
 
 // 主题上下文类型
 interface ThemeContextValue {
@@ -34,20 +39,26 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     const initial = loadTheme();
     setThemeState(initial);
     applyTheme(initial);
+    // 同步应用主题色预设（覆盖 --primary / --ring CSS 变量）
+    applyThemePreset(loadThemePresetId());
   }, []);
 
-  // 监听 localStorage 的 storage 事件，跨标签页同步
+  // 监听 localStorage 的 storage 事件，跨标签页同步主题与主题色预设
   useEffect(() => {
     const handleStorage = (e: StorageEvent) => {
-      if (e.key !== THEME_STORAGE_KEY) {
-        return;
+      if (e.key === THEME_STORAGE_KEY) {
+        const next: Theme =
+          e.newValue === 'light' || e.newValue === 'dark' || e.newValue === 'system'
+            ? (e.newValue as Theme)
+            : 'system';
+        setThemeState(next);
+        applyTheme(next);
+        // 主题模式切换后需重新应用预设（dark/light 下预设配色不同）
+        applyThemePreset(loadThemePresetId());
+      } else if (e.key === THEME_PRESET_STORAGE_KEY) {
+        // 主题色预设跨标签页同步
+        applyThemePreset(loadThemePresetId());
       }
-      const next: Theme =
-        e.newValue === 'light' || e.newValue === 'dark' || e.newValue === 'system'
-          ? (e.newValue as Theme)
-          : 'system';
-      setThemeState(next);
-      applyTheme(next);
     };
     window.addEventListener('storage', handleStorage);
     return () => {
@@ -61,7 +72,11 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
       return;
     }
     const mql = window.matchMedia('(prefers-color-scheme: dark)');
-    const handleChange = () => applyTheme('system');
+    // 系统主题变化时同时重新应用主题预设（预设 light/dark 配色不同）
+    const handleChange = () => {
+      applyTheme('system');
+      applyThemePreset(loadThemePresetId());
+    };
     // 标准浏览器支持 addEventListener，旧 Safari 用 addListener
     if (typeof mql.addEventListener === 'function') {
       mql.addEventListener('change', handleChange);
@@ -74,17 +89,19 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     }
   }, [theme]);
 
-  // 设置主题：更新状态、持久化、应用 DOM
+  // 设置主题：更新状态、持久化、应用 DOM；切换后需重新应用预设（预设 light/dark 配色不同）
   const setTheme = useCallback((next: Theme) => {
     setThemeState(next);
     saveTheme(next);
     applyTheme(next);
+    applyThemePreset(loadThemePresetId());
   }, []);
 
-  // 切换主题：复用 lib 中的 toggleTheme（已处理持久化与 DOM）
+  // 切换主题：复用 lib 中的 toggleTheme（已处理持久化与 DOM），再重新应用预设
   const toggleTheme = useCallback(() => {
     const next = toggleThemeFn();
     setThemeState(next);
+    applyThemePreset(loadThemePresetId());
   }, []);
 
   const value = useMemo<ThemeContextValue>(

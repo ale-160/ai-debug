@@ -14,6 +14,7 @@ import {
   Brain,
   Key,
   Database,
+  Palette,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -25,6 +26,12 @@ import {
 } from '@/lib/llm-config';
 import { testLLMConnection } from '@/lib/llm-client';
 import { useDebugStore } from '@/lib/debug-store';
+import {
+  THEME_PRESETS,
+  loadThemePresetId,
+  setThemePreset,
+  type ThemePresetId,
+} from '@/lib/theme-presets';
 import { StorageManager } from './StorageManager';
 import { useTranslation } from '@/components/I18nProvider';
 import type { AppSettings, PathSummaryConfig } from './node-flow/types';
@@ -41,7 +48,7 @@ interface TestResult {
   message: string;
 }
 
-type SettingsTab = 'api' | 'memory' | 'data';
+type SettingsTab = 'api' | 'memory' | 'data' | 'appearance';
 
 export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const { t, tf } = useTranslation();
@@ -67,6 +74,9 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const setShowMemoryPanel = useDebugStore((s) => s.setShowMemoryPanel);
   const [settingsDraft, setSettingsDraft] = useState<AppSettings>(appSettings);
 
+  // 主题色预设：从 localStorage 读取，点击色块时即时切换
+  const [themePresetId, setThemePresetId] = useState<ThemePresetId>('blue');
+
   // 打开弹窗时从 localStorage 读取当前配置初始化表单
   useEffect(() => {
     if (!open) return;
@@ -86,6 +96,8 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     }
     // 同步应用设置到本地草稿
     setSettingsDraft(appSettings);
+    // 同步当前主题色预设
+    setThemePresetId(loadThemePresetId());
     // 重置测试状态
     setTestResult(null);
     setShowKey(false);
@@ -252,6 +264,18 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           >
             <Database className="h-4 w-4" />
             {t.dataManagement}
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('appearance')}
+            className={`flex items-center gap-1.5 px-6 py-2.5 text-sm font-medium transition-colors ${
+              activeTab === 'appearance'
+                ? 'border-b-2 border-pink-500 text-pink-600 dark:text-pink-300'
+                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+            }`}
+          >
+            <Palette className="h-4 w-4" />
+            {t.settingsTabAppearance}
           </button>
         </div>
 
@@ -669,6 +693,55 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           {activeTab === 'data' && (
             <div className="space-y-4">
               <StorageManager />
+            </div>
+          )}
+
+          {activeTab === 'appearance' && (
+            <div className="space-y-6">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">
+                  {t.appearanceThemePreset}
+                </label>
+                <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+                  {t.appearanceThemePresetHint}
+                </p>
+                <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
+                  {THEME_PRESETS.map((preset) => {
+                    const isActive = preset.id === themePresetId;
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => {
+                          setThemePresetId(preset.id);
+                          setThemePreset(preset.id);
+                        }}
+                        aria-label={t[preset.labelKey as keyof typeof t] as string}
+                        title={t[preset.labelKey as keyof typeof t] as string}
+                        className={`relative flex flex-col items-center gap-1.5 rounded-md border p-3 transition-all ${
+                          isActive
+                            ? 'border-slate-800 ring-2 ring-slate-800/20 dark:border-white dark:ring-white/20'
+                            : 'border-slate-200 hover:border-slate-400 dark:border-slate-700 dark:hover:border-slate-500'
+                        }`}
+                      >
+                        <span
+                          className="block h-8 w-8 rounded-full shadow-sm"
+                          style={{ backgroundColor: preset.swatch }}
+                        />
+                        <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                          {t[preset.labelKey as keyof typeof t] as string}
+                        </span>
+                        {isActive && (
+                          <Check
+                            className="absolute right-1 top-1 text-slate-700 dark:text-white"
+                            style={{ width: 14, height: 14 }}
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           )}
         </div>

@@ -62,8 +62,6 @@ function TopNav({ onShowHelp }: { onShowHelp: () => void }) {
   const { t, toggleLanguage } = useTranslation();
   const router = useRouter();
   const { theme, toggleTheme } = useTheme();
-  const currentProjectId = useDebugStore((s) => s.currentProjectId);
-  const projects = useDebugStore((s) => s.projects);
   const llmConfig = useDebugStore((s) => s.llmConfig);
   const setShowSettings = useDebugStore((s) => s.setShowSettings);
   const toggleMobileSidebar = useDebugStore((s) => s.toggleMobileSidebar);
@@ -75,9 +73,6 @@ function TopNav({ onShowHelp }: { onShowHelp: () => void }) {
   useEffect(() => {
     setResolvedTheme(resolveTheme(theme));
   }, [theme]);
-
-  const currentProject = projects.find((p) => p.id === currentProjectId);
-  const projectLabel = currentProject?.name ?? t.noProjectSelected;
 
   const configured = !!llmConfig && !!llmConfig.apiKey && !!llmConfig.baseUrl && !!llmConfig.model;
   const maskedKey = llmConfig ? maskKey(llmConfig.apiKey) : '';
@@ -113,11 +108,6 @@ function TopNav({ onShowHelp }: { onShowHelp: () => void }) {
           <Network className="w-5 h-5 text-violet-600" />
           <span className="font-bold text-slate-800 text-base dark:text-slate-100">AI Debug</span>
         </div>
-      </div>
-
-      {/* 中间：当前项目名 */}
-      <div className="absolute left-1/2 -translate-x-1/2 hidden sm:block max-w-[40%] truncate">
-        <span className="text-sm text-slate-500 dark:text-slate-300">{projectLabel}</span>
       </div>
 
       {/* 右侧：API Key 徽章 + 主题切换 + 帮助 */}
@@ -476,6 +466,8 @@ function EditorInner() {
   // 客户端挂载后从 localStorage 加载技能列表（SSR 安全）
   const refreshSkills = useDebugStore((s) => s.refreshSkills);
   const refreshLlmConfig = useDebugStore((s) => s.refreshLlmConfig);
+  const refreshLlmConfigs = useDebugStore((s) => s.refreshLlmConfigs);
+  const refreshChatSessions = useDebugStore((s) => s.refreshChatSessions);
   const refreshProjects = useDebugStore((s) => s.refreshProjects);
   const refreshAppSettings = useDebugStore((s) => s.refreshAppSettings);
   const refreshGlobalMemory = useDebugStore((s) => s.refreshGlobalMemory);
@@ -493,15 +485,25 @@ function EditorInner() {
 
   const isEmpty = nodes.length === 0;
 
-  // 挂载后从 localStorage 加载 llmConfig/projects/设置/全局记忆/技能，保证首屏 SSR/CSR 一致
+  // 挂载后从 localStorage 加载 llmConfig/projects/设置/全局记忆/技能/多 LLM 配置/会话，保证首屏 SSR/CSR 一致
   useEffect(() => {
+    refreshLlmConfigs();
     refreshLlmConfig();
     refreshProjects();
     refreshAppSettings();
     refreshGlobalMemory();
     refreshSkills();
+    refreshChatSessions();
     setIsHydrated(true);
-  }, [refreshLlmConfig, refreshProjects, refreshAppSettings, refreshGlobalMemory, refreshSkills]);
+  }, [
+    refreshLlmConfig,
+    refreshLlmConfigs,
+    refreshProjects,
+    refreshAppSettings,
+    refreshGlobalMemory,
+    refreshSkills,
+    refreshChatSessions,
+  ]);
 
   // P0-2：跨标签页 storage 事件同步
   // 其他标签页修改 localStorage 时，本标签页收到 storage 事件，按 key 触发对应 refresh。
@@ -518,6 +520,15 @@ function EditorInner() {
           break;
         case 'ai-debug:llm-config':
           refreshLlmConfig();
+          break;
+        case 'ai-debug:multi-llm-configs':
+        case 'ai-debug:active-llm-config-id':
+          refreshLlmConfigs();
+          refreshLlmConfig();
+          break;
+        case 'ai-debug:chat-sessions':
+        case 'ai-debug:active-chat-session-id':
+          refreshChatSessions();
           break;
         case 'ai-debug:app-settings':
           refreshAppSettings();
@@ -536,6 +547,8 @@ function EditorInner() {
     refreshProjects,
     refreshSkills,
     refreshLlmConfig,
+    refreshLlmConfigs,
+    refreshChatSessions,
     refreshAppSettings,
     refreshGlobalMemory,
   ]);

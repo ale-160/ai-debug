@@ -487,6 +487,26 @@ export const STRINGS_ZH = {
   skillDeactivated: '已取消技能激活',
   skillSaveSuccess: '技能已保存',
 
+  // ========== Assistant Session / Multi-LLM (PR-3) ==========
+  assistantSession: '会话',
+  assistantSessionNew: '新建会话',
+  assistantSessionEmpty: '暂无会话',
+  assistantSessionDelete: '删除会话',
+  assistantSessionRename: '重命名会话',
+  assistantSessionActive: '当前',
+  assistantModelSelect: '选择模型',
+  assistantModelEmpty: '暂无已保存的模型配置',
+  assistantModelManage: '管理模型配置',
+  assistantAutoForwardHint: '助手会自动识别需要建图的内容并转发到画布',
+  llmConfigSaved: '配置已保存',
+  llmConfigActivated: '已激活配置「{name}」',
+  llmConfigDeleted: '配置已删除',
+  llmConfigList: '已保存的配置列表',
+  llmConfigSaveCurrent: '保存当前为预设',
+  llmConfigNamePrompt: '请输入配置名称（如：mimo-v2.5）',
+  llmConfigActivate: '激活',
+  llmConfigEdit: '编辑',
+
   // ========== Attachments / Multimodal (PR-2: 多模态) ==========
   attachmentButton: '添加附件',
   attachmentDragDropHint: '拖拽文件到此处，或点击选择',
@@ -591,6 +611,15 @@ export const STRINGS_ZH = {
   themePresetAmber: '琥珀橙',
   themePresetPink: '玫粉',
   themePresetCyan: '青',
+
+  // 画布工具栏：自动排列 / 全屏 / 侧边栏切换
+  autoLayout: '自动排列',
+  autoLayoutSuccess: '已按拓扑关系自动排列节点',
+  autoLayoutEmpty: '画布为空，无需排列',
+  fullscreenEnter: '进入全屏',
+  fullscreenExit: '退出全屏 (Esc)',
+  toggleSidebarExpand: '展开侧边栏',
+  toggleSidebarCollapse: '收起侧边栏',
 };
 
 export const STRINGS_EN = {
@@ -1091,6 +1120,26 @@ export const STRINGS_EN = {
   skillDeactivated: 'Skill deactivated',
   skillSaveSuccess: 'Skill saved',
 
+  // ========== Assistant Session / Multi-LLM (PR-3) ==========
+  assistantSession: 'Session',
+  assistantSessionNew: 'New session',
+  assistantSessionEmpty: 'No sessions yet',
+  assistantSessionDelete: 'Delete session',
+  assistantSessionRename: 'Rename session',
+  assistantSessionActive: 'Active',
+  assistantModelSelect: 'Select model',
+  assistantModelEmpty: 'No saved model configurations yet',
+  assistantModelManage: 'Manage model configurations',
+  assistantAutoForwardHint: 'Assistant will auto-detect content to forward to canvas',
+  llmConfigSaved: 'Configuration saved',
+  llmConfigActivated: 'Configuration "{name}" activated',
+  llmConfigDeleted: 'Configuration deleted',
+  llmConfigList: 'Saved configurations',
+  llmConfigSaveCurrent: 'Save current as preset',
+  llmConfigNamePrompt: 'Enter a name (e.g. mimo-v2.5)',
+  llmConfigActivate: 'Activate',
+  llmConfigEdit: 'Edit',
+
   // ========== Attachments / Multimodal (PR-2) ==========
   attachmentButton: 'Add attachment',
   attachmentDragDropHint: 'Drag files here or click to select',
@@ -1195,6 +1244,15 @@ export const STRINGS_EN = {
   themePresetAmber: 'Amber',
   themePresetPink: 'Pink',
   themePresetCyan: 'Cyan',
+
+  // Canvas toolbar: auto layout / fullscreen / sidebar toggle
+  autoLayout: 'Auto Layout',
+  autoLayoutSuccess: 'Nodes auto-arranged by topology',
+  autoLayoutEmpty: 'Canvas is empty, nothing to arrange',
+  fullscreenEnter: 'Enter Fullscreen',
+  fullscreenExit: 'Exit Fullscreen (Esc)',
+  toggleSidebarExpand: 'Expand Sidebar',
+  toggleSidebarCollapse: 'Collapse Sidebar',
 };
 
 export type Strings = typeof STRINGS_ZH;

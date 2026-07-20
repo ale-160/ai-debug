@@ -148,10 +148,7 @@ export function useInspectorActions(selectedNode: Node<TurnNodeData> | null) {
    * 2. 订阅 HITL 等待用户决策
    * 3. 派发 conflict-detected 事件，DebugFlowEditor 监听后弹 Modal
    */
-  const handleConflictDetected = (
-    marks: ConflictMark[],
-    nodes: Node<TurnNodeData>[],
-  ) => {
+  const handleConflictDetected = (marks: ConflictMark[], nodes: Node<TurnNodeData>[]) => {
     for (const m of marks) {
       subscribeConflictDecision(m.nodeId);
       const payload = buildConflictPayload(m, nodes);
@@ -219,7 +216,13 @@ export function useInspectorActions(selectedNode: Node<TurnNodeData> | null) {
     if (!parentId) return;
     // 仅持久化 parseStatus=parsed 的附件，failed 项不写入节点（避免污染 localStorage）
     const parsedAttachments = attachs?.filter((a) => a.parseStatus === 'parsed');
-    const newId = createTurnNode(userMsg, parentId, parsedAttachments && parsedAttachments.length > 0 ? { attachments: parsedAttachments } : undefined);
+    const newId = createTurnNode(
+      userMsg,
+      parentId,
+      parsedAttachments && parsedAttachments.length > 0
+        ? { attachments: parsedAttachments }
+        : undefined,
+    );
     setSelectedNode(newId);
     updateTurnNode(newId, { status: 'running' });
     const currentNodes = useDebugStore.getState().nodes;

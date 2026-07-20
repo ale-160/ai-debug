@@ -1,7 +1,15 @@
 'use client';
 import React, { memo, useMemo, useState } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
-import { Loader2, GitMerge, AlertTriangle, Zap, ChevronLeft, ChevronRight, Paperclip } from 'lucide-react';
+import {
+  Loader2,
+  GitMerge,
+  AlertTriangle,
+  Zap,
+  ChevronLeft,
+  ChevronRight,
+  Paperclip,
+} from 'lucide-react';
 import type { TurnNodeData } from '../types';
 import { statusColors, truncateStreamingText } from './node-utils';
 import { pickStatusMessage } from '../marketing-messages';

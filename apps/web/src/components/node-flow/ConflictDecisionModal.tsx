@@ -77,9 +77,7 @@ export function ConflictDecisionModal({
 
         {/* 描述区：说明 + 冲突信息 */}
         <div className="px-4 py-3 space-y-2 border-b border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-white/[0.02]">
-          <p className="text-sm text-slate-700 dark:text-slate-200">
-            {t.conflictDescription}
-          </p>
+          <p className="text-sm text-slate-700 dark:text-slate-200">{t.conflictDescription}</p>
           <div className="rounded border border-red-200 dark:border-red-700/60 bg-red-50 dark:bg-red-900/20 px-2.5 py-1.5">
             <div className="flex items-center gap-1.5 text-[11px] font-semibold text-red-700 dark:text-red-300 uppercase tracking-wide mb-0.5">
               <AlertTriangle size={11} />

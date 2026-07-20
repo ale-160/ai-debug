@@ -1,17 +1,7 @@
 'use client';
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import {
-  X,
-  Plus,
-  Pencil,
-  Trash2,
-  Download,
-  Upload,
-  Sparkles,
-  Check,
-  Power,
-} from 'lucide-react';
+import { X, Plus, Pencil, Trash2, Download, Upload, Sparkles, Check, Power } from 'lucide-react';
 import { toast } from 'sonner';
 import { useDebugStore } from '@/lib/debug-store';
 import { useTranslation } from '@/components/I18nProvider';
@@ -325,9 +315,7 @@ export default function SkillManager({ open, onClose }: SkillManagerProps) {
         : source === 'imported'
           ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300'
           : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300';
-    return (
-      <span className={`px-1 py-0.5 rounded text-[9px] ${color}`}>{label}</span>
-    );
+    return <span className={`px-1 py-0.5 rounded text-[9px] ${color}`}>{label}</span>;
   };
 
   /** 渲染单个技能卡片 */
@@ -362,9 +350,7 @@ export default function SkillManager({ open, onClose }: SkillManagerProps) {
           <button
             onClick={() => handleToggleEnabled(skill)}
             className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors flex-shrink-0 ${
-              skill.enabled
-                ? 'bg-violet-500'
-                : 'bg-slate-300 dark:bg-slate-600'
+              skill.enabled ? 'bg-violet-500' : 'bg-slate-300 dark:bg-slate-600'
             }`}
             aria-label={skill.enabled ? t.skillEnabled : t.skillDisabled}
             title={skill.enabled ? t.skillEnabled : t.skillDisabled}
@@ -550,9 +536,7 @@ export default function SkillManager({ open, onClose }: SkillManagerProps) {
           <input
             type="text"
             value={form.tags.join(', ')}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, tags: parseTags(e.target.value) }))
-            }
+            onChange={(e) => setForm((f) => ({ ...f, tags: parseTags(e.target.value) }))}
             placeholder={t.skillTagsPlaceholder}
             className="w-full rounded border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-2 py-1.5 text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-violet-400 focus:border-violet-400"
           />

@@ -4,7 +4,13 @@
 // ============================================================
 
 import { loadConfig } from './llm-config';
-import { callLLM, callLLMStream, mergeOverride, type LLMMessage, type LLMOverride } from './llm-client';
+import {
+  callLLM,
+  callLLMStream,
+  mergeOverride,
+  type LLMMessage,
+  type LLMOverride,
+} from './llm-client';
 
 /**
  * 从 localStorage 加载配置并发起调用（便捷函数）。
@@ -43,7 +49,13 @@ export async function quickCallLLM(
   // 传入 onDelta 时走流式调用，并把 signal 透传给底层 fetch
   if (onDelta) {
     let accumulated = '';
-    for await (const chunk of callLLMStream({ config: effectiveConfig, messages, signal, temperature, maxTokens })) {
+    for await (const chunk of callLLMStream({
+      config: effectiveConfig,
+      messages,
+      signal,
+      temperature,
+      maxTokens,
+    })) {
       accumulated += chunk;
       onDelta(chunk);
     }

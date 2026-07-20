@@ -264,8 +264,7 @@ export function importPresets(input: string | { presets?: unknown[] }): number {
     ) {
       const p = item as NodePreset;
       const now = Date.now();
-      const nodeType: PresetNodeType =
-        p.nodeType === 'merge' ? 'merge' : 'turn';
+      const nodeType: PresetNodeType = p.nodeType === 'merge' ? 'merge' : 'turn';
       valid.push({
         id: typeof p.id === 'string' ? p.id : generateId(),
         name: p.name,

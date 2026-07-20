@@ -19,11 +19,7 @@ export interface AutoLayoutOptions {
  * 使用 dagre 计算层级布局，返回带新 position 的节点数组。
  * dagre 返回的 (x, y) 是节点中心点，React Flow 使用左上角坐标，需要转换。
  */
-export function autoLayout(
-  nodes: Node[],
-  edges: Edge[],
-  options: AutoLayoutOptions = {},
-): Node[] {
+export function autoLayout(nodes: Node[], edges: Edge[], options: AutoLayoutOptions = {}): Node[] {
   const {
     direction = 'TB',
     nodeWidth = 200,

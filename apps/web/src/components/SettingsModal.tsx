@@ -588,7 +588,8 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                               )}
                             </div>
                             <div className="mt-0.5 truncate text-[10px] text-slate-500 dark:text-slate-400">
-                              {PROVIDER_PRESETS[entry.config.provider]?.label ?? entry.config.provider}
+                              {PROVIDER_PRESETS[entry.config.provider]?.label ??
+                                entry.config.provider}
                               {' · '}
                               {entry.config.model}
                               {' · '}

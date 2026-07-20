@@ -70,10 +70,7 @@ import {
   saveGlobalMemory,
   DEFAULT_SETTINGS,
 } from './settings-storage';
-import {
-  saveSnapshot as saveSnapshotToStore,
-  getSnapshotById,
-} from './canvas-snapshots-store';
+import { saveSnapshot as saveSnapshotToStore, getSnapshotById } from './canvas-snapshots-store';
 
 // immer patches 全局初始化：
 // - enablePatches：开启 patch 序列化能力（produceWithPatches 依赖）
@@ -1340,7 +1337,10 @@ export const useDebugStore = create<NetworkState>()(
           // 无变更则不入栈
           if (patches.length === 0) return;
 
-          const newUndoStack = [...state._undoStack, { forward: patches, backward: inversePatches }];
+          const newUndoStack = [
+            ...state._undoStack,
+            { forward: patches, backward: inversePatches },
+          ];
           // 上限 200 步：超出时丢弃最早的历史
           if (newUndoStack.length > MAX_HISTORY) {
             newUndoStack.shift();
@@ -1782,7 +1782,9 @@ export const useDebugStore = create<NetworkState>()(
           const currentSession = getChatSession(currentId);
           if (!currentSession) return;
           // 只在非流式状态下持久化（避免捕获中间态）
-          if (get().assistantMessages.some((m) => m.status === 'streaming' || m.status === 'pending')) {
+          if (
+            get().assistantMessages.some((m) => m.status === 'streaming' || m.status === 'pending')
+          ) {
             return;
           }
           saveChatSessionEntry({

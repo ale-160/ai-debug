@@ -79,9 +79,11 @@ export default function MessageInput({
   /** P2-2 变量池：插入变量引用下拉开关 */
   const [isVariablePopoverOpen, setIsVariablePopoverOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  // 用 ref 缓存 attachments，避免 handler 频繁重建（attachments 频繁变化时不影响 drag/paste handler 引用）
+  // 用 ref 缓存 attachments，避免 handler 频繁重建（useEffect 同步，避免 render 阶段写 ref）
   const attachmentsRef = useRef(attachments);
-  attachmentsRef.current = attachments;
+  useEffect(() => {
+    attachmentsRef.current = attachments;
+  }, [attachments]);
 
   /** P2-2 变量池：点击外部关闭变量引用下拉 */
   useEffect(() => {
@@ -120,7 +122,9 @@ export default function MessageInput({
         if (failed.length > 0) {
           const tooLarge = failed.filter((a) => a.parseError?.includes('exceeds'));
           if (tooLarge.length > 0) {
-            toast.warning(tf('attachmentTooLarge', { max: Math.floor(MAX_FILE_SIZE / 1024 / 1024) }));
+            toast.warning(
+              tf('attachmentTooLarge', { max: Math.floor(MAX_FILE_SIZE / 1024 / 1024) }),
+            );
           } else {
             for (const f of failed) {
               toast.error(tf('attachmentParseFailed', { message: f.parseError ?? '' }));

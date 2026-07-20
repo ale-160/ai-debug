@@ -11,8 +11,26 @@ const DEFAULT_QUALITY = 0.85;
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'svg']);
 /** 文本类扩展名集合（小写，覆盖常见代码/配置/文档格式） */
 const TEXT_EXTENSIONS = new Set([
-  'js', 'ts', 'tsx', 'jsx', 'py', 'java', 'c', 'cpp', 'go', 'rust',
-  'md', 'txt', 'json', 'yaml', 'yml', 'xml', 'html', 'css', 'sql', 'sh',
+  'js',
+  'ts',
+  'tsx',
+  'jsx',
+  'py',
+  'java',
+  'c',
+  'cpp',
+  'go',
+  'rust',
+  'md',
+  'txt',
+  'json',
+  'yaml',
+  'yml',
+  'xml',
+  'html',
+  'css',
+  'sql',
+  'sh',
 ]);
 
 /** 生成附件 ID：att-<时间戳>-<6位随机串> */

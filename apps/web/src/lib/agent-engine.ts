@@ -164,8 +164,7 @@ function buildAssistantMessages(
  * 全局匹配正则：扫描文本中所有 "### 转发到节点" / "### 创建节点" 标记，
  * 支持多次转发。捕获组 1 为每次转发的文本（已 trim）。
  */
-const FORWARD_NODE_GLOBAL_REGEX =
-  /###\s*(?:转发到节点|创建节点)[ \t]*\r?\n([\s\S]*?)(?=###\s|$)/gi;
+const FORWARD_NODE_GLOBAL_REGEX = /###\s*(?:转发到节点|创建节点)[ \t]*\r?\n([\s\S]*?)(?=###\s|$)/gi;
 
 /**
  * 从助手回答中解析所有转发到节点的文本（支持多次转发）。
@@ -226,7 +225,10 @@ export function sanitizeForwardedText(raw: string): string {
   const firstNewline = text.indexOf('\n');
   const firstLine = firstNewline === -1 ? text : text.slice(0, firstNewline);
   const rest = firstNewline === -1 ? '' : text.slice(firstNewline + 1);
-  if (rolePrefixRegex.test(firstLine) && (rest.trim() || firstLine.replace(rolePrefixRegex, '').trim())) {
+  if (
+    rolePrefixRegex.test(firstLine) &&
+    (rest.trim() || firstLine.replace(rolePrefixRegex, '').trim())
+  ) {
     const cleanedFirstLine = firstLine.replace(rolePrefixRegex, '');
     text = rest ? `${cleanedFirstLine}\n${rest}` : cleanedFirstLine;
     text = text.trim();
@@ -263,14 +265,7 @@ export async function streamAssistantResponse(
   userText: string,
   options: StreamAssistantOptions = {},
 ): Promise<StreamAssistantResult> {
-  const {
-    skillId,
-    skills,
-    history,
-    signal,
-    onDelta,
-    onForwarded,
-  } = options;
+  const { skillId, skills, history, signal, onDelta, onForwarded } = options;
 
   // 查找激活的技能
   const skill = skillId ? skills?.find((s) => s.id === skillId) : undefined;
@@ -317,9 +312,7 @@ export async function streamAssistantResponse(
  * 跳过 status='error' 的消息，避免把错误内容喂回模型。
  * 跳过 status='pending' 的消息（尚未完成）。
  */
-export function messagesToHistory(
-  messages: AssistantMessage[],
-): AssistantHistoryItem[] {
+export function messagesToHistory(messages: AssistantMessage[]): AssistantHistoryItem[] {
   const result: AssistantHistoryItem[] = [];
   for (const m of messages) {
     if (m.status === 'error' || m.status === 'pending') continue;

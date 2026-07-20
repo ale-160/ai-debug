@@ -9,8 +9,7 @@
 // ============================================================
 'use client';
 
-import { useState, useMemo } from 'react';
-import { useSyncExternalStore } from 'react';
+import { useState, useMemo, useSyncExternalStore } from 'react';
 import { X, Camera, RotateCcw, Trash2, Loader2 } from 'lucide-react';
 import {
   subscribe as subscribeSnapshots,

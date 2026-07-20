@@ -10,11 +10,7 @@ import {
   type Theme,
   THEME_STORAGE_KEY,
 } from '@/lib/theme';
-import {
-  applyThemePreset,
-  loadThemePresetId,
-  THEME_PRESET_STORAGE_KEY,
-} from '@/lib/theme-presets';
+import { applyThemePreset, loadThemePresetId, THEME_PRESET_STORAGE_KEY } from '@/lib/theme-presets';
 
 // 主题上下文类型
 interface ThemeContextValue {

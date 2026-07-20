@@ -190,9 +190,11 @@ function EmptyStateInput() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  // ref 缓存 attachments，避免 handler 频繁重建
+  // ref 缓存 attachments，避免 handler 频繁重建（useEffect 同步，避免 render 阶段写 ref）
   const attachmentsRef = useRef(attachments);
-  attachmentsRef.current = attachments;
+  useEffect(() => {
+    attachmentsRef.current = attachments;
+  }, [attachments]);
   const createTurnNode = useDebugStore((s) => s.createTurnNode);
   const updateTurnNode = useDebugStore((s) => s.updateTurnNode);
   const appendAssistantChunk = useDebugStore((s) => s.appendAssistantChunk);
@@ -211,7 +213,9 @@ function EmptyStateInput() {
         if (failed.length > 0) {
           const tooLarge = failed.filter((a) => a.parseError?.includes('exceeds'));
           if (tooLarge.length > 0) {
-            toast.warning(tf('attachmentTooLarge', { max: Math.floor(MAX_FILE_SIZE / 1024 / 1024) }));
+            toast.warning(
+              tf('attachmentTooLarge', { max: Math.floor(MAX_FILE_SIZE / 1024 / 1024) }),
+            );
           } else {
             for (const f of failed) {
               toast.error(tf('attachmentParseFailed', { message: f.parseError ?? '' }));
@@ -594,11 +598,7 @@ function EditorInner() {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       // 输入框中不触发撤销/重做（避免与文本编辑冲突）
-      if (
-        target.tagName === 'INPUT' ||
-        target.tagName === 'TEXTAREA' ||
-        target.isContentEditable
-      ) {
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
         return;
       }
 
@@ -618,10 +618,7 @@ function EditorInner() {
       }
 
       // Ctrl+Y 或 Ctrl+Shift+Z 重做
-      if (
-        (e.key === 'y' || e.key === 'Y') ||
-        (e.shiftKey && (e.key === 'z' || e.key === 'Z'))
-      ) {
+      if (e.key === 'y' || e.key === 'Y' || (e.shiftKey && (e.key === 'z' || e.key === 'Z'))) {
         if (!e.repeat) {
           e.preventDefault();
           const state = useDebugStore.getState();
@@ -647,11 +644,7 @@ function EditorInner() {
       if (e.key !== 'f' && e.key !== 'F') return;
       // 在输入框中不触发（避免影响文本编辑）
       const target = e.target as HTMLElement;
-      if (
-        target.tagName === 'INPUT' ||
-        target.tagName === 'TEXTAREA' ||
-        target.isContentEditable
-      ) {
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
         return;
       }
       e.preventDefault();
@@ -794,11 +787,9 @@ function EditorInner() {
             onDecide={(decision: ConflictDecision) => {
               if (!pendingConflict) return;
               // 通过 hitl-event-bus 唤醒等待方（useInspectorActions 中的 subscribe handler）
-              hitlEventBus.emit(
-                'conflict-resolution',
-                `conflict:${pendingConflict.id}`,
-                { decision },
-              );
+              hitlEventBus.emit('conflict-resolution', `conflict:${pendingConflict.id}`, {
+                decision,
+              });
             }}
             onClose={() => setPendingConflict(null)}
           />

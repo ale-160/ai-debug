@@ -1,13 +1,7 @@
 'use client';
 
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import ReactFlow, {
-  Background,
-  MiniMap,
-  useReactFlow,
-  type Node,
-  type Viewport,
-} from 'reactflow';
+import ReactFlow, { Background, MiniMap, useReactFlow, type Node, type Viewport } from 'reactflow';
 import 'reactflow/dist/style.css';
 import {
   GitMerge,

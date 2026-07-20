@@ -99,9 +99,7 @@ export default function AssistantPanel() {
   const appendAssistantMessageChunk = useDebugStore((s) => s.appendAssistantMessageChunk);
   const clearAssistantMessages = useDebugStore((s) => s.clearAssistantMessages);
   const setActiveSkillId = useDebugStore((s) => s.setActiveSkillId);
-  const registerAssistantAbortController = useDebugStore(
-    (s) => s.registerAssistantAbortController,
-  );
+  const registerAssistantAbortController = useDebugStore((s) => s.registerAssistantAbortController);
   const abortAssistantStream = useDebugStore((s) => s.abortAssistantStream);
   const createTurnNode = useDebugStore((s) => s.createTurnNode);
   const setSkillManagerOpen = useDebugStore((s) => s.setSkillManagerOpen);
@@ -130,7 +128,8 @@ export default function AssistantPanel() {
 
   // 当前激活的会话对象
   const activeSession = useMemo(
-    () => (activeChatSessionId ? chatSessions.find((s) => s.id === activeChatSessionId) : undefined),
+    () =>
+      activeChatSessionId ? chatSessions.find((s) => s.id === activeChatSessionId) : undefined,
     [activeChatSessionId, chatSessions],
   );
 
@@ -404,10 +403,7 @@ export default function AssistantPanel() {
     const isStreamingMsg = msg.status === 'streaming' || msg.status === 'pending';
 
     return (
-      <div
-        key={msg.id}
-        className={`flex gap-2 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}
-      >
+      <div key={msg.id} className={`flex gap-2 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
         {/* 头像 */}
         <div
           className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center ${
@@ -519,7 +515,9 @@ export default function AssistantPanel() {
                     >
                       <span className="flex-1 truncate">{s.title}</span>
                       {s.id === activeChatSessionId && (
-                        <span className="text-[9px] text-violet-400">{t.assistantSessionActive}</span>
+                        <span className="text-[9px] text-violet-400">
+                          {t.assistantSessionActive}
+                        </span>
                       )}
                       <button
                         onClick={(e) => {
@@ -622,20 +620,22 @@ export default function AssistantPanel() {
                   <span>{t.assistantNoSkill}</span>
                 </button>
                 {/* 技能列表 */}
-                {skills.filter((s) => s.enabled).map((skill) => (
-                  <button
-                    key={skill.id}
-                    onClick={() => handleSelectSkill(skill.id)}
-                    className={`w-full text-left px-2 py-1.5 text-[11px] hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors flex items-center gap-1 ${
-                      activeSkillId === skill.id
-                        ? 'text-violet-600 dark:text-violet-300 font-medium'
-                        : 'text-slate-600 dark:text-slate-300'
-                    }`}
-                  >
-                    <span>{skill.icon ?? '⭐'}</span>
-                    <span className="truncate">{skill.name}</span>
-                  </button>
-                ))}
+                {skills
+                  .filter((s) => s.enabled)
+                  .map((skill) => (
+                    <button
+                      key={skill.id}
+                      onClick={() => handleSelectSkill(skill.id)}
+                      className={`w-full text-left px-2 py-1.5 text-[11px] hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors flex items-center gap-1 ${
+                        activeSkillId === skill.id
+                          ? 'text-violet-600 dark:text-violet-300 font-medium'
+                          : 'text-slate-600 dark:text-slate-300'
+                      }`}
+                    >
+                      <span>{skill.icon ?? '⭐'}</span>
+                      <span className="truncate">{skill.name}</span>
+                    </button>
+                  ))}
                 {/* 技能管理入口 */}
                 <div className="border-t border-slate-100 dark:border-slate-700">
                   <button
@@ -660,9 +660,7 @@ export default function AssistantPanel() {
               <span className="flex items-center gap-1 min-w-0">
                 <Bot size={10} className="text-blue-500 flex-shrink-0" />
                 <span className="truncate">
-                  {activeLlmConfigEntry
-                    ? activeLlmConfigEntry.name
-                    : t.assistantModelSelect}
+                  {activeLlmConfigEntry ? activeLlmConfigEntry.name : t.assistantModelSelect}
                 </span>
               </span>
               <ChevronDown size={10} className="flex-shrink-0" />
@@ -688,7 +686,8 @@ export default function AssistantPanel() {
                       <span className="flex-1 min-w-0">
                         <div className="truncate">{cfg.name}</div>
                         <div className="text-[9px] text-slate-400 truncate">
-                          {PROVIDER_PRESETS[cfg.config.provider]?.label ?? cfg.config.provider} · {cfg.config.model}
+                          {PROVIDER_PRESETS[cfg.config.provider]?.label ?? cfg.config.provider} ·{' '}
+                          {cfg.config.model}
                         </div>
                       </span>
                     </button>

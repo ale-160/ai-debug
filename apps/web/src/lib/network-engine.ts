@@ -1,5 +1,10 @@
 import type { Node } from 'reactflow';
-import type { TurnNodeData, Suggestion, TurnStatus, NodeAttachment } from '@/components/node-flow/types';
+import type {
+  TurnNodeData,
+  Suggestion,
+  TurnStatus,
+  NodeAttachment,
+} from '@/components/node-flow/types';
 import { quickCallLLM, buildVisionMessage } from './llm-helpers';
 import { type LLMMessage, RequestPoolError } from './llm-client';
 import { describeError } from './request';
@@ -468,13 +473,9 @@ export async function streamTurnResponse(
     const currentNode = nodes.find((n) => n.id === nodeId);
     let nodesForContext = nodes;
     if (currentNode && hasVariableReferences(currentNode.data.userMessage)) {
-      const { text: resolvedUserMessage } = resolveVariableReferences(
-        currentNode.data.userMessage,
-      );
+      const { text: resolvedUserMessage } = resolveVariableReferences(currentNode.data.userMessage);
       nodesForContext = nodes.map((n) =>
-        n.id === nodeId
-          ? { ...n, data: { ...n.data, userMessage: resolvedUserMessage } }
-          : n,
+        n.id === nodeId ? { ...n, data: { ...n.data, userMessage: resolvedUserMessage } } : n,
       );
     }
     const contextPath = collectContextPath(nodeId, nodesForContext);

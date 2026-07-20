@@ -1053,7 +1053,8 @@ export const STRINGS_EN = {
   // ========== Assistant Panel (PR-1: Agent Assistant) ==========
   assistant: 'Assistant',
   assistantTitle: 'AI Assistant',
-  assistantHint: 'Chat with the assistant — it forwards to nodes automatically without blocking your flow',
+  assistantHint:
+    'Chat with the assistant — it forwards to nodes automatically without blocking your flow',
   assistantEmpty: 'Start a conversation, or pick a skill for expert guidance',
   assistantInputPlaceholder: 'Ask the assistant... (Enter to send, Shift+Enter for newline)',
   assistantSend: 'Send',
@@ -1154,7 +1155,8 @@ export const STRINGS_EN = {
   attachmentImageLabel: 'Image',
   attachmentTextLabel: 'Text',
   attachmentBinaryLabel: 'File',
-  attachmentModelUnrecognized: 'Model may not recognize this attachment, consider using a supported format',
+  attachmentModelUnrecognized:
+    'Model may not recognize this attachment, consider using a supported format',
   attachmentDropZone: 'Drop to upload',
   nodeAttachmentsLabel: 'Attachments',
   uploadImage: 'Upload image',
@@ -1167,7 +1169,8 @@ export const STRINGS_EN = {
 
   // P1-1 Command Palette
   commandPaletteTitle: 'Command Palette',
-  commandPalettePlaceholder: 'Search actions or projects... (↑↓ to navigate, Enter to confirm, Esc to close)',
+  commandPalettePlaceholder:
+    'Search actions or projects... (↑↓ to navigate, Enter to confirm, Esc to close)',
   commandPaletteNoResults: 'No matches found',
   commandPaletteActionGroup: 'Actions',
   commandPaletteProjectGroup: 'Projects',
@@ -1190,11 +1193,15 @@ export const STRINGS_EN = {
   snapshotSaveSuccess: 'Snapshot saved',
   snapshotRestore: 'Restore',
   snapshotDelete: 'Delete',
-  snapshotRestoreConfirm: 'Restore to snapshot "{name}"? Current canvas will be replaced and undo/redo history will be cleared.',
+  snapshotRestoreConfirm:
+    'Restore to snapshot "{name}"? Current canvas will be replaced and undo/redo history will be cleared.',
   snapshotDeleteConfirm: 'Delete snapshot "{name}"?',
-  snapshotNoSnapshots: 'No snapshots yet. Save the current canvas as a named snapshot for quick rollback.',
-  snapshotRunningGuard: 'Cannot restore snapshot during streaming. Please wait or cancel the request first.',
-  snapshotDraftGuard: 'Cannot save snapshot in draft mode. Please send the first message to bind a project.',
+  snapshotNoSnapshots:
+    'No snapshots yet. Save the current canvas as a named snapshot for quick rollback.',
+  snapshotRunningGuard:
+    'Cannot restore snapshot during streaming. Please wait or cancel the request first.',
+  snapshotDraftGuard:
+    'Cannot save snapshot in draft mode. Please send the first message to bind a project.',
   snapshotCount: '{count} snapshots',
   snapshotRestoreSuccess: 'Restored to snapshot "{name}"',
 
@@ -1220,7 +1227,7 @@ export const STRINGS_EN = {
   inspectorAdvancedParamsHint: 'Empty fields use global LLM config defaults',
 
   // P2-2 Variable Pool Lite
-  variablePoolHint: '💡 Use {{#nodeId.text#}} in message to reference other nodes\' answers',
+  variablePoolHint: "💡 Use {{#nodeId.text#}} in message to reference other nodes' answers",
   variablePoolInsert: 'Insert Variable Reference',
   variablePoolNoRecentNodes: 'No nodes available to reference',
 
@@ -1237,7 +1244,8 @@ export const STRINGS_EN = {
   // Theme Presets
   settingsTabAppearance: 'Appearance',
   appearanceThemePreset: 'Theme Color',
-  appearanceThemePresetHint: 'Click a swatch to switch the theme color. Light/dark modes have separate palettes.',
+  appearanceThemePresetHint:
+    'Click a swatch to switch the theme color. Light/dark modes have separate palettes.',
   themePresetBlue: 'Blue',
   themePresetViolet: 'Violet',
   themePresetEmerald: 'Emerald',

@@ -32,8 +32,8 @@ import {
   subscribe as subscribePresets,
   getSnapshot as getPresetSnapshot,
   getServerSnapshot as getPresetServerSnapshot,
+  type NodePreset,
 } from '@/lib/node-presets-store';
-import type { NodePreset } from '@/lib/node-presets-store';
 import type { NetworkProject } from './types';
 
 /** 命令面板条目类型 */
@@ -58,7 +58,12 @@ interface CommandPaletteProps {
   onOpenSnapshots?: () => void;
 }
 
-export function CommandPalette({ open, onClose, onToggleTheme, onOpenSnapshots }: CommandPaletteProps) {
+export function CommandPalette({
+  open,
+  onClose,
+  onToggleTheme,
+  onOpenSnapshots,
+}: CommandPaletteProps) {
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -85,12 +90,21 @@ export function CommandPalette({ open, onClose, onToggleTheme, onOpenSnapshots }
   const createTurnNode = useDebugStore((s) => s.createTurnNode);
 
   // 订阅预设库快照（跨标签页同步）
-  const presets = useSyncExternalStore(subscribePresets, getPresetSnapshot, getPresetServerSnapshot);
+  const presets = useSyncExternalStore(
+    subscribePresets,
+    getPresetSnapshot,
+    getPresetServerSnapshot,
+  );
 
   // 构造动作列表
   const actions = useMemo(() => {
     const list: Array<{ id: string; label: string; icon: typeof Plus; run: () => void }> = [
-      { id: 'new-project', label: t.commandPaletteActionNewProject, icon: Plus, run: () => startNewProject() },
+      {
+        id: 'new-project',
+        label: t.commandPaletteActionNewProject,
+        icon: Plus,
+        run: () => startNewProject(),
+      },
       { id: 'undo', label: t.commandPaletteActionUndo, icon: Undo2, run: () => undo() },
       { id: 'redo', label: t.commandPaletteActionRedo, icon: Redo2, run: () => redo() },
       {
@@ -118,12 +132,14 @@ export function CommandPalette({ open, onClose, onToggleTheme, onOpenSnapshots }
         run: () => setShowMemoryPanel(true),
       },
       ...(onOpenSnapshots
-        ? [{
-            id: 'open-snapshots',
-            label: t.snapshotManager,
-            icon: Camera,
-            run: () => onOpenSnapshots(),
-          }]
+        ? [
+            {
+              id: 'open-snapshots',
+              label: t.snapshotManager,
+              icon: Camera,
+              run: () => onOpenSnapshots(),
+            },
+          ]
         : []),
       {
         id: 'toggle-sidebar',
@@ -260,11 +276,15 @@ export function CommandPalette({ open, onClose, onToggleTheme, onOpenSnapshots }
   if (!open) return null;
 
   // 分组渲染
-  const actionItems = items.filter((i): i is Extract<PaletteItem, { kind: 'action' }> => i.kind === 'action');
+  const actionItems = items.filter(
+    (i): i is Extract<PaletteItem, { kind: 'action' }> => i.kind === 'action',
+  );
   const presetItemList = items.filter(
     (i): i is Extract<PaletteItem, { kind: 'preset' }> => i.kind === 'preset',
   );
-  const projItems = items.filter((i): i is Extract<PaletteItem, { kind: 'project' }> => i.kind === 'project');
+  const projItems = items.filter(
+    (i): i is Extract<PaletteItem, { kind: 'project' }> => i.kind === 'project',
+  );
 
   // 计算各分组在 items 中的起始索引（顺序：动作 → 预设 → 项目）
   const actionStartIndex = 0;

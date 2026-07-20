@@ -79,9 +79,7 @@ function ToolbarButton({
 
 /** 竖向分隔线：胶囊工具栏分组 */
 function Divider() {
-  return (
-    <div className="w-px h-5 bg-slate-200 dark:bg-white/10 mx-0.5" aria-hidden="true" />
-  );
+  return <div className="w-px h-5 bg-slate-200 dark:bg-white/10 mx-0.5" aria-hidden="true" />;
 }
 
 /**
@@ -168,18 +166,8 @@ export default function CanvasToolbar(props: CanvasToolbarProps) {
       <Divider />
 
       {/* 撤销 / 重做 */}
-      <ToolbarButton
-        icon={Undo2}
-        label={t.undo}
-        disabled={!canUndo}
-        onClick={onUndo}
-      />
-      <ToolbarButton
-        icon={Redo2}
-        label={t.redo}
-        disabled={!canRedo}
-        onClick={onRedo}
-      />
+      <ToolbarButton icon={Undo2} label={t.undo} disabled={!canUndo} onClick={onUndo} />
+      <ToolbarButton icon={Redo2} label={t.redo} disabled={!canRedo} onClick={onRedo} />
     </div>
   );
 }

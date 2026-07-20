@@ -38,9 +38,7 @@ export default function AttachmentChips({ attachments, onRemove }: AttachmentChi
                 : 'border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/60'
             }`}
             title={
-              isFailed
-                ? tf('attachmentParseFailed', { message: att.parseError ?? '' })
-                : att.name
+              isFailed ? tf('attachmentParseFailed', { message: att.parseError ?? '' }) : att.name
             }
           >
             {/* 缩略图 / 图标 */}

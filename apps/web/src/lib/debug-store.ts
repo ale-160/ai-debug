@@ -1083,10 +1083,7 @@ export const useDebugStore = create<NetworkState>()(
           // 3.1.3：先 abort 待删节点中正在进行的流式请求
           const stateBeforeDelete = get();
           const toAbortIds = stateBeforeDelete.nodes
-            .filter(
-              (n) =>
-                n.data.evolutionMeta && n.data.evolutionMeta.startNodeId === startNodeId,
-            )
+            .filter((n) => n.data.evolutionMeta && n.data.evolutionMeta.startNodeId === startNodeId)
             .map((n) => n.id);
           if (toAbortIds.length > 0) {
             const nextMap = new Map(stateBeforeDelete._abortControllers);

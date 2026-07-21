@@ -50,8 +50,8 @@ export default function ErrorBoundaryRoute({ error, reset }: ErrorBoundaryRouteP
             页面出错啦 / Something went wrong
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            应用遇到未预期的错误。请尝试重试，或刷新页面。 / The app hit an unexpected error.
-            Please retry, or reload the page.
+            应用遇到未预期的错误。请尝试重试，或刷新页面。 / The app hit an unexpected error. Please
+            retry, or reload the page.
           </p>
           {error?.message && (
             <pre className="mt-1 max-h-32 overflow-auto rounded-md bg-slate-100 dark:bg-slate-800 p-2 text-left text-xs text-slate-600 dark:text-slate-300 break-all whitespace-pre-wrap">

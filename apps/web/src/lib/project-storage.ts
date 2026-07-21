@@ -231,7 +231,10 @@ let beforeunloadRegistered = false;
 /** 取消 idle 调度句柄（兼容 requestIdleCallback / setTimeout 两种实现） */
 function cancelIdleHandle(handle: number): void {
   if (typeof window === 'undefined') return;
-  if (typeof window.requestIdleCallback === 'function' && typeof window.cancelIdleCallback === 'function') {
+  if (
+    typeof window.requestIdleCallback === 'function' &&
+    typeof window.cancelIdleCallback === 'function'
+  ) {
     window.cancelIdleCallback(handle);
   } else {
     window.clearTimeout(handle);

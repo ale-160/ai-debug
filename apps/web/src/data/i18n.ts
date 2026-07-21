@@ -1552,7 +1552,8 @@ export const STRINGS_EN = {
 
   // Manual node creation (context menu / floating toolbar): for layout testing or notes, no LLM call
   manualNodeDefaultText: 'Manual node',
-  manualNodeTooltip: 'Right-click empty area or use the bottom-left button to create a node (no AI call)',
+  manualNodeTooltip:
+    'Right-click empty area or use the bottom-left button to create a node (no AI call)',
   manualNodeCreated: 'Manual node created',
   // Floating toolbar button: smart logic (selected → child / no selection → root)
   manualNodeButton: 'Create node',

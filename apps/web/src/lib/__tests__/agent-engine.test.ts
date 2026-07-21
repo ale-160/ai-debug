@@ -169,9 +169,7 @@ describe('parseNodeOperations - 弃用节点', () => {
 
   it('多个 id（逗号分隔）', () => {
     const result = parseNodeOperations('### 弃用节点: #abc12345, #def67890');
-    expect(result).toEqual([
-      { type: 'abandon', targetIds: ['abc12345', 'def67890'] },
-    ]);
+    expect(result).toEqual([{ type: 'abandon', targetIds: ['abc12345', 'def67890'] }]);
   });
 
   it('中文逗号 / 分号分隔符同样支持', () => {

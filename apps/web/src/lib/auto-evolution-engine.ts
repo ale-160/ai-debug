@@ -605,11 +605,7 @@ export async function runEvolution(
 
         // 3.10.1：置信度低于阈值时，通过共享门暂停所有其他路，串行化弹窗询问用户
         if (bestConf < confidenceThreshold && onLowConfidence) {
-          const decision = await runLowConfidenceSerial(
-            currentNodeId,
-            bestConf,
-            bestReasoning,
-          );
+          const decision = await runLowConfidenceSerial(currentNodeId, bestConf, bestReasoning);
           if (decision === 'stop') {
             stopped = true;
             break;

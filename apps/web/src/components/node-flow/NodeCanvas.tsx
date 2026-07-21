@@ -131,8 +131,14 @@ export default function NodeCanvas() {
   const nodeDisplayMode = useDebugStore((s) => s.nodeDisplayMode);
   const toggleNodeDisplayMode = useDebugStore((s) => s.toggleNodeDisplayMode);
 
-  const { zoomIn, zoomOut, fitView, setViewport: rfSetViewport, getViewport, screenToFlowPosition } =
-    useReactFlow();
+  const {
+    zoomIn,
+    zoomOut,
+    fitView,
+    setViewport: rfSetViewport,
+    getViewport,
+    screenToFlowPosition,
+  } = useReactFlow();
 
   // 稳定 nodeTypes / defaultEdgeOptions 引用，避免 React Flow "created a new nodeTypes or
   // edgeTypes object" 警告（模块级常量已稳定，但 useMemo 进一步防御 React Compiler 'all' 模式
@@ -903,24 +909,24 @@ export default function NodeCanvas() {
             草稿态也可用 —— createManualNode 会自动创建项目绑定画布。
             与右上角 CanvasToolbar（全局操作）物理隔离，仅承载单节点操作。 */}
         <div className="absolute bottom-4 left-4 z-20 flex items-center gap-1 bg-slate-100/90 dark:bg-white/10 backdrop-blur-xl rounded-full px-1.5 py-1.5 border border-slate-200 dark:border-white/10 shadow-2xl shadow-black/10 dark:shadow-black/40">
-            <button
-              type="button"
-              onClick={() => {
-                // 智能判断：有选中节点 → 子节点 / 无选中 → 根节点
-                // 节点位置：视口中心转换为画布坐标
-                const parentId = selectedNodeId ?? null;
-                createManualNode(parentId, window.innerWidth / 2, window.innerHeight / 2);
-              }}
-              title={selectedNodeId ? t.manualNodeSelectedHint : t.manualNodeButton}
-              aria-label={t.manualNodeButton}
-              className="flex items-center gap-1.5 px-2.5 h-8 rounded-full text-xs font-medium text-slate-700 dark:text-white/80 hover:bg-slate-900/10 dark:hover:bg-white/10 transition-colors"
-            >
-              <Plus size={14} />
-              <span className="hidden sm:inline">
-                {selectedNodeId ? t.manualNodeAsChild : t.manualNodeButton}
-              </span>
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => {
+              // 智能判断：有选中节点 → 子节点 / 无选中 → 根节点
+              // 节点位置：视口中心转换为画布坐标
+              const parentId = selectedNodeId ?? null;
+              createManualNode(parentId, window.innerWidth / 2, window.innerHeight / 2);
+            }}
+            title={selectedNodeId ? t.manualNodeSelectedHint : t.manualNodeButton}
+            aria-label={t.manualNodeButton}
+            className="flex items-center gap-1.5 px-2.5 h-8 rounded-full text-xs font-medium text-slate-700 dark:text-white/80 hover:bg-slate-900/10 dark:hover:bg-white/10 transition-colors"
+          >
+            <Plus size={14} />
+            <span className="hidden sm:inline">
+              {selectedNodeId ? t.manualNodeAsChild : t.manualNodeButton}
+            </span>
+          </button>
+        </div>
 
         {/* 浮动工具条（T024）：至少 1 个节点选中时显示在画布底部居中 */}
         {(appSettings.nodeActionsStyle === 'toolbar' || appSettings.nodeActionsStyle === 'both') &&

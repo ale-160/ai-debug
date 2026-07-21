@@ -911,9 +911,13 @@ function EditorInner() {
             onDecide={(decision: ConflictDecision) => {
               if (!pendingConflict) return;
               // 通过 hitl-event-bus 唤醒等待方（useInspectorActions 中的 subscribe handler）
-              hitlEventBus.emit(HitlRunId.CONFLICT_RESOLUTION, HitlEventName.conflict(pendingConflict.id), {
-                decision,
-              });
+              hitlEventBus.emit(
+                HitlRunId.CONFLICT_RESOLUTION,
+                HitlEventName.conflict(pendingConflict.id),
+                {
+                  decision,
+                },
+              );
             }}
             onClose={() => setPendingConflict(null)}
           />

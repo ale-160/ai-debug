@@ -95,7 +95,9 @@ describe('obfuscateJSON / deobfuscateJSON - 同步 JSON 往返', () => {
 
 describe('deobfuscateJSON - 反序列化安全（防原型污染）', () => {
   it('constructor 自有字段 → 拒绝返回 null', () => {
-    const malicious = obfuscateString(JSON.stringify({ constructor: { prototype: { polluted: true } } }));
+    const malicious = obfuscateString(
+      JSON.stringify({ constructor: { prototype: { polluted: true } } }),
+    );
     expect(deobfuscateJSON(malicious)).toBeNull();
   });
 

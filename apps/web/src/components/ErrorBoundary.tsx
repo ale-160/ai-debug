@@ -64,7 +64,9 @@ export default class ErrorBoundary extends React.Component<ErrorBoundaryProps, E
           <div className="text-sm text-slate-600 dark:text-slate-300">
             <div className="font-medium">渲染出错 / Something went wrong</div>
             {this.state.error?.message && (
-              <div className="mt-1 text-xs text-slate-400 break-all">{this.state.error.message}</div>
+              <div className="mt-1 text-xs text-slate-400 break-all">
+                {this.state.error.message}
+              </div>
             )}
           </div>
           <button

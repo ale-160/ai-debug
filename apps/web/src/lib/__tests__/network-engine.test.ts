@@ -187,9 +187,7 @@ describe('collectContextPath - 防环', () => {
 
 describe('collectContextPath - 父节点不存在', () => {
   it('父节点 id 不存在时，当前节点作为单段返回', () => {
-    const nodes = [
-      makeNode('orphan', { userMessage: '孤儿', parentId: 'missing-parent' }),
-    ];
+    const nodes = [makeNode('orphan', { userMessage: '孤儿', parentId: 'missing-parent' })];
     const segments = collectContextPath('orphan', nodes);
     expect(segments).toHaveLength(1);
     expect(segments[0].map((i) => i.userMessage)).toEqual(['孤儿']);
@@ -302,7 +300,11 @@ describe('buildLLMMessages - 多段路径分支标记', () => {
       [{ userMessage: 'A1', assistantMessage: 'A2', status: 'success' as TurnStatus }],
     ];
     const result = buildLLMMessages(segments);
-    expect(result.messages.some((m) => typeof m.content === 'string' && m.content.startsWith('--- 分支'))).toBe(false);
+    expect(
+      result.messages.some(
+        (m) => typeof m.content === 'string' && m.content.startsWith('--- 分支'),
+      ),
+    ).toBe(false);
   });
 });
 

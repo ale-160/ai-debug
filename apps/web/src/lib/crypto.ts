@@ -73,7 +73,9 @@ function getDeviceKey(): string {
     }
     return key;
   } catch (e) {
-    throw new Error('failed to access device key storage: ' + (e instanceof Error ? e.message : String(e)));
+    throw new Error(
+      'failed to access device key storage: ' + (e instanceof Error ? e.message : String(e)),
+    );
   }
 }
 
@@ -101,7 +103,9 @@ function getDeviceKeyBytes(): Uint8Array<ArrayBuffer> {
     window.localStorage.setItem(AES_KEY_STORAGE, bytesToBase64(keyBytes));
     return keyBytes;
   } catch (e) {
-    throw new Error('failed to access AES key storage: ' + (e instanceof Error ? e.message : String(e)));
+    throw new Error(
+      'failed to access AES key storage: ' + (e instanceof Error ? e.message : String(e)),
+    );
   }
 }
 
@@ -169,13 +173,10 @@ async function encryptAESGCM(
     throw new Error('Web Crypto subtle API not available');
   }
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const key = await crypto.subtle.importKey(
-    'raw',
-    keyBytes,
-    { name: 'AES-GCM' },
-    false,
-    ['encrypt', 'decrypt'],
-  );
+  const key = await crypto.subtle.importKey('raw', keyBytes, { name: 'AES-GCM' }, false, [
+    'encrypt',
+    'decrypt',
+  ]);
   const encoded = new TextEncoder().encode(plaintext);
   const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoded);
   // 拼接 iv + ciphertext（含认证标签）
@@ -202,13 +203,10 @@ async function decryptAESGCM(
     if (combined.length < 29) return null;
     const iv = combined.slice(0, 12);
     const ct = combined.slice(12);
-    const key = await crypto.subtle.importKey(
-      'raw',
-      keyBytes,
-      { name: 'AES-GCM' },
-      false,
-      ['encrypt', 'decrypt'],
-    );
+    const key = await crypto.subtle.importKey('raw', keyBytes, { name: 'AES-GCM' }, false, [
+      'encrypt',
+      'decrypt',
+    ]);
     const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
     return new TextDecoder().decode(decrypted);
   } catch {
@@ -224,9 +222,11 @@ function isSafeParsed(value: unknown): boolean {
   if (value === null || typeof value !== 'object') return true;
   if (Array.isArray(value)) return true;
   const obj = value as Record<string, unknown>;
-  return !Object.prototype.hasOwnProperty.call(obj, '__proto__')
-    && !Object.prototype.hasOwnProperty.call(obj, 'constructor')
-    && !Object.prototype.hasOwnProperty.call(obj, 'prototype');
+  return (
+    !Object.prototype.hasOwnProperty.call(obj, '__proto__') &&
+    !Object.prototype.hasOwnProperty.call(obj, 'constructor') &&
+    !Object.prototype.hasOwnProperty.call(obj, 'prototype')
+  );
 }
 
 // ============================================================

@@ -9,11 +9,7 @@
 //   3. RequestError：错误类型字段与 name 标识
 // ============================================================
 import { describe, it, expect } from 'vitest';
-import {
-  sanitizeLLMErrorText,
-  describeError,
-  RequestError,
-} from '../request';
+import { sanitizeLLMErrorText, describeError, RequestError } from '../request';
 
 // ----------------------------------------------------------------------
 // sanitizeLLMErrorText

@@ -226,7 +226,14 @@ describe('getEffectivePathSummaryConfig - 配置优先级', () => {
   });
 
   it('每个 provider 都有 pathSummary 预设', () => {
-    const providers: LLMProvider[] = ['mimo', 'volcengine', 'openrouter', 'deepseek', 'openai', 'custom'];
+    const providers: LLMProvider[] = [
+      'mimo',
+      'volcengine',
+      'openrouter',
+      'deepseek',
+      'openai',
+      'custom',
+    ];
     for (const p of providers) {
       const preset = PROVIDER_PRESETS[p].pathSummary;
       expect(preset).toBeDefined();

@@ -145,6 +145,9 @@ export function loadConfig(): LLMConfig | null {
     ) {
       return null;
     }
+    // 业务上必须把解密后的 config（含 apiKey）返回给调用方；
+    // 存储层已通过 obfuscateJSON 混淆，apiKey 不会以明文形式落盘。
+    // codeql[js/clear-text-storage-of-sensitive-information]: 误报，返回值用于运行时调用而非持久化
     return parsed;
   } catch {
     return null;

@@ -21,6 +21,14 @@ function truncate(text: string, n: number): string {
   return text.length > n ? text.slice(0, n) + '…' : text;
 }
 
+/**
+ * 模块级空数组常量，用作 childrenMap[id] 的 fallback。
+ * 若用 `?? []` 字面量，每次 selector 调用都会创建新数组引用，
+ * Zustand 浅比较认为状态变化 → 触发重渲染 → 又调用 selector → 无限循环。
+ * 用同一常量引用保证浅比较稳定。
+ */
+const EMPTY_CHILD_IDS: string[] = [];
+
 type TurnNodeProps = NodeProps<TurnNodeData>;
 
 function TurnNodeComponent({ id, data, selected }: TurnNodeProps) {
@@ -92,8 +100,10 @@ function TurnNodeComponent({ id, data, selected }: TurnNodeProps) {
   const setSelectedNode = useDebugStore((s) => s.setSelectedNode);
   const setSelectedChild = useDebugStore((s) => s.setSelectedChild);
   const selectedChildId = useDebugStore((s) => s.selectedChildIdMap[id] ?? '');
-  // 直接订阅数组引用；childrenMap 在 store 中增量更新，未变更的父节点数组引用稳定
-  const childIds = useDebugStore((s) => s.childrenMap[id] ?? []);
+  // 直接订阅数组引用；childrenMap 在 store 中增量更新，未变更的父节点数组引用稳定。
+  // 关键：用模块级常量 EMPTY_CHILD_IDS 作为 fallback，避免 `?? []` 每次创建新数组
+  // 导致 Zustand 浅比较失败 → 无限渲染循环（getSnapshot should be cached 报错）。
+  const childIds = useDebugStore((s) => s.childrenMap[id] ?? EMPTY_CHILD_IDS);
   // git 模式下 dagre 自动展开所有分支，不需要分支切换器
   const hasMultipleBranches = childIds.length > 1 && !isGitMode;
   const [branchSwitcherOpen, setBranchSwitcherOpen] = useState(false);

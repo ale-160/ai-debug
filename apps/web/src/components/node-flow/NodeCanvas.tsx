@@ -91,6 +91,7 @@ export default function NodeCanvas() {
   const setViewport = useDebugStore((s) => s.setViewport);
   const createMergedNode = useDebugStore((s) => s.createMergedNode);
   const createTurnNode = useDebugStore((s) => s.createTurnNode);
+  const createProject = useDebugStore((s) => s.createProject);
   const updateTurnNode = useDebugStore((s) => s.updateTurnNode);
   const appendAssistantChunk = useDebugStore((s) => s.appendAssistantChunk);
   // H-8：流式结束后强制 flush buffer
@@ -199,8 +200,15 @@ export default function NodeCanvas() {
   // 手动新建节点的核心逻辑：根据传入的 parentId 与屏幕坐标创建节点
   // parentId === null 时创建根节点；非空时创建为对应节点的子节点
   // 节点位置取屏幕坐标转换后的画布坐标，跳过增量布局以保留用户选择的位置
+  // 无项目兜底：草稿态下自动创建新项目，避免节点无处挂载（参考 AssistantPanel 模式）
   const createManualNode = useCallback(
     (parentId: string | null, screenX: number, screenY: number) => {
+      // 无项目时先创建项目，否则 createTurnNode 在草稿态不会绑定项目
+      const state = useDebugStore.getState();
+      if (!state.currentProjectId) {
+        const projectName = `${t.manualNodeDefaultText} ${new Date().toLocaleString()}`;
+        createProject(projectName);
+      }
       const position = screenToFlowPosition({ x: screenX, y: screenY });
       const newId = createTurnNode(t.manualNodeDefaultText, parentId, {
         source: 'manual',
@@ -210,7 +218,7 @@ export default function NodeCanvas() {
       toast.success(t.manualNodeCreated);
       return newId;
     },
-    [screenToFlowPosition, createTurnNode, setSelectedNode, t],
+    [screenToFlowPosition, createTurnNode, createProject, setSelectedNode, t],
   );
 
   // 空白画布右键：显示手动新建节点菜单
@@ -891,9 +899,10 @@ export default function NodeCanvas() {
           onRedo={redo}
         />
 
-        {/* 左下角浮动工具栏：手动新建节点（仅在已有项目时显示，草稿态由 EmptyStateInput 处理） */}
-        {currentProjectId && (
-          <div className="absolute bottom-4 left-4 z-20 flex items-center gap-1 bg-slate-100/90 dark:bg-white/10 backdrop-blur-xl rounded-full px-1.5 py-1.5 border border-slate-200 dark:border-white/10 shadow-2xl shadow-black/10 dark:shadow-black/40">
+        {/* 左下角浮动工具栏：手动新建节点。
+            草稿态也可用 —— createManualNode 会自动创建项目绑定画布。
+            与右上角 CanvasToolbar（全局操作）物理隔离，仅承载单节点操作。 */}
+        <div className="absolute bottom-4 left-4 z-20 flex items-center gap-1 bg-slate-100/90 dark:bg-white/10 backdrop-blur-xl rounded-full px-1.5 py-1.5 border border-slate-200 dark:border-white/10 shadow-2xl shadow-black/10 dark:shadow-black/40">
             <button
               type="button"
               onClick={() => {
@@ -912,7 +921,6 @@ export default function NodeCanvas() {
               </span>
             </button>
           </div>
-        )}
 
         {/* 浮动工具条（T024）：至少 1 个节点选中时显示在画布底部居中 */}
         {(appSettings.nodeActionsStyle === 'toolbar' || appSettings.nodeActionsStyle === 'both') &&

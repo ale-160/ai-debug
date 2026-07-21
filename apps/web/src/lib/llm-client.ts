@@ -5,8 +5,8 @@
 // 并发控制 + 429/5xx 退避重试复用 ./request-pool.ts
 // ============================================================
 
-import type { LLMConfig } from './llm-config';
-import { RequestError } from './request';
+import { type LLMConfig, validateCustomBaseUrl } from './llm-config';
+import { RequestError, sanitizeLLMErrorText } from './request';
 import { openAICompatibleStream } from './streaming';
 import { getRequestPool, parseRetryAfterMs, RequestPoolError } from './request-pool';
 
@@ -73,8 +73,11 @@ export class LLMHttpError extends Error {
 
 /** 从 LLM API 错误前缀提取可读 message（保持与原实现兼容） */
 function llmApiErrorMessage(status: number, errorText: string): string {
-  return `LLM API error: ${status} - ${errorText.slice(0, 500)}`;
+  return `LLM API error: ${status} - ${sanitizeLLMErrorText(errorText)}`;
 }
+
+// 重新导出 sanitizeLLMErrorText，保持 llm-client 作为统一对外入口的兼容性
+export { sanitizeLLMErrorText } from './request';
 
 /**
  * 拼接 chat completions 端点 URL，避免 baseUrl 末尾重复 /。
@@ -88,6 +91,7 @@ function buildEndpoint(baseUrl: string): string {
 /**
  * 构造请求头。
  * OpenRouter 额外需要 HTTP-Referer 与 X-Title。
+ * Referer 使用真实部署 origin，避免伪造（SSR 时回退到默认值）。
  */
 function buildHeaders(config: LLMConfig): Record<string, string> {
   const headers: Record<string, string> = {
@@ -95,7 +99,12 @@ function buildHeaders(config: LLMConfig): Record<string, string> {
     Authorization: `Bearer ${config.apiKey}`,
   };
   if (config.provider === 'openrouter') {
-    headers['HTTP-Referer'] = 'https://ai-debug.local';
+    // 动态获取 origin，避免硬编码伪造；SSR / 非浏览器环境回退到默认值
+    const origin =
+      typeof window !== 'undefined' && window.location && window.location.origin
+        ? window.location.origin
+        : 'https://ai-debug.local';
+    headers['HTTP-Referer'] = origin;
     headers['X-Title'] = 'Bug Hunter';
   }
   return headers;
@@ -115,6 +124,31 @@ function buildBody(options: CallLLMOptions, stream: boolean): Record<string, unk
 }
 
 /**
+ * 5.6.1：默认请求超时时间（毫秒）。
+ * - 非流式：完整响应 60s 上限
+ * - 流式：首字节 60s 上限（开始 yield 后由调用方控制取消语义）
+ */
+const DEFAULT_TIMEOUT_MS = 60_000;
+
+/**
+ * 5.6.1：合并外部 signal 与默认超时 signal。
+ * - 未传 signal：返回 AbortSignal.timeout(timeoutMs)，自动超时
+ * - 已传 signal：尝试用 AbortSignal.any 合并（现代浏览器支持），任一触发则中止
+ * - AbortSignal.any 不可用（旧浏览器）：仅用外部 signal，超时由调用方自行控制
+ * SSR 安全：AbortSignal.timeout 在 Node 18+/现代浏览器均可用。
+ */
+function withDefaultTimeout(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
+  if (!signal) {
+    return AbortSignal.timeout(timeoutMs);
+  }
+  if (typeof AbortSignal.any === 'function') {
+    return AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]);
+  }
+  // 旧浏览器兜底：仅用外部 signal（超时控制退回调用方）
+  return signal;
+}
+
+/**
  * 非流式调用 LLM，返回完整文本。
  *
  * 通过并发池 getRequestPool(provider) 接入：
@@ -126,24 +160,36 @@ function buildBody(options: CallLLMOptions, stream: boolean): Record<string, unk
  * - 重试耗尽抛 RequestPoolError（含 attempts/lastStatus）
  *
  * HTTP 非 2xx 时抛 LLMHttpError（保留原有 "LLM API error:" 前缀文案）。
+ *
+ * 5.6.1：默认 60s 超时控制，调用方未传 signal 时自动应用 AbortSignal.timeout(60000)，
+ * 防止请求悬挂；已传 signal 时尝试合并超时（AbortSignal.any 支持的现代浏览器）。
  */
 export async function callLLM(options: CallLLMOptions): Promise<string> {
   const { config, signal } = options;
+  // 请求前再次校验 baseURL，防止配置绕过（如直接修改 localStorage）
+  const urlCheck = validateCustomBaseUrl(config.baseUrl);
+  if (!urlCheck.ok) {
+    throw new Error(`LLM baseUrl 校验失败：${urlCheck.reason}`);
+  }
   const url = buildEndpoint(config.baseUrl);
   const headers = buildHeaders(config);
   const body = buildBody(options, false);
   const pool = getRequestPool(config.provider);
+  // 5.6.1：合并外部 signal 与默认 60s 超时
+  const effectiveSignal = withDefaultTimeout(signal, DEFAULT_TIMEOUT_MS);
 
   let response: Response;
   try {
     response = await pool.run(
       async () => {
         // 直接 fetch（而非 request()），以便捕获 Retry-After 头
+        // 显式 credentials: 'omit'，避免同源 cookie / 桌面端凭据自动附加
         const res = await fetch(url, {
           method: 'POST',
           headers,
           body: JSON.stringify(body),
-          signal,
+          signal: effectiveSignal,
+          credentials: 'omit',
         });
         if (!res.ok) {
           const errorText = await res.text().catch(() => '');
@@ -156,16 +202,20 @@ export async function callLLM(options: CallLLMOptions): Promise<string> {
         }
         return res;
       },
-      { signal },
+      { signal: effectiveSignal },
     );
   } catch (err) {
+    // 5.6.1：TimeoutError 归一化为可读 message（request.ts 风格）
+    if (err instanceof Error && err.name === 'TimeoutError') {
+      throw new Error('LLM 请求超时（60s）');
+    }
     // 保留原有错误文案约定：HTTP 错误已包成 LLMHttpError；其他错误（网络/超时/取消）原样抛出
     if (err instanceof RequestPoolError) throw err;
     if (err instanceof LLMHttpError) throw err;
     // request.ts 风格的 RequestError（理论上不再触发，因为已绕过 request()）；
     // 保留兜底以防未来重构
     if (err instanceof RequestError && err.type === 'http') {
-      throw new Error(`LLM API error: ${err.message}`);
+      throw new Error(`LLM API error: ${sanitizeLLMErrorText(err.message)}`);
     }
     throw err;
   }
@@ -185,15 +235,34 @@ export async function callLLM(options: CallLLMOptions): Promise<string> {
  * - HTTP 非 2xx 错误由 openAICompatibleStream 内部抛出
  *
  * 复用 streaming.ts 的 openAICompatibleStream 进行 SSE 解析。
+ *
+ * 5.6.1：默认 60s 超时控制（首字节超时，开始 yield 后由调用方控制取消语义）。
  */
 export async function* callLLMStream(options: CallLLMOptions): AsyncGenerator<string> {
   const { config, signal } = options;
+  // 请求前再次校验 baseURL，防止配置绕过（如直接修改 localStorage）
+  const urlCheck = validateCustomBaseUrl(config.baseUrl);
+  if (!urlCheck.ok) {
+    throw new Error(`LLM baseUrl 校验失败：${urlCheck.reason}`);
+  }
   const url = buildEndpoint(config.baseUrl);
   const headers = buildHeaders(config);
   const body = buildBody(options, true);
   const pool = getRequestPool(config.provider);
+  // 5.6.1：合并外部 signal 与默认 60s 超时
+  const effectiveSignal = withDefaultTimeout(signal, DEFAULT_TIMEOUT_MS);
 
-  yield* pool.runStream(() => openAICompatibleStream({ url, headers, body, signal }), { signal });
+  try {
+    yield* pool.runStream(
+      () => openAICompatibleStream({ url, headers, body, signal: effectiveSignal }),
+      { signal: effectiveSignal },
+    );
+  } catch (err) {
+    if (err instanceof Error && err.name === 'TimeoutError') {
+      throw new Error('LLM 流式请求超时（60s 内未收到首字节）');
+    }
+    throw err;
+  }
 }
 
 /**

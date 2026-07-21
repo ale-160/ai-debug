@@ -1,4 +1,3 @@
-import dagre from 'dagre';
 import type { Node, Edge } from 'reactflow';
 import type { TurnNodeData } from './types';
 
@@ -9,12 +8,39 @@ const NODE_WIDTH = 260;
 const NODE_HEIGHT = 120;
 
 /**
+ * 5.5.3 / 5.7.3：dagre 改为 dynamic import，首次使用时异步加载。
+ * - 模块级 promise 缓存：多次调用复用同一个导入 Promise，避免重复加载
+ * - 5.5.3 注记：dagre 同步阻塞算法对 500+ 节点项目可能阻塞主线程 100ms+，
+ *   后续可迁移到 Web Worker 执行（需序列化 nodes/edges 入参，postMessage 回结果）。
+ *   当前保守方案：保留主线程执行 + 节点数阈值检测；超过 500 节点的项目建议用户
+ *   手动触发"自动排列"而非每次切换布局都重算（NodeCanvas useEffect 已只在 viewMode
+ *   变化时触发，不在节点增删时反复执行）。
+ *   TODO：实现 dagre-worker.ts，用 OffscreenCanvas + Worker 跑布局；layoutGit 改为
+ *   返回 Promise，调用方用 await。本次仅做 dynamic import 优化。
+ */
+let dagreModulePromise: Promise<typeof import('dagre')> | null = null;
+function loadDagre(): Promise<typeof import('dagre')> {
+  if (!dagreModulePromise) {
+    dagreModulePromise = import('dagre');
+  }
+  return dagreModulePromise;
+}
+
+/**
  * git 风格布局：使用 dagre 左→右分层算法。
  * 根节点在最左，子节点逐层向右展开，形成 git graph 风格的泳道图。
  * 节点宽 240（compact 模式 180），高根据内容自适应（这里用固定 120 作为估算）。
+ *
+ * 5.7.3：改为 async，内部 dynamic import('dagre')，首次调用时异步加载 dagre chunk。
+ * 调用方需 await 返回值。
  */
-export function layoutGit(nodes: LayoutableNode[], _edges: Edge[]): LayoutableNode[] {
+export async function layoutGit(
+  nodes: LayoutableNode[],
+  _edges: Edge[],
+): Promise<LayoutableNode[]> {
   if (nodes.length === 0) return nodes;
+
+  const dagre = await loadDagre();
 
   // 创建 dagre 有向图，左→右分层
   const g = new dagre.graphlib.Graph<Record<string, never>>();

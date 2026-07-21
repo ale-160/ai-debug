@@ -17,12 +17,39 @@ export type HitlEventHandler = (payload: unknown) => void;
 /** 超时处理器：等待超时触发 */
 export type HitlTimeoutHandler = () => void;
 
+/**
+ * HITL 决策会话 ID 常量（runId）。
+ * 引入常量避免各调用方硬编码字符串字面量，降低拼写错误风险。
+ * 后续新增决策类型时在此追加。
+ */
+export const HitlRunId = {
+  /** 冲突决策会话：eventName 形如 `conflict:${nodeId}` */
+  CONFLICT_RESOLUTION: 'conflict-resolution',
+} as const;
+
+/**
+ * HITL 事件名生成器常量（eventName 模板）。
+ * 动态事件名（含 nodeId 等）通过函数生成，保证格式统一。
+ * 后续新增决策类型时在此追加。
+ */
+export const HitlEventName = {
+  /** 冲突决策事件：参数为冲突节点 id */
+  conflict: (conflictId: string): string => `conflict:${conflictId}`,
+} as const;
+
 interface WaitingEntry {
   runId: string;
   eventName: string;
   handler: HitlEventHandler;
   timeoutTimer?: ReturnType<typeof setTimeout>;
   onTimeout?: HitlTimeoutHandler;
+}
+
+/** listWaitings 返回的只读快照条目 */
+export interface WaitingSnapshot {
+  runId: string;
+  eventName: string;
+  hasTimeout: boolean;
 }
 
 /** 复合 key：`runId::eventName`，保证同 runId 多事件不冲突 */
@@ -39,8 +66,8 @@ class HitlEventBus {
    * 同一 (runId, eventName) 仅保留最后一个订阅（覆盖语义），
    * 用于决策流程重新触发时刷新等待上下文。
    *
-   * @param runId       决策会话 ID（如 'conflict-resolution'）
-   * @param eventName   等待的事件名（如 `conflict:${nodeId}`）
+   * @param runId       决策会话 ID（建议使用 HitlRunId 常量）
+   * @param eventName   等待的事件名（建议使用 HitlEventName 生成器）
    * @param handler     emit 触发时调用
    * @param onTimeout   超时回调（可选）
    * @param timeoutMs   超时毫秒数（可选，<=0 表示永不超时）
@@ -113,6 +140,18 @@ class HitlEventBus {
   }
 
   /**
+   * 列出当前所有等待中的订阅快照（开发模式 debug 用，不暴露 handler 引用）。
+   * 返回新数组，调用方修改不影响内部注册表。
+   */
+  listWaitings(): WaitingSnapshot[] {
+    return Array.from(this.waitings.values()).map((e) => ({
+      runId: e.runId,
+      eventName: e.eventName,
+      hasTimeout: !!e.timeoutTimer,
+    }));
+  }
+
+  /**
    * 清理指定 runId 下所有等待订阅（例如会话被取消时）
    */
   clearRun(runId: string): void {
@@ -146,5 +185,27 @@ class HitlEventBus {
 // 单例导出：全应用共享同一个事件总线实例
 // ============================================================
 export const hitlEventBus = new HitlEventBus();
+
+// ============================================================
+// 开发模式 debug 暴露：window.__hitlDebug
+// 仅在浏览器 + 非生产环境注册，便于排查"卡住的等待者"
+// ============================================================
+declare global {
+  interface Window {
+    __hitlDebug?: {
+      listWaitings: () => WaitingSnapshot[];
+      isWaiting: (runId: string, eventName: string) => boolean;
+      clearAll: () => void;
+    };
+  }
+}
+
+if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
+  window.__hitlDebug = {
+    listWaitings: () => hitlEventBus.listWaitings(),
+    isWaiting: (runId: string, eventName: string) => hitlEventBus.isWaiting(runId, eventName),
+    clearAll: () => hitlEventBus.clearAll(),
+  };
+}
 
 export default hitlEventBus;

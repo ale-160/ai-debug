@@ -83,7 +83,6 @@ jobs:
 
       - name: Security audit
         run: pnpm audit --prod
-        continue-on-error: true
 
       - name: Lint
         run: |
@@ -187,16 +186,26 @@ jobs:
       - name: Generate PR comment
         id: comment
         if: always()
+        # 4.11.3：上下文变量通过 env 传递，避免在 shell 脚本中直接插值 ${{ }}
+        # 防御性编程：即使上下文变量含特殊字符（如 PR 标题含 $ / `），也不会
+        # 触发 shell 注入或 GitHub Actions 表达式注入。
+        env:
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          SEC_CHECK_RESULT: ${{ needs.security-check.result }}
+          IS_EXTERNAL: ${{ needs.security-check.outputs.is_external }}
+          COMMENT_ID: ${{ steps.find-comment.outputs.comment-id }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          STATUS="${{ needs.quality.result }}"
-          SEC_STATUS="${{ needs.security-check.result }}"
-          IS_EXTERNAL="${{ needs.security-check.outputs.is_external }}"
+          STATUS="$QUALITY_RESULT"
+          SEC_STATUS="$SEC_CHECK_RESULT"
+          IS_EXTERNAL="$IS_EXTERNAL"
           MAX_RETRIES=3
 
           RETRY_COUNT=0
-          if [ -n "${{ steps.find-comment.outputs.comment-id }}" ]; then
+          if [ -n "$COMMENT_ID" ]; then
             if command -v gh &> /dev/null; then
-              COMMENT_BODY=$(gh api /repos/${{ github.repository }}/issues/comments/${{ steps.find-comment.outputs.comment-id }} --jq '.body' 2>/dev/null || echo "")
+              COMMENT_BODY=$(gh api "/repos/$GH_REPO/issues/comments/$COMMENT_ID" --jq '.body' 2>/dev/null || echo "")
               if echo "$COMMENT_BODY" | grep -q "auto-fix-retry-count:"; then
                 RETRY_COUNT=$(echo "$COMMENT_BODY" | grep -o "auto-fix-retry-count: [0-9]*" | grep -o "[0-9]*")
               fi
@@ -208,6 +217,37 @@ jobs:
           else
             RETRY_COUNT=0
           fi
+
+          # 4.11.4：辅助函数 - 把日志内容做 markdown escape 后以 4 空格缩进
+          # 形式输出（markdown 缩进代码块）。相比 fenced code block（```），
+          # 缩进代码块不会被日志中可能存在的 ``` 字符提前闭合，避免内容逃逸
+          # 出代码块造成 markdown 注入 / 排版错乱。
+          emit_log_block() {
+            local label="$1"
+            local log_file="$2"
+            local tail_lines="$3"
+            if [ -f "$log_file" ]; then
+              echo "$label"
+              echo ""
+              # 用 sed 给每行加 4 空格前缀，转为 markdown 缩进代码块
+              if [ -n "$tail_lines" ]; then
+                tail -n "$tail_lines" "$log_file" | sed 's/^/    /'
+              else
+                cat "$log_file" | sed 's/^/    /'
+              fi
+              echo ""
+            fi
+          }
+
+          # 4.11.4：typecheck 专用块（grep 过滤 error 行 + 4 空格缩进）
+          emit_typecheck_block() {
+            if [ -f /tmp/ci-logs/typecheck.log ]; then
+              echo "### 🔴 Type Check 错误"
+              echo ""
+              grep -E 'error TS[0-9]+:' /tmp/ci-logs/typecheck.log | head -30 | sed 's/^/    /'
+              echo ""
+            fi
+          }
 
           {
             echo 'body<<COMMENT_EOF'
@@ -234,46 +274,13 @@ jobs:
                 echo "> ⛔ 已达到最大自动修复次数 (${MAX_RETRIES})，请人工介入"
                 echo ""
               fi
-              if [ -f /tmp/ci-logs/typecheck.log ]; then
-                echo "### 🔴 Type Check 错误"
-                echo ""
-                echo '```'
-                grep -E "error TS[0-9]+:" /tmp/ci-logs/typecheck.log | head -30
-                echo '```'
-                echo ""
-              fi
-              if [ -f /tmp/ci-logs/lint.log ]; then
-                echo "### 🟡 Lint 警告/错误"
-                echo ""
-                echo '```'
-                tail -30 /tmp/ci-logs/lint.log
-                echo '```'
-                echo ""
-              fi
-              if [ -f /tmp/ci-logs/test.log ]; then
-                echo "### 🧪 Test 失败"
-                echo ""
-                echo '```'
-                tail -30 /tmp/ci-logs/test.log
-                echo '```'
-                echo ""
-              fi
-              if [ -f /tmp/ci-logs/build.log ]; then
-                echo "### 🏗️ Build 失败"
-                echo ""
-                echo '```'
-                tail -20 /tmp/ci-logs/build.log
-                echo '```'
-                echo ""
-              fi
-              if [ -f /tmp/ci-logs/format.log ]; then
-                echo "### 📝 Format 失败"
-                echo ""
-                echo '```'
-                tail -20 /tmp/ci-logs/format.log
-                echo '```'
-                echo ""
-              fi
+              # 4.11.4：日志块改用 emit_log_block / emit_typecheck_block 输出
+              # （4 空格缩进代码块），避免日志中含 ``` 字符时逃逸出 fenced code block
+              emit_typecheck_block
+              emit_log_block "### 🟡 Lint 警告/错误" /tmp/ci-logs/lint.log 30
+              emit_log_block "### 🧪 Test 失败" /tmp/ci-logs/test.log 30
+              emit_log_block "### 🏗️ Build 失败" /tmp/ci-logs/build.log 20
+              emit_log_block "### 📝 Format 失败" /tmp/ci-logs/format.log 20
               echo "完整日志请查看本次 run 的 Artifacts: \`ci-error-logs\`。"
             fi
             echo ""

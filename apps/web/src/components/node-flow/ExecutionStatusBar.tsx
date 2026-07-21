@@ -32,6 +32,8 @@ export default function ExecutionStatusBar() {
   const [endLabel, setEndLabel] = useState('');
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const streamingRef = useRef<HTMLDivElement>(null);
+  // 5.4.4：rAF 节流滚动句柄，合并连续 assistantMessage 变化触发的一次滚动
+  const scrollRafRef = useRef<number | null>(null);
   // 记录上一次处于 running 的节点 id 列表，用于在其结束时查询最终状态
   const prevRunningIdsRef = useRef<string[]>([]);
 
@@ -45,11 +47,23 @@ export default function ExecutionStatusBar() {
   // 当前轮播焦点节点
   const currentRunning = runningNodes[carouselIndex] ?? runningNodes[0] ?? null;
 
-  // 流式文本自动滚到底部
+  // 5.4.4：流式文本自动滚到底部，用 rAF 节流避免每个 chunk 都触发 layout thrashing
   useEffect(() => {
-    if (streamingRef.current) {
-      streamingRef.current.scrollTop = streamingRef.current.scrollHeight;
+    if (scrollRafRef.current !== null) {
+      cancelAnimationFrame(scrollRafRef.current);
     }
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      if (streamingRef.current) {
+        streamingRef.current.scrollTop = streamingRef.current.scrollHeight;
+      }
+    });
+    return () => {
+      if (scrollRafRef.current !== null) {
+        cancelAnimationFrame(scrollRafRef.current);
+        scrollRafRef.current = null;
+      }
+    };
   }, [currentRunning?.data.assistantMessage]);
 
   // 监听 running 节点的出现/消失，结束时延迟自动隐藏

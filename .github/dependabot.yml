@@ -1,0 +1,95 @@
+# ============================================================
+# Dependabot 配置 - 自动检测依赖更新并创建 PR
+#
+# 4.10.2：依赖版本较新需定期 audit。
+# 此配置让 Dependabot 每周检查 npm 依赖与 GitHub Actions 版本，
+# 自动创建更新 PR，便于定期 review 与升级。
+# ============================================================
+
+version: 2
+
+updates:
+  # npm 依赖（apps/web 子包）
+  - package-ecosystem: npm
+    directory: /apps/web
+    schedule:
+      # 每周一检查，避开周末与周五
+      interval: weekly
+      day: monday
+      time: '09:00'
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 5
+    # 按-monorepo-方式分组，减少 PR 数量
+    groups:
+      # 生产依赖单独分组（重要更新更易被注意到）
+      production-dependencies:
+        dependency-type: production
+        update-types:
+          - minor
+          - patch
+      # 开发依赖合并为单个 PR
+      development-dependencies:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+    # 主版本升级单独提 PR（破坏性变更需人工 review）
+    ignore:
+      - dependency-name: '*'
+        update-types:
+          - version-update:semver-major
+    commit-message:
+      prefix: 'deps'
+      prefix-development: 'deps(dev)'
+      include: scope
+    labels:
+      - dependencies
+      - automated-pr
+
+  # 根目录 npm 依赖（pnpm-workspace 根）
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '09:00'
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 3
+    groups:
+      production-dependencies:
+        dependency-type: production
+        update-types:
+          - minor
+          - patch
+      development-dependencies:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+    ignore:
+      - dependency-name: '*'
+        update-types:
+          - version-update:semver-major
+    commit-message:
+      prefix: 'deps'
+      prefix-development: 'deps(dev)'
+      include: scope
+    labels:
+      - dependencies
+      - automated-pr
+
+  # GitHub Actions 版本更新
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '09:00'
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: 'ci'
+      include: scope
+    labels:
+      - dependencies
+      - automated-pr

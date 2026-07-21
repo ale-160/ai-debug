@@ -6,6 +6,7 @@
 // ============================================================
 import type { AppSettings, MemoryEntry } from '@/components/node-flow/types';
 import { generateId } from '@/lib/id';
+import { reportError } from '@/lib/error-reporter';
 
 /** 应用设置 localStorage key */
 export const APP_SETTINGS_KEY = 'ai-debug:app-settings';
@@ -13,6 +14,12 @@ const SETTINGS_KEY = APP_SETTINGS_KEY;
 
 /** 全局记忆 localStorage key */
 export const GLOBAL_MEMORY_KEY = 'ai-debug:global-memory';
+
+/**
+ * 4.4.4：全局记忆条目数上限。超过时按 LRU 策略淘汰最旧条目。
+ * 500 条 × 平均 200 字符 ≈ 100KB，可覆盖长期使用而不会无限增长。
+ */
+export const MAX_GLOBAL_MEMORY_ENTRIES = 500;
 
 /** 默认设置：记忆默认关闭，冲突自动检测默认关闭，每轮提取（开启后），hover 路径摘要默认关闭 */
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -44,13 +51,14 @@ export function loadSettings(): AppSettings {
   }
 }
 
-/** 写入应用设置。非浏览器环境静默跳过。 */
+/** 写入应用设置。非浏览器环境静默跳过。配额满时通过 reportError 上报。 */
 export function saveSettings(settings: AppSettings): void {
   if (typeof window === 'undefined') return;
   try {
     window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-  } catch {
-    // 隐私模式 / 配额满，静默忽略
+  } catch (err) {
+    // H-18：不再静默吞掉 QuotaExceededError，上报到 console.error
+    reportError(err, 'saveSettings');
   }
 }
 
@@ -73,13 +81,30 @@ export function loadGlobalMemory(): MemoryEntry[] {
   }
 }
 
-/** 写入全局记忆条目列表。非浏览器环境静默跳过。 */
+/**
+ * 写入全局记忆条目列表。非浏览器环境静默跳过。配额满时通过 reportError 上报。
+ *
+ * 4.4.4：写入前若条目数超过 MAX_GLOBAL_MEMORY_ENTRIES（500），
+ * 按 LRU 策略淘汰最旧条目（按 createdAt 升序丢弃超出部分），
+ * 防止无限增长撑爆 localStorage。
+ */
 export function saveGlobalMemory(entries: MemoryEntry[]): void {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(GLOBAL_MEMORY_KEY, JSON.stringify(entries));
-  } catch {
-    // 静默忽略
+    // 4.4.4：LRU 淘汰最旧条目
+    let toSave = entries;
+    if (entries.length > MAX_GLOBAL_MEMORY_ENTRIES) {
+      // 按 createdAt 升序排序，保留最新的 MAX_GLOBAL_MEMORY_ENTRIES 条
+      // （MemoryEntry 没有 lastAccessedAt 字段，用 createdAt 作为近似 LRU 依据）
+      toSave = entries
+        .slice()
+        .sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0))
+        .slice(entries.length - MAX_GLOBAL_MEMORY_ENTRIES);
+    }
+    window.localStorage.setItem(GLOBAL_MEMORY_KEY, JSON.stringify(toSave));
+  } catch (err) {
+    // H-18：不再静默吞掉 QuotaExceededError，上报到 console.error
+    reportError(err, 'saveGlobalMemory');
   }
 }
 

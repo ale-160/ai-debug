@@ -92,6 +92,8 @@ export default function NodeCanvas() {
   const createTurnNode = useDebugStore((s) => s.createTurnNode);
   const updateTurnNode = useDebugStore((s) => s.updateTurnNode);
   const appendAssistantChunk = useDebugStore((s) => s.appendAssistantChunk);
+  // H-8：流式结束后强制 flush buffer
+  const flushStreamBuffer = useDebugStore((s) => s.flushStreamBuffer);
   const pushHistory = useDebugStore((s) => s.pushHistory);
   const selectedNodeId = useDebugStore((s) => s.selectedNodeId);
   const focusMode = useDebugStore((s) => s.focusMode);
@@ -202,7 +204,11 @@ export default function NodeCanvas() {
   const viewport = useDebugStore((s) => s.viewport);
 
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isInitialLoadRef = useRef(true);
+  // 3.6.1：用 lastSavedProjectIdRef 替代 isInitialLoadRef。
+  // - 项目切换（currentProjectId 变化）触发的 nodes/edges 变化仅更新 ref，不保存
+  // - 后续用户操作触发的变化才进入防抖保存
+  // - 避免旧实现"Effect B 在 Effect A 之后重置 isInitialLoadRef=true"导致用户首次操作被吞
+  const lastSavedProjectIdRef = useRef<string | null>(null);
 
   // 撤销/重做已迁移至 store（P0-1：immer patches 增量历史），
   // 组件层只需在节点拖动结束时调用 pushHistory()，快捷键由 DebugFlowEditor 监听。
@@ -221,10 +227,21 @@ export default function NodeCanvas() {
     isZoom: boolean;
   } | null>(null);
 
+  // 3.6.1 + 3.6.2：合并 nodes/edges/viewport 三个触发源为单一防抖 timer。
+  // - 项目切换触发的变化仅更新 lastSavedProjectIdRef，不保存（避免回写刚加载的数据）
+  // - 用户操作触发的变化进入 500ms 防抖，避免与 viewport 防抖独立造成重复保存
+  // - 流式输出期间跳过，避免 chunk 抖动触发保存
   useEffect(() => {
     if (!currentProjectId) return;
-    if (isInitialLoadRef.current) {
-      isInitialLoadRef.current = false;
+    // 项目切换：仅更新 ref，不保存。后续用户操作触发的变化才进入防抖
+    if (lastSavedProjectIdRef.current !== currentProjectId) {
+      lastSavedProjectIdRef.current = currentProjectId;
+      return;
+    }
+    // 5.3.2 优化：流式输出期间（任意节点 status === 'running'）跳过自动保存触发，
+    // 避免每个 chunk 都清/重置防抖计时器并在间隙触发 saveProject（数据未完整）。
+    // 流式结束（running → success/error）会再次引发 nodes 变化，effect 自然重跑触发保存。
+    if (useDebugStore.getState().nodes.some((n) => n.data.status === 'running')) {
       return;
     }
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
@@ -232,31 +249,16 @@ export default function NodeCanvas() {
       const state = useDebugStore.getState();
       if (state.currentProjectId !== currentProjectId) return;
       if (!state.isDirty) return;
+      // 二次校验：防抖窗口内可能又开启流式（罕见），仍跳过
+      if (state.nodes.some((n) => n.data.status === 'running')) return;
       state.saveProject();
     }, 500);
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
-  }, [nodes, edges, currentProjectId]);
-
-  const viewportSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (!currentProjectId) return;
-    if (isInitialLoadRef.current) return;
-    if (viewportSaveTimerRef.current) clearTimeout(viewportSaveTimerRef.current);
-    viewportSaveTimerRef.current = setTimeout(() => {
-      const state = useDebugStore.getState();
-      if (state.currentProjectId !== currentProjectId) return;
-      if (!state.isDirty) return;
-      state.saveProject();
-    }, 800);
-    return () => {
-      if (viewportSaveTimerRef.current) clearTimeout(viewportSaveTimerRef.current);
-    };
-  }, [viewport, currentProjectId]);
+  }, [nodes, edges, viewport, currentProjectId]);
 
   useEffect(() => {
-    isInitialLoadRef.current = true;
     const vp = useDebugStore.getState().viewport;
     if (vp) {
       rfSetViewport(vp);
@@ -267,11 +269,21 @@ export default function NodeCanvas() {
 
   // 视图模式切换（T027）：viewMode 变化时用对应布局算法重算节点位置并 fitView。
   // 仅 viewMode 变化时触发，避免 nodes/edges 变化时反复重排。
+  // 5.7.3：layoutGit 改为 async（dynamic import dagre），需在 effect 内部 await
   useEffect(() => {
     if (nodes.length === 0) return;
-    const laidOut = viewMode === 'git' ? layoutGit(nodes, edges) : layoutRadial(nodes, edges);
-    useDebugStore.setState({ nodes: laidOut });
-    setTimeout(() => fitView({ padding: 0.2 }), 100);
+    let cancelled = false;
+    void (async () => {
+      // git 模式异步加载 dagre 后布局；radial 模式仍同步
+      const laidOut =
+        viewMode === 'git' ? await layoutGit(nodes, edges) : layoutRadial(nodes, edges);
+      if (cancelled) return;
+      useDebugStore.setState({ nodes: laidOut });
+      setTimeout(() => fitView({ padding: 0.2 }), 100);
+    })();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode]);
 
@@ -465,23 +477,34 @@ export default function NodeCanvas() {
   }, []);
 
   // 自动排列：dagre 计算拓扑层级布局 → 写回 store → fitView 居中
+  // 5.7.3：autoLayout 改为 async（dynamic import dagre），需 await
   const handleAutoLayout = useCallback(() => {
     const state = useDebugStore.getState();
     if (state.nodes.length === 0) {
       toast(t.autoLayoutEmpty);
       return;
     }
-    const laidOut = autoLayout(state.nodes, state.edges, { direction: 'TB' });
-    useDebugStore.setState({ nodes: laidOut, isDirty: true });
-    // 自动排列属于结构性变更，立即入栈（合并窗口不合适）
-    state.pushHistory(true);
-    toast(t.autoLayoutSuccess);
-    requestAnimationFrame(() => fitView({ padding: 0.2 }));
+    void (async () => {
+      const laidOut = await autoLayout(state.nodes, state.edges, { direction: 'TB' });
+      useDebugStore.setState({ nodes: laidOut, isDirty: true });
+      // 自动排列属于结构性变更，立即入栈（合并窗口不合适）
+      useDebugStore.getState().pushHistory(true);
+      toast(t.autoLayoutSuccess);
+      requestAnimationFrame(() => fitView({ padding: 0.2 }));
+    })();
   }, [fitView, t]);
 
   const selectedNodes = useMemo(() => nodes.filter((n) => n.selected), [nodes]);
   const canMerge = selectedNodes.length >= 2;
 
+  // 3.2.6 注记（保守方案，本次不强制迁移）：
+  // 当前 AbortController 在组件 ref（abortRef）与 store（_abortControllers）
+  // 重复管理：abortRef 用于组件内"发起新请求前取消旧请求"的即时取消语义，
+  // _abortControllers 用于 ExecutionStatusBar 等外部组件按 nodeId 取消。
+  // 两者职责重叠但语义不同（ref=本地最新一个，store=按 nodeId 注册表），
+  // 统一管理需要重构 NodeCanvas / useInspectorActions / AutoEvolutionDialog
+  // 三处调用方的 AbortController 生命周期，本次保守保留双轨制 + 注释标注，
+  // 后续可改为"只走 store 注册表，组件通过 store.getState().abortRunningTurn 取消"。
   const handleMerge = useCallback(async () => {
     const state = useDebugStore.getState();
     const picked = state.nodes.filter((n) => n.selected);
@@ -515,6 +538,8 @@ export default function NodeCanvas() {
       // 旁路回调：合并节点回答完成后生成多路聚合路径摘要
       (pathSummary) => updateTurnNode(newId, { pathSummary }),
     );
+    // H-8：流式结束后强制 flush buffer，确保最后的 chunk 落到 nodes 后再切换 status
+    flushStreamBuffer(newId);
     if (result.success) {
       updateTurnNode(newId, {
         status: 'success',
@@ -528,6 +553,7 @@ export default function NodeCanvas() {
     setSelectedNode,
     updateTurnNode,
     appendAssistantChunk,
+    flushStreamBuffer,
     registerAbortController,
     tf,
     t,
@@ -586,6 +612,8 @@ export default function NodeCanvas() {
         // 旁路回调：cherry-pick 回答完成后生成路径摘要
         (pathSummary) => updateTurnNode(newNodeId, { pathSummary }),
       );
+      // H-8：流式结束后强制 flush buffer，确保最后的 chunk 落到 nodes 后再切换 status
+      flushStreamBuffer(newNodeId);
       if (result.success) {
         updateTurnNode(newNodeId, {
           status: 'success',
@@ -602,6 +630,7 @@ export default function NodeCanvas() {
       setSelectedNode,
       updateTurnNode,
       appendAssistantChunk,
+      flushStreamBuffer,
       registerAbortController,
       t,
     ],

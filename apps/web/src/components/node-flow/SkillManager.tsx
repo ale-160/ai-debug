@@ -63,7 +63,7 @@ interface SkillManagerProps {
 /** 技能管理面板（模态弹窗） */
 export default function SkillManager({ open, onClose }: SkillManagerProps) {
   const { t, tf } = useTranslation();
-  const dialogRef = useDialogA11y(open, onClose);
+  const { containerRef: dialogRef, containerProps } = useDialogA11y(open, onClose);
 
   // ===== store =====
   const skills = useDebugStore((s) => s.skills);
@@ -592,10 +592,8 @@ export default function SkillManager({ open, onClose }: SkillManagerProps) {
         ref={dialogRef}
         className="w-full max-w-2xl max-h-[85vh] flex flex-col rounded-lg bg-white shadow-xl dark:bg-slate-800"
         onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
+        {...containerProps}
         aria-label={t.skillManagerTitle}
-        tabIndex={-1}
       >
         {/* 标题栏 */}
         <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 dark:border-slate-700">

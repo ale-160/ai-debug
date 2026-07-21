@@ -26,6 +26,7 @@ import {
   saveConfig,
   PROVIDER_PRESETS,
   maskKey,
+  validateCustomBaseUrl,
   type LLMConfig,
   type LLMProvider,
 } from '@/lib/llm-config';
@@ -64,7 +65,14 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
 
   // 表单字段
   const [provider, setProvider] = useState<LLMProvider>('mimo');
+  // 4.1.4：apiKey state 默认存放脱敏值（maskKey），
+  // 仅当用户主动点击"显示 Key"时才解密 loadConfig().apiKey 到 state，
+  // 避免 React DevTools / 浏览器扩展在 modal 打开瞬间读到明文。
+  // isApiKeyMasked 标记当前 apiKey state 是否为脱敏形态：
+  //   true  → 保存/测试连接时需从 loadConfig() 取明文
+  //   false → state 中已是用户主动显示或编辑后的明文
   const [apiKey, setApiKey] = useState('');
+  const [isApiKeyMasked, setIsApiKeyMasked] = useState(true);
   const [baseUrl, setBaseUrl] = useState('');
   const [model, setModel] = useState('');
 
@@ -98,7 +106,9 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     const config = loadConfig();
     if (config) {
       setProvider(config.provider);
-      setApiKey(config.apiKey);
+      // 4.1.4：初始 apiKey state 存放脱敏值，避免明文进入 state
+      setApiKey(maskKey(config.apiKey));
+      setIsApiKeyMasked(true);
       setBaseUrl(config.baseUrl);
       setModel(config.model);
     } else {
@@ -106,6 +116,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
       const preset = PROVIDER_PRESETS.mimo;
       setProvider('mimo');
       setApiKey('');
+      setIsApiKeyMasked(true);
       setBaseUrl(preset.baseUrl);
       setModel(preset.model);
     }
@@ -117,6 +128,37 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     setTestResult(null);
     setShowKey(false);
   }, [open, appSettings]);
+
+  /**
+   * 4.1.4：解析当前生效的 apiKey 明文。
+   * - 若 isApiKeyMasked=true（state 中是脱敏值），从 loadConfig() 取明文
+   * - 若 isApiKeyMasked=false（用户已主动显示或编辑），直接用 state 中的 apiKey
+   * - 若 loadConfig() 也取不到（首次配置），返回 state 中的 apiKey（用户输入的新值）
+   */
+  const resolveEffectiveApiKey = (): string => {
+    if (!isApiKeyMasked) return apiKey.trim();
+    const config = loadConfig();
+    return config?.apiKey?.trim() ?? apiKey.trim();
+  };
+
+  /**
+   * 4.1.4：切换"显示 Key"。仅在用户主动开启时才从 loadConfig() 解密明文到 state；
+   * 关闭时重新替换为脱敏值，避免 state 长时间持有明文。
+   */
+  const toggleShowKey = () => {
+    if (!showKey) {
+      // 开启显示：从 loadConfig() 取明文写入 state
+      const config = loadConfig();
+      setApiKey(config?.apiKey ?? '');
+      setIsApiKeyMasked(false);
+    } else {
+      // 关闭显示：用 loadConfig() 的明文重新生成脱敏值写回 state
+      const config = loadConfig();
+      setApiKey(maskKey(config?.apiKey ?? ''));
+      setIsApiKeyMasked(true);
+    }
+    setShowKey((v) => !v);
+  };
 
   // ESC 键关闭弹窗
   useEffect(() => {
@@ -162,7 +204,9 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
 
   // 测试连接
   const handleTest = async () => {
-    if (!apiKey.trim()) {
+    // 4.1.4：apiKey state 可能是脱敏值，需用 resolveEffectiveApiKey 取明文
+    const effectiveApiKey = resolveEffectiveApiKey();
+    if (!effectiveApiKey) {
       setTestResult({ success: false, message: t.pleaseFillApiKey });
       return;
     }
@@ -180,7 +224,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     try {
       const config: LLMConfig = {
         provider,
-        apiKey: apiKey.trim(),
+        apiKey: effectiveApiKey,
         baseUrl: baseUrl.trim(),
         model: model.trim(),
       };
@@ -193,12 +237,27 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
 
   // 保存配置
   const handleSave = () => {
+    // 4.1.4：apiKey state 可能是脱敏值，需用 resolveEffectiveApiKey 取明文
+    const effectiveApiKey = resolveEffectiveApiKey();
     const config: LLMConfig = {
       provider,
-      apiKey: apiKey.trim(),
+      apiKey: effectiveApiKey,
       baseUrl: baseUrl.trim(),
       model: model.trim(),
     };
+    // 校验 baseURL 安全性：custom provider 允许用户填任意 URL，
+    // 但若命中可疑形态（非 https、私有 IP、IP 直连等），弹显著警告让用户确认。
+    // 不强制阻断 —— 合法自部署场景可能确实需要这些配置。
+    const urlCheck = validateCustomBaseUrl(config.baseUrl);
+    if (!urlCheck.ok) {
+      const confirmed = window.confirm(
+        `⚠️ Base URL 安全警告\n\n${urlCheck.reason}\n\n` +
+          `该 URL 可能存在钓鱼风险，可能导致 API Key 泄露。\n` +
+          `仅当您确认这是可信的自部署服务时才继续保存。\n\n` +
+          `是否仍然保存？`,
+      );
+      if (!confirmed) return;
+    }
     saveConfig(config);
     // 同步保存应用设置（记忆/冲突/规则）
     updateAppSettings(settingsDraft);
@@ -214,9 +273,11 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const handleSaveAsPreset = () => {
     const name = window.prompt(t.llmConfigNamePrompt);
     if (!name || !name.trim()) return;
+    // 4.1.4：apiKey state 可能是脱敏值，需用 resolveEffectiveApiKey 取明文
+    const effectiveApiKey = resolveEffectiveApiKey();
     const config: LLMConfig = {
       provider,
-      apiKey: apiKey.trim(),
+      apiKey: effectiveApiKey,
       baseUrl: baseUrl.trim(),
       model: model.trim(),
     };
@@ -230,9 +291,11 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   /** 把当前表单内容写回编辑中的配置 */
   const handleSavePresetEdit = () => {
     if (!editingConfigId) return;
+    // 4.1.4：apiKey state 可能是脱敏值，需用 resolveEffectiveApiKey 取明文
+    const effectiveApiKey = resolveEffectiveApiKey();
     const config: LLMConfig = {
       provider,
-      apiKey: apiKey.trim(),
+      apiKey: effectiveApiKey,
       baseUrl: baseUrl.trim(),
       model: model.trim(),
     };
@@ -251,9 +314,13 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   /** 激活某个配置：调用 switchLlmConfig，同时把表单字段更新为该配置的值 */
   const handleActivatePreset = (entry: LLMConfigEntry) => {
     setProvider(entry.config.provider);
-    setApiKey(entry.config.apiKey);
+    // 4.1.4：激活预设时 apiKey state 存放脱敏值，避免明文进入 state
+    setApiKey(maskKey(entry.config.apiKey));
+    setIsApiKeyMasked(true);
     setBaseUrl(entry.config.baseUrl);
     setModel(entry.config.model);
+    // 切换激活预设时若 showKey 处于开启状态则关闭，避免与脱敏态不一致
+    setShowKey(false);
     switchLlmConfig(entry.id);
     saveConfig(entry.config);
     emit(NODE_EVENTS.LlmConfigUpdated);
@@ -263,9 +330,12 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   /** 编辑某个配置：把表单字段填充为该配置的值 */
   const handleEditPreset = (entry: LLMConfigEntry) => {
     setProvider(entry.config.provider);
-    setApiKey(entry.config.apiKey);
+    // 4.1.4：编辑预设时 apiKey state 存放脱敏值，避免明文进入 state
+    setApiKey(maskKey(entry.config.apiKey));
+    setIsApiKeyMasked(true);
     setBaseUrl(entry.config.baseUrl);
     setModel(entry.config.model);
+    setShowKey(false);
     setEditingConfigId(entry.id);
     setTestResult(null);
     setShowModelHelp(false);
@@ -282,7 +352,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     }
   };
 
-  const dialogRef = useDialogA11y(open, onClose);
+  const { containerRef: dialogRef, containerProps } = useDialogA11y(open, onClose);
 
   if (!open) return null;
 
@@ -295,10 +365,8 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
         ref={dialogRef}
         className="w-full max-w-lg rounded-lg bg-white shadow-xl dark:bg-slate-800"
         onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
+        {...containerProps}
         aria-label={t.settings}
-        tabIndex={-1}
       >
         {/* 标题栏 */}
         <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4 dark:border-slate-700">
@@ -400,16 +468,21 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                     type={showKey ? 'text' : 'password'}
                     value={apiKey}
                     onChange={(e) => {
+                      // 4.1.4：仅在 showKey=true 时允许编辑
+                      // 脱敏态下 apiKey 为 maskKey 形式，禁止编辑避免误保存脱敏值
+                      if (!showKey) return;
                       setApiKey(e.target.value);
+                      setIsApiKeyMasked(false);
                       setTestResult(null);
                     }}
+                    readOnly={!showKey}
                     placeholder="sk-..."
                     className="w-full rounded border border-slate-200 bg-white px-3 py-2 pr-10 text-sm text-slate-800 focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
                     autoComplete="off"
                   />
                   <button
                     type="button"
-                    onClick={() => setShowKey((v) => !v)}
+                    onClick={toggleShowKey}
                     className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
                     aria-label={showKey ? t.hideApiKey : t.showApiKey}
                   >

@@ -35,6 +35,8 @@ export interface RequestOptions {
   body?: string;
   /** 可选 AbortSignal，可中止请求 */
   signal?: AbortSignal;
+  /** fetch credentials 模式，默认 'omit'（避免 cookie / 桌面端凭据自动附加到 LLM 跨域请求） */
+  credentials?: RequestCredentials;
 }
 
 /**
@@ -42,13 +44,13 @@ export interface RequestOptions {
  * 取消（AbortError）原样抛出，保持取消语义不变。
  *
  * @param url      请求 URL
- * @param options  method / headers / body / signal
+ * @param options  method / headers / body / signal / credentials
  * @returns        原始 Response（已校验 ok）
  */
 export async function request(url: string, options: RequestOptions = {}): Promise<Response> {
-  const { method = 'GET', headers, body, signal } = options;
+  const { method = 'GET', headers, body, signal, credentials = 'omit' } = options;
   try {
-    const res = await fetch(url, { method, headers, body, signal });
+    const res = await fetch(url, { method, headers, body, signal, credentials });
     if (!res.ok) {
       const errorText = await res.text().catch(() => '');
       throw new RequestError(`${res.status} - ${errorText.slice(0, 500)}`, res.status, 'http');
@@ -64,8 +66,10 @@ export async function request(url: string, options: RequestOptions = {}): Promis
     if (err instanceof Error && err.name === 'AbortError') {
       throw err;
     }
-    // 其他网络错误（TypeError 等）
-    throw new RequestError(err instanceof Error ? err.message : String(err), 0, 'network');
+    // 其他网络错误（TypeError 等）—— 归一化为友好提示，避免暴露 fetch 原始错误
+    // 保留原始错误到 console 便于排查
+    console.error('[request] 网络错误：', err);
+    throw new RequestError('网络错误，请检查连接', 0, 'network');
   }
 }
 
@@ -76,4 +80,26 @@ export async function request(url: string, options: RequestOptions = {}): Promis
 export function describeError(err: unknown): string {
   if (err instanceof Error) return err.message;
   return String(err);
+}
+
+/**
+ * 脱敏 LLM 错误响应中可能回显的敏感信息（apiKey / Authorization 头）。
+ *
+ * 某些服务商在错误响应体中会回显请求头，导致 Authorization: Bearer xxx 或 sk-xxx
+ * 形式的 apiKey 被透传到 UI。本函数在拼接错误消息前进行正则替换：
+ * - sk- 开头并跟随 20+ 位字符的 key → sk-***
+ * - Bearer xxx（10+ 位）→ Bearer ***
+ * - Authorization: ... 整行 → Authorization: ***
+ * 最后截断到 500 字符。
+ */
+export function sanitizeLLMErrorText(text: string): string {
+  if (!text) return '';
+  let out = text;
+  // 替换 OpenAI 风格的 sk- key
+  out = out.replace(/sk-[A-Za-z0-9_-]{20,}/g, 'sk-***');
+  // 替换 Bearer token
+  out = out.replace(/Bearer\s+[A-Za-z0-9_-]{10,}/gi, 'Bearer ***');
+  // 替换 Authorization 整行（覆盖大小写、空格差异）
+  out = out.replace(/Authorization\s*:\s*[^\r\n]+/gi, 'Authorization: ***');
+  return out.slice(0, 500);
 }

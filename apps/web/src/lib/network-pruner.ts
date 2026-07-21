@@ -11,6 +11,7 @@ import { quickCallLLM } from './llm-helpers';
 import type { LLMMessage } from './llm-client';
 import { createProject, updateProject } from './project-storage';
 import { randomSuffix } from '@/lib/id';
+import { useDebugStore } from './debug-store';
 
 /** 修剪分析结果 */
 export interface PruneAnalysis {
@@ -98,6 +99,12 @@ function parsePruneAnalysis(text: string): PruneAnalysis | null {
 /**
  * 保守分析：LLM 失败时保留所有非 abandoned 节点。
  * mainPath 取从根出发的最长根到叶路径，作为主干道。
+ *
+ * 3.9.3：mainPath 语义说明。蛛网本身是非线性结构（一个父可有多个子），
+ * 此处的 mainPath 仅是"最长根到叶路径"，作为 derivePrunedProject 重建
+ * 线性主干的依据，并非整个蛛网的全部保留节点。非 mainPath 的保留节点
+ * 仍会按原 parentId 在新项目中挂载（详见 derivePrunedProject 注释）。
+ * 因此 mainPath 不需要覆盖所有保留节点，只需保证根到结论的最长路径即可。
  */
 function conservativeAnalysis(project: NetworkProject): PruneAnalysis {
   const valid = project.nodes.filter((n) => n.data.status !== 'abandoned');
@@ -117,18 +124,26 @@ function conservativeAnalysis(project: NetworkProject): PruneAnalysis {
     }
   }
 
-  // DFS 找最长根到叶路径
+  // 3.9.2：改用迭代式 DFS（栈模拟）找最长根到叶路径，防止深度过大时递归栈溢出。
+  // 蛛网理论上深度无上限，超深蛛网（如 1000+ 节点的线性链）可能触发调用栈溢出。
+  // 反向 push 保证 pop 顺序与原递归遍历顺序一致（同长度时优先选靠前的分支）。
   let longest: string[] = [];
-  const dfs = (id: string, path: string[]) => {
+  const stack: Array<{ id: string; path: string[] }> = [];
+  for (let i = roots.length - 1; i >= 0; i--) {
+    stack.push({ id: roots[i], path: [] });
+  }
+  while (stack.length > 0) {
+    const { id, path } = stack.pop()!;
     const cur = [...path, id];
     const children = childrenMap.get(id) ?? [];
     if (children.length === 0) {
       if (cur.length > longest.length) longest = cur;
-      return;
+      continue;
     }
-    for (const c of children) dfs(c, cur);
-  };
-  for (const r of roots) dfs(r, []);
+    for (let i = children.length - 1; i >= 0; i--) {
+      stack.push({ id: children[i], path: cur });
+    }
+  }
 
   const mainPath = longest.length > 0 ? longest : valid.map((n) => n.id);
   return {
@@ -291,10 +306,15 @@ export function derivePrunedProject(
   // 填充新项目的 nodes/edges（updateProject 内部已 saveProjects）
   updateProject(base.id, { nodes: newNodes, edges: newEdges });
 
-  return {
+  const derivedProject: NetworkProject = {
     ...base,
     nodes: newNodes,
     edges: newEdges,
     updatedAt: Date.now(),
   };
+  // 通过 store action 入库：persist 中间件自动同步到 localStorage，
+  // 避免直接写 storage 导致 store.projects 不更新、侧边栏看不到派生项目
+  useDebugStore.getState().addDerivedProject(derivedProject);
+
+  return derivedProject;
 }

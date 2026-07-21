@@ -1,3 +1,16 @@
+// ============================================================
+// AI Debug — i18n 字符串表（zh / en）
+//
+// TODO(6.6 i18n 实现): 本单文件已超 1500 行，后续按域拆分为
+//   - i18n/projects.ts（项目列表 / 增删改）
+//   - i18n/node-flow.ts（画布 / 节点 / 边）
+//   - i18n/settings.ts（设置 / 记忆 / 冲突）
+//   - i18n/agent.ts（助手 / 技能）
+//   - i18n/common.ts（通用动作 / 时间 / 错误）
+// 并在 i18n/index.ts 聚合导出 STRINGS_ZH / STRINGS_EN。
+// 当前保守起见不拆分（大规模重构风险高，需同步更新所有 useTranslation 调用方）。
+// ============================================================
+
 export type Language = 'zh' | 'en';
 
 export const STRINGS_ZH = {
@@ -56,7 +69,7 @@ export const STRINGS_ZH = {
   goToProviderConsole: '前往 {provider} 官方控制台创建 API Key，并在模型列表中查看可用的模型名。',
 
   apiKeySecurityNote:
-    'API Key 仅存储在当前浏览器 localStorage，不会上传到任何服务器（除你配置的 LLM 服务商外）',
+    'API Key 使用 AES-GCM 加密后存储在当前浏览器 localStorage，不会上传到任何服务器（除你配置的 LLM 服务商外）。注意：加密密钥同样保存在本地，能延迟攻击者但无法防御拿到本机访问权限的攻击者。',
 
   pleaseFillApiKey: '请先填写 API Key',
   pleaseFillBaseUrl: '请先填写 Base URL',
@@ -742,6 +755,15 @@ export const STRINGS_ZH = {
   fullscreenExit: '退出全屏 (Esc)',
   toggleSidebarExpand: '展开侧边栏',
   toggleSidebarCollapse: '收起侧边栏',
+
+  // H-18：错误处理相关文案（ErrorBoundary fallback / 全局 error.tsx）
+  canvasRenderFailed: '画布渲染失败，请刷新页面',
+  reloadPage: '刷新页面',
+  errorBoundaryTitle: '渲染出错',
+  errorBoundaryRetry: '重试',
+  errorPageTitle: '页面出错啦',
+  errorPageHint: '应用遇到未预期的错误。请尝试重试，或刷新页面。',
+  quotaExceededHint: '本地存储已满，部分数据可能未保存。请清理浏览器数据后重试。',
 };
 
 export const STRINGS_EN = {
@@ -801,7 +823,7 @@ export const STRINGS_EN = {
     'Go to {provider} console to create an API Key and check available model names.',
 
   apiKeySecurityNote:
-    'API Key is stored only in your browser localStorage, never uploaded to any server (except your configured LLM provider).',
+    'API Key is encrypted with AES-GCM before being stored in your browser localStorage, and is never uploaded to any server (except your configured LLM provider). Note: the encryption key is also stored locally — this slows down attackers but cannot prevent access by someone with full control of your machine.',
 
   pleaseFillApiKey: 'Please fill in the API Key',
   pleaseFillBaseUrl: 'Please fill in the Base URL',
@@ -1509,6 +1531,16 @@ export const STRINGS_EN = {
   fullscreenExit: 'Exit Fullscreen (Esc)',
   toggleSidebarExpand: 'Expand Sidebar',
   toggleSidebarCollapse: 'Collapse Sidebar',
+
+  // H-18: Error handling (ErrorBoundary fallback / global error.tsx)
+  canvasRenderFailed: 'Canvas rendering failed, please reload the page',
+  reloadPage: 'Reload Page',
+  errorBoundaryTitle: 'Something went wrong',
+  errorBoundaryRetry: 'Retry',
+  errorPageTitle: 'Something went wrong',
+  errorPageHint: 'The app hit an unexpected error. Please retry, or reload the page.',
+  quotaExceededHint:
+    'Local storage is full; some data may not have been saved. Please clear browser data and retry.',
 };
 
 export type Strings = typeof STRINGS_ZH;

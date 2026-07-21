@@ -13,7 +13,11 @@ const MAX_FAN = (2 * Math.PI) / 3;
 /** 单个子节点占用角度（弧度）≈ 30 度，用于推算扇形张角 */
 const PER_CHILD_ANGLE = Math.PI / 6;
 
-/** 计算节点深度：通过 parentId 向上递归，根节点深度为 1。 */
+/**
+ * 计算节点深度：通过 parentId 向上递归，根节点深度为 1。
+ * 5.5.1 注记：本函数为 O(depth)，仅作为 incrementalLayout 等无法预计算 depth 场景的回退。
+ * 全量 layoutRadial 已改为 BFS 时同步计算 depthMap（O(N)），不再调用本函数。
+ */
 export function getNodeDepth(nodeId: string, nodes: LayoutableNode[]): number {
   const nodeMap = new Map<string, LayoutableNode>(nodes.map((n) => [n.id, n]));
   let depth = 0;
@@ -78,18 +82,24 @@ function computeChildAngles(
  * 计算父节点下所有子节点的目标位置。
  * 半径 radius = BASE_RADIUS * 父节点深度（即子节点深度 - 1）。
  * 位置：x = parentX + radius * cos(angle)，y = parentY + radius * sin(angle)。
+ *
+ * 5.5.1 优化：新增可选 parentDepth 参数（由 BFS 预计算传入），避免每次调用
+ * getNodeDepth 沿 parentId 链向上递归 O(depth)；未传则回退到 getNodeDepth
+ * （incrementalLayout 等单点查询场景仍可使用）。
  */
 function placeChildren(
   parentId: string,
   children: LayoutableNode[],
   nodes: LayoutableNode[],
   positions?: Map<string, Position>,
+  parentDepth?: number,
 ): Map<string, Position> {
   const parent = nodes.find((n) => n.id === parentId);
   const result = new Map<string, Position>();
   if (!parent || children.length === 0) return result;
   const angles = computeChildAngles(parentId, children, nodes, positions);
-  const radius = BASE_RADIUS * getNodeDepth(parentId, nodes);
+  const depth = parentDepth ?? getNodeDepth(parentId, nodes);
+  const radius = BASE_RADIUS * depth;
   const parentPos = positions?.get(parentId) ?? parent.position;
   children.forEach((child, i) => {
     const a = angles[i];
@@ -104,6 +114,10 @@ function placeChildren(
 /**
  * 中心辐射状全量布局：根节点居中，子节点沿父节点外侧扇形分布，形成蛛网形态。
  * 优先用 node.data.parentId 构建父子关系；edges 仅作参考。
+ *
+ * 5.5.1 优化：BFS 时同步维护 depthMap（depth[child] = depth[parent] + 1），
+ * 整体 O(N) 完成深度计算，避免对每个父节点调用 O(depth) 的 getNodeDepth。
+ * 根节点深度为 1（与 getNodeDepth 语义一致），其子节点深度为 2，依此类推。
  */
 export function layoutRadial(nodes: LayoutableNode[], _edges: Edge[]): LayoutableNode[] {
   // 找到根节点（parentId 为 null）；若无则返回原数组
@@ -122,6 +136,10 @@ export function layoutRadial(nodes: LayoutableNode[], _edges: Edge[]): Layoutabl
   const positions = new Map<string, Position>();
   positions.set(root.id, { x: 0, y: 0 });
 
+  // 5.5.1：depthMap 在 BFS 时同步填充，O(N) 完成深度计算
+  const depthMap = new Map<string, number>();
+  depthMap.set(root.id, 1);
+
   // BFS 逐层放置子节点（visited 防止异常环引用导致死循环）
   const visited = new Set<string>([root.id]);
   const queue: string[] = [root.id];
@@ -129,7 +147,12 @@ export function layoutRadial(nodes: LayoutableNode[], _edges: Edge[]): Layoutabl
     const parentId = queue.shift()!;
     const children = childrenMap.get(parentId) ?? [];
     if (children.length === 0) continue;
-    const childPositions = placeChildren(parentId, children, nodes, positions);
+    const parentDepth = depthMap.get(parentId) ?? 1;
+    // 子节点深度 = 父节点深度 + 1（与 getNodeDepth 语义一致）
+    for (const child of children) {
+      depthMap.set(child.id, parentDepth + 1);
+    }
+    const childPositions = placeChildren(parentId, children, nodes, positions, parentDepth);
     for (const child of children) {
       const pos = childPositions.get(child.id);
       if (pos) positions.set(child.id, pos);

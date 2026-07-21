@@ -20,12 +20,13 @@ import {
 import { toast } from 'sonner';
 
 import NodeCanvas from './NodeCanvas';
+import ErrorBoundary from '@/components/ErrorBoundary';
 import { useTheme, resolveTheme } from '@/components/ThemeProvider';
 import { useDebugStore } from '@/lib/debug-store';
 import { streamTurnResponse } from '@/lib/network-engine';
 import { buildMemoryContext } from '@/lib/memory-engine';
 import { isConfigured, maskKey } from '@/lib/llm-config';
-import { hitlEventBus } from '@/lib/hitl-event-bus';
+import { hitlEventBus, HitlRunId, HitlEventName } from '@/lib/hitl-event-bus';
 import { useTranslation, I18nProvider } from '@/components/I18nProvider';
 import { useRouter } from 'next/navigation';
 import { getStrings, type Language } from '@/data/i18n';
@@ -219,6 +220,8 @@ function EmptyStateInput() {
   const createTurnNode = useDebugStore((s) => s.createTurnNode);
   const updateTurnNode = useDebugStore((s) => s.updateTurnNode);
   const appendAssistantChunk = useDebugStore((s) => s.appendAssistantChunk);
+  // H-8：流式结束后强制 flush buffer
+  const flushStreamBuffer = useDebugStore((s) => s.flushStreamBuffer);
   const createProject = useDebugStore((s) => s.createProject);
   // 当前流式请求的 AbortController：用于在发起新请求前取消旧请求
   const abortRef = useRef<AbortController | null>(null);
@@ -360,6 +363,8 @@ function EmptyStateInput() {
       (pathSummary) => updateTurnNode(newId, { pathSummary }),
     );
 
+    // H-8：流式结束后强制 flush buffer，确保最后的 chunk 落到 nodes 后再切换 status
+    flushStreamBuffer(newId);
     if (result.success) {
       updateTurnNode(newId, {
         status: 'success',
@@ -380,6 +385,7 @@ function EmptyStateInput() {
     createTurnNode,
     updateTurnNode,
     appendAssistantChunk,
+    flushStreamBuffer,
     createProject,
     t.pleaseConfigureApiKey,
   ]);
@@ -476,7 +482,18 @@ function EmptyStateInput() {
 function EditorInner() {
   const { t } = useTranslation();
   const { toggleTheme } = useTheme();
-  const nodes = useDebugStore((s) => s.nodes);
+  // 5.13.2 注记（保守方案）：本组件订阅 20+ store selectors，任一变化都触发重渲染。
+  // 当前业务下大部分 selector 是稳定引用（action 函数），不变化；状态类 selector
+  //（showSettings / showMemoryPanel 等）只在用户操作时变化。因此实际重渲染频率可控。
+  // 拆分计划（不本次执行）：
+  //   1. 把顶栏相关 selector 拆到 TopNav 子组件（已拆分，TopNav 内独立订阅）
+  //   2. 把模态框开关 selector 拆到 ModalHost 子组件，EditorInner 只订阅必要的画布状态
+  //   3. 用 zustand 的 useShallow 一次性订阅多个稳定 selector，减少 hook 调用数
+  //   4. 用 React.memo 包裹子组件，配合 selector 稳定引用避免穿透重渲染
+  // 优先级低：当前帧预算充足（重渲染 < 2ms），暂不重构。
+  // H-10：仅订阅 nodes.length===0 的 boolean，避免订阅整个 nodes 数组
+  // 流式 chunk 追加导致 nodes 引用变化时，isEmpty 仍为 false（boolean 浅比较稳定）
+  const isEmpty = useDebugStore((s) => s.nodes.length === 0);
   const selectedNodeId = useDebugStore((s) => s.selectedNodeId);
   const showSettings = useDebugStore((s) => s.showSettings);
   const setShowSettings = useDebugStore((s) => s.setShowSettings);
@@ -511,18 +528,48 @@ function EditorInner() {
   // P2-3 待决策的冲突信息（接收 conflict-detected / conflict-decision-requested 事件后写入）
   const [pendingConflict, setPendingConflict] = useState<ConflictDecisionPayload | null>(null);
 
-  const isEmpty = nodes.length === 0;
-
   // 挂载后从 localStorage 加载 llmConfig/projects/设置/全局记忆/技能/多 LLM 配置/会话，保证首屏 SSR/CSR 一致
+  //
+  // 5.12.2 优化：7 次同步 localStorage 读取原本在挂载首帧串行执行，每次 ~1-5ms，
+  // 总计可能阻塞首屏 10-30ms。改为用 requestIdleCallback 分散到空闲帧执行：
+  // - 高优先级（refreshProjects / refreshLlmConfig）：立即执行，影响首屏可见状态
+  // - 低优先级（refreshSkills / refreshChatSessions / refreshGlobalMemory）：
+  //   延迟到 idle 帧，避免抢占首屏渲染
+  // - setIsHydrated(true) 在高优先级完成后立即触发，不等待低优先级
+  // 注意：refreshLlmConfigs 与 refreshLlmConfig 有依赖关系（前者迁移 + 后者读取），
+  // 必须串行；refreshAppSettings 影响记忆开关默认值，与 refreshGlobalMemory 顺序敏感。
   useEffect(() => {
+    // 高优先级：立即执行（影响首屏可见状态）
     refreshLlmConfigs();
     refreshLlmConfig();
     refreshProjects();
     refreshAppSettings();
-    refreshGlobalMemory();
-    refreshSkills();
-    refreshChatSessions();
+    // 标记 hydration 完成，编辑器主体可以渲染
     setIsHydrated(true);
+
+    // 5.12.2：低优先级 refresh 用 requestIdleCallback 分散到空闲帧
+    // fallback：不支持 requestIdleCallback 的环境（SSR / 旧浏览器）用 setTimeout(0)
+    const scheduleIdle =
+      typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function'
+        ? (cb: () => void) => window.requestIdleCallback(cb, { timeout: 1000 })
+        : (cb: () => void) => window.setTimeout(cb, 0);
+
+    const idleHandle1 = scheduleIdle(() => refreshGlobalMemory());
+    const idleHandle2 = scheduleIdle(() => refreshSkills());
+    const idleHandle3 = scheduleIdle(() => refreshChatSessions());
+
+    return () => {
+      // 清理：组件卸载时取消未执行的 idle 回调（避免 setState on unmounted）
+      if (typeof window !== 'undefined' && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(idleHandle1 as number);
+        window.cancelIdleCallback(idleHandle2 as number);
+        window.cancelIdleCallback(idleHandle3 as number);
+      } else {
+        window.clearTimeout(idleHandle1 as number);
+        window.clearTimeout(idleHandle2 as number);
+        window.clearTimeout(idleHandle3 as number);
+      }
+    };
   }, [
     refreshLlmConfig,
     refreshLlmConfigs,
@@ -705,45 +752,70 @@ function EditorInner() {
         <Suspense fallback={<div className="w-64 bg-slate-100 dark:bg-slate-900 animate-pulse" />}>
           <NodeSidebar />
         </Suspense>
-        <div id="main-canvas" className="flex-1 relative overflow-hidden" tabIndex={-1}>
-          <NodeCanvas />
-          {isEmpty && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none p-4">
-              <EmptyStateInput />
-            </div>
-          )}
-        </div>
-        {/* 助手面板：独立右侧侧边栏（参考 spark-flow AgentPanel 布局）
-            - 桌面端：400px flex 项，与 NodeInspector 共存
-            - 移动端：fixed 浮层覆盖画布，带半透明背景 */}
-        {assistantPanelOpen && (
-          <>
-            {/* 移动端半透明背景（点击关闭） */}
+        {/* H-18：ErrorBoundary 包裹画布子树（NodeCanvas / AssistantPanel / NodeInspector）。
+            用 Fragment 作为 children 保持原有 flex 布局（Fragment 不产生 DOM 节点）。
+            任一子组件渲染抛错时显示 fallback，避免整页白屏。 */}
+        <ErrorBoundary
+          fallback={
             <div
-              className="fixed inset-0 top-14 z-40 bg-black/30 md:hidden"
-              onClick={() => setAssistantPanelOpen(false)}
-              aria-hidden="true"
-            />
-            <aside
-              className="fixed top-14 inset-x-0 bottom-0 z-40 md:static md:top-auto md:inset-auto md:z-auto md:w-[400px] md:shrink-0 bg-white dark:bg-slate-900 md:border-l border-slate-200 dark:border-slate-700 flex flex-col shadow-2xl md:shadow-none"
-              aria-label={t.assistantTitle}
+              role="alert"
+              className="flex-1 flex flex-col items-center justify-center gap-3 p-8 text-center bg-slate-100 dark:bg-slate-950"
             >
-              <Suspense
-                fallback={
-                  <div className="flex-1 flex items-center justify-center text-xs text-slate-400">
-                    <Loader2 size={14} className="animate-spin mr-1.5" />
-                    {t.loadingEditor}
-                  </div>
-                }
+              <div className="text-sm text-slate-600 dark:text-slate-300">
+                {t.canvasRenderFailed}
+              </div>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="px-3 py-1.5 text-xs rounded-md bg-violet-500 text-white hover:bg-violet-600 transition-colors"
               >
-                <AssistantPanel />
-              </Suspense>
-            </aside>
+                {t.reloadPage}
+              </button>
+            </div>
+          }
+        >
+          <>
+            <div id="main-canvas" className="flex-1 relative overflow-hidden" tabIndex={-1}>
+              <NodeCanvas />
+              {isEmpty && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none p-4">
+                  <EmptyStateInput />
+                </div>
+              )}
+            </div>
+            {/* 助手面板：独立右侧侧边栏（参考 spark-flow AgentPanel 布局）
+                - 桌面端：400px flex 项，与 NodeInspector 共存
+                - 移动端：fixed 浮层覆盖画布，带半透明背景 */}
+            {assistantPanelOpen && (
+              <>
+                {/* 移动端半透明背景（点击关闭） */}
+                <div
+                  className="fixed inset-0 top-14 z-40 bg-black/30 md:hidden"
+                  onClick={() => setAssistantPanelOpen(false)}
+                  aria-hidden="true"
+                />
+                <aside
+                  className="fixed top-14 inset-x-0 bottom-0 z-40 md:static md:top-auto md:inset-auto md:z-auto md:w-[400px] md:shrink-0 bg-white dark:bg-slate-900 md:border-l border-slate-200 dark:border-slate-700 flex flex-col shadow-2xl md:shadow-none"
+                  aria-label={t.assistantTitle}
+                >
+                  <Suspense
+                    fallback={
+                      <div className="flex-1 flex items-center justify-center text-xs text-slate-400">
+                        <Loader2 size={14} className="animate-spin mr-1.5" />
+                        {t.loadingEditor}
+                      </div>
+                    }
+                  >
+                    <AssistantPanel />
+                  </Suspense>
+                </aside>
+              </>
+            )}
+            <Suspense fallback={<div className="w-80 bg-white dark:bg-slate-900 animate-pulse" />}>
+              <NodeInspector />
+            </Suspense>
           </>
-        )}
-        <Suspense fallback={<div className="w-80 bg-white dark:bg-slate-900 animate-pulse" />}>
-          <NodeInspector />
-        </Suspense>
+        </ErrorBoundary>
       </div>
       {/* 页面底部链接：GitHub 仓库 | 赞赏支持 | 阿乐一百六（样式与 web-text 保持一致） */}
       <footer className="flex items-center justify-center gap-4 px-4 py-1.5 border-t border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-900/50 text-xs text-slate-400">
@@ -839,7 +911,7 @@ function EditorInner() {
             onDecide={(decision: ConflictDecision) => {
               if (!pendingConflict) return;
               // 通过 hitl-event-bus 唤醒等待方（useInspectorActions 中的 subscribe handler）
-              hitlEventBus.emit('conflict-resolution', `conflict:${pendingConflict.id}`, {
+              hitlEventBus.emit(HitlRunId.CONFLICT_RESOLUTION, HitlEventName.conflict(pendingConflict.id), {
                 decision,
               });
             }}

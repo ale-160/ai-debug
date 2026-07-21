@@ -17,6 +17,7 @@ import {
   Tag,
   Copy,
   CornerDownRight,
+  Plus,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { nodeTypes } from './nodes';
@@ -90,8 +91,11 @@ export default function NodeCanvas() {
   const setViewport = useDebugStore((s) => s.setViewport);
   const createMergedNode = useDebugStore((s) => s.createMergedNode);
   const createTurnNode = useDebugStore((s) => s.createTurnNode);
+  const createProject = useDebugStore((s) => s.createProject);
   const updateTurnNode = useDebugStore((s) => s.updateTurnNode);
   const appendAssistantChunk = useDebugStore((s) => s.appendAssistantChunk);
+  // H-8：流式结束后强制 flush buffer
+  const flushStreamBuffer = useDebugStore((s) => s.flushStreamBuffer);
   const pushHistory = useDebugStore((s) => s.pushHistory);
   const selectedNodeId = useDebugStore((s) => s.selectedNodeId);
   const focusMode = useDebugStore((s) => s.focusMode);
@@ -127,7 +131,20 @@ export default function NodeCanvas() {
   const nodeDisplayMode = useDebugStore((s) => s.nodeDisplayMode);
   const toggleNodeDisplayMode = useDebugStore((s) => s.toggleNodeDisplayMode);
 
-  const { zoomIn, zoomOut, fitView, setViewport: rfSetViewport, getViewport } = useReactFlow();
+  const {
+    zoomIn,
+    zoomOut,
+    fitView,
+    setViewport: rfSetViewport,
+    getViewport,
+    screenToFlowPosition,
+  } = useReactFlow();
+
+  // 稳定 nodeTypes / defaultEdgeOptions 引用，避免 React Flow "created a new nodeTypes or
+  // edgeTypes object" 警告（模块级常量已稳定，但 useMemo 进一步防御 React Compiler 'all' 模式
+  // 可能对 import binding 产生的间接重计算）
+  const memoizedNodeTypes = useMemo(() => nodeTypes, []);
+  const memoizedDefaultEdgeOptions = useMemo(() => defaultEdgeOptions, []);
 
   const abortRef = useRef<AbortController | null>(null);
   const registerAbortController = useDebugStore((s) => s.registerAbortController);
@@ -177,10 +194,45 @@ export default function NodeCanvas() {
   // cherry-pick 状态（T031）：源节点 id，设置后右键其他节点可"移植到此处"
   const [cherryPickSource, setCherryPickSource] = useState<string | null>(null);
 
+  // 空白画布右键菜单 state：记录右键坐标（用于"手动新建节点"菜单）
+  const [paneContextMenu, setPaneContextMenu] = useState<{ x: number; y: number } | null>(null);
+
   const onPaneClick = useCallback(() => {
     setSelectedNode(null);
     setContextMenu(null);
+    setPaneContextMenu(null);
   }, [setSelectedNode]);
+
+  // 手动新建节点的核心逻辑：根据传入的 parentId 与屏幕坐标创建节点
+  // parentId === null 时创建根节点；非空时创建为对应节点的子节点
+  // 节点位置取屏幕坐标转换后的画布坐标，跳过增量布局以保留用户选择的位置
+  // 无项目兜底：草稿态下自动创建新项目，避免节点无处挂载（参考 AssistantPanel 模式）
+  const createManualNode = useCallback(
+    (parentId: string | null, screenX: number, screenY: number) => {
+      // 无项目时先创建项目，否则 createTurnNode 在草稿态不会绑定项目
+      const state = useDebugStore.getState();
+      if (!state.currentProjectId) {
+        const projectName = `${t.manualNodeDefaultText} ${new Date().toLocaleString()}`;
+        createProject(projectName);
+      }
+      const position = screenToFlowPosition({ x: screenX, y: screenY });
+      const newId = createTurnNode(t.manualNodeDefaultText, parentId, {
+        source: 'manual',
+        position,
+      });
+      setSelectedNode(newId);
+      toast.success(t.manualNodeCreated);
+      return newId;
+    },
+    [screenToFlowPosition, createTurnNode, createProject, setSelectedNode, t],
+  );
+
+  // 空白画布右键：显示手动新建节点菜单
+  const onPaneContextMenu = useCallback((event: React.MouseEvent) => {
+    event.preventDefault();
+    setContextMenu(null);
+    setPaneContextMenu({ x: event.clientX, y: event.clientY });
+  }, []);
 
   // 右键节点时记录位置并显示菜单（T024）
   const onNodeContextMenu = useCallback((e: React.MouseEvent, node: Node) => {
@@ -202,7 +254,11 @@ export default function NodeCanvas() {
   const viewport = useDebugStore((s) => s.viewport);
 
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isInitialLoadRef = useRef(true);
+  // 3.6.1：用 lastSavedProjectIdRef 替代 isInitialLoadRef。
+  // - 项目切换（currentProjectId 变化）触发的 nodes/edges 变化仅更新 ref，不保存
+  // - 后续用户操作触发的变化才进入防抖保存
+  // - 避免旧实现"Effect B 在 Effect A 之后重置 isInitialLoadRef=true"导致用户首次操作被吞
+  const lastSavedProjectIdRef = useRef<string | null>(null);
 
   // 撤销/重做已迁移至 store（P0-1：immer patches 增量历史），
   // 组件层只需在节点拖动结束时调用 pushHistory()，快捷键由 DebugFlowEditor 监听。
@@ -221,10 +277,21 @@ export default function NodeCanvas() {
     isZoom: boolean;
   } | null>(null);
 
+  // 3.6.1 + 3.6.2：合并 nodes/edges/viewport 三个触发源为单一防抖 timer。
+  // - 项目切换触发的变化仅更新 lastSavedProjectIdRef，不保存（避免回写刚加载的数据）
+  // - 用户操作触发的变化进入 500ms 防抖，避免与 viewport 防抖独立造成重复保存
+  // - 流式输出期间跳过，避免 chunk 抖动触发保存
   useEffect(() => {
     if (!currentProjectId) return;
-    if (isInitialLoadRef.current) {
-      isInitialLoadRef.current = false;
+    // 项目切换：仅更新 ref，不保存。后续用户操作触发的变化才进入防抖
+    if (lastSavedProjectIdRef.current !== currentProjectId) {
+      lastSavedProjectIdRef.current = currentProjectId;
+      return;
+    }
+    // 5.3.2 优化：流式输出期间（任意节点 status === 'running'）跳过自动保存触发，
+    // 避免每个 chunk 都清/重置防抖计时器并在间隙触发 saveProject（数据未完整）。
+    // 流式结束（running → success/error）会再次引发 nodes 变化，effect 自然重跑触发保存。
+    if (useDebugStore.getState().nodes.some((n) => n.data.status === 'running')) {
       return;
     }
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
@@ -232,31 +299,16 @@ export default function NodeCanvas() {
       const state = useDebugStore.getState();
       if (state.currentProjectId !== currentProjectId) return;
       if (!state.isDirty) return;
+      // 二次校验：防抖窗口内可能又开启流式（罕见），仍跳过
+      if (state.nodes.some((n) => n.data.status === 'running')) return;
       state.saveProject();
     }, 500);
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
-  }, [nodes, edges, currentProjectId]);
-
-  const viewportSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (!currentProjectId) return;
-    if (isInitialLoadRef.current) return;
-    if (viewportSaveTimerRef.current) clearTimeout(viewportSaveTimerRef.current);
-    viewportSaveTimerRef.current = setTimeout(() => {
-      const state = useDebugStore.getState();
-      if (state.currentProjectId !== currentProjectId) return;
-      if (!state.isDirty) return;
-      state.saveProject();
-    }, 800);
-    return () => {
-      if (viewportSaveTimerRef.current) clearTimeout(viewportSaveTimerRef.current);
-    };
-  }, [viewport, currentProjectId]);
+  }, [nodes, edges, viewport, currentProjectId]);
 
   useEffect(() => {
-    isInitialLoadRef.current = true;
     const vp = useDebugStore.getState().viewport;
     if (vp) {
       rfSetViewport(vp);
@@ -267,11 +319,21 @@ export default function NodeCanvas() {
 
   // 视图模式切换（T027）：viewMode 变化时用对应布局算法重算节点位置并 fitView。
   // 仅 viewMode 变化时触发，避免 nodes/edges 变化时反复重排。
+  // 5.7.3：layoutGit 改为 async（dynamic import dagre），需在 effect 内部 await
   useEffect(() => {
     if (nodes.length === 0) return;
-    const laidOut = viewMode === 'git' ? layoutGit(nodes, edges) : layoutRadial(nodes, edges);
-    useDebugStore.setState({ nodes: laidOut });
-    setTimeout(() => fitView({ padding: 0.2 }), 100);
+    let cancelled = false;
+    void (async () => {
+      // git 模式异步加载 dagre 后布局；radial 模式仍同步
+      const laidOut =
+        viewMode === 'git' ? await layoutGit(nodes, edges) : layoutRadial(nodes, edges);
+      if (cancelled) return;
+      useDebugStore.setState({ nodes: laidOut });
+      setTimeout(() => fitView({ padding: 0.2 }), 100);
+    })();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode]);
 
@@ -465,23 +527,34 @@ export default function NodeCanvas() {
   }, []);
 
   // 自动排列：dagre 计算拓扑层级布局 → 写回 store → fitView 居中
+  // 5.7.3：autoLayout 改为 async（dynamic import dagre），需 await
   const handleAutoLayout = useCallback(() => {
     const state = useDebugStore.getState();
     if (state.nodes.length === 0) {
       toast(t.autoLayoutEmpty);
       return;
     }
-    const laidOut = autoLayout(state.nodes, state.edges, { direction: 'TB' });
-    useDebugStore.setState({ nodes: laidOut, isDirty: true });
-    // 自动排列属于结构性变更，立即入栈（合并窗口不合适）
-    state.pushHistory(true);
-    toast(t.autoLayoutSuccess);
-    requestAnimationFrame(() => fitView({ padding: 0.2 }));
+    void (async () => {
+      const laidOut = await autoLayout(state.nodes, state.edges, { direction: 'TB' });
+      useDebugStore.setState({ nodes: laidOut, isDirty: true });
+      // 自动排列属于结构性变更，立即入栈（合并窗口不合适）
+      useDebugStore.getState().pushHistory(true);
+      toast(t.autoLayoutSuccess);
+      requestAnimationFrame(() => fitView({ padding: 0.2 }));
+    })();
   }, [fitView, t]);
 
   const selectedNodes = useMemo(() => nodes.filter((n) => n.selected), [nodes]);
   const canMerge = selectedNodes.length >= 2;
 
+  // 3.2.6 注记（保守方案，本次不强制迁移）：
+  // 当前 AbortController 在组件 ref（abortRef）与 store（_abortControllers）
+  // 重复管理：abortRef 用于组件内"发起新请求前取消旧请求"的即时取消语义，
+  // _abortControllers 用于 ExecutionStatusBar 等外部组件按 nodeId 取消。
+  // 两者职责重叠但语义不同（ref=本地最新一个，store=按 nodeId 注册表），
+  // 统一管理需要重构 NodeCanvas / useInspectorActions / AutoEvolutionDialog
+  // 三处调用方的 AbortController 生命周期，本次保守保留双轨制 + 注释标注，
+  // 后续可改为"只走 store 注册表，组件通过 store.getState().abortRunningTurn 取消"。
   const handleMerge = useCallback(async () => {
     const state = useDebugStore.getState();
     const picked = state.nodes.filter((n) => n.selected);
@@ -515,6 +588,8 @@ export default function NodeCanvas() {
       // 旁路回调：合并节点回答完成后生成多路聚合路径摘要
       (pathSummary) => updateTurnNode(newId, { pathSummary }),
     );
+    // H-8：流式结束后强制 flush buffer，确保最后的 chunk 落到 nodes 后再切换 status
+    flushStreamBuffer(newId);
     if (result.success) {
       updateTurnNode(newId, {
         status: 'success',
@@ -528,6 +603,7 @@ export default function NodeCanvas() {
     setSelectedNode,
     updateTurnNode,
     appendAssistantChunk,
+    flushStreamBuffer,
     registerAbortController,
     tf,
     t,
@@ -586,6 +662,8 @@ export default function NodeCanvas() {
         // 旁路回调：cherry-pick 回答完成后生成路径摘要
         (pathSummary) => updateTurnNode(newNodeId, { pathSummary }),
       );
+      // H-8：流式结束后强制 flush buffer，确保最后的 chunk 落到 nodes 后再切换 status
+      flushStreamBuffer(newNodeId);
       if (result.success) {
         updateTurnNode(newNodeId, {
           status: 'success',
@@ -602,6 +680,7 @@ export default function NodeCanvas() {
       setSelectedNode,
       updateTurnNode,
       appendAssistantChunk,
+      flushStreamBuffer,
       registerAbortController,
       t,
     ],
@@ -689,12 +768,13 @@ export default function NodeCanvas() {
           onConnect={onConnect}
           onNodeClick={onNodeClick}
           onPaneClick={onPaneClick}
+          onPaneContextMenu={onPaneContextMenu}
           onNodeContextMenu={onNodeContextMenu}
           onNodeDragStop={handleNodeDragStop}
           onMove={onMove}
-          nodeTypes={nodeTypes}
+          nodeTypes={memoizedNodeTypes}
           fitView
-          defaultEdgeOptions={defaultEdgeOptions}
+          defaultEdgeOptions={memoizedDefaultEdgeOptions}
           deleteKeyCode={null}
           zoomOnScroll={false}
           panOnScroll={false}
@@ -824,6 +904,29 @@ export default function NodeCanvas() {
           onUndo={undo}
           onRedo={redo}
         />
+
+        {/* 左下角浮动工具栏：手动新建节点。
+            草稿态也可用 —— createManualNode 会自动创建项目绑定画布。
+            与右上角 CanvasToolbar（全局操作）物理隔离，仅承载单节点操作。 */}
+        <div className="absolute bottom-4 left-4 z-20 flex items-center gap-1 bg-slate-100/90 dark:bg-white/10 backdrop-blur-xl rounded-full px-1.5 py-1.5 border border-slate-200 dark:border-white/10 shadow-2xl shadow-black/10 dark:shadow-black/40">
+          <button
+            type="button"
+            onClick={() => {
+              // 智能判断：有选中节点 → 子节点 / 无选中 → 根节点
+              // 节点位置：视口中心转换为画布坐标
+              const parentId = selectedNodeId ?? null;
+              createManualNode(parentId, window.innerWidth / 2, window.innerHeight / 2);
+            }}
+            title={selectedNodeId ? t.manualNodeSelectedHint : t.manualNodeButton}
+            aria-label={t.manualNodeButton}
+            className="flex items-center gap-1.5 px-2.5 h-8 rounded-full text-xs font-medium text-slate-700 dark:text-white/80 hover:bg-slate-900/10 dark:hover:bg-white/10 transition-colors"
+          >
+            <Plus size={14} />
+            <span className="hidden sm:inline">
+              {selectedNodeId ? t.manualNodeAsChild : t.manualNodeButton}
+            </span>
+          </button>
+        </div>
 
         {/* 浮动工具条（T024）：至少 1 个节点选中时显示在画布底部居中 */}
         {(appSettings.nodeActionsStyle === 'toolbar' || appSettings.nodeActionsStyle === 'both') &&
@@ -1056,6 +1159,41 @@ export default function NodeCanvas() {
               })()}
             </div>
           )}
+
+        {/* 空白画布右键菜单：手动新建节点（不调用 LLM） */}
+        {paneContextMenu && (
+          <div
+            className="fixed z-50 min-w-[160px] py-1 bg-white border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-lg shadow-lg"
+            style={{ left: paneContextMenu.x, top: paneContextMenu.y }}
+            role="menu"
+          >
+            {/* 智能判断：有选中节点 → 子节点 / 无选中 → 根节点 */}
+            <button
+              onClick={() => {
+                const parentId = selectedNodeId ?? null;
+                createManualNode(parentId, paneContextMenu.x, paneContextMenu.y);
+                setPaneContextMenu(null);
+              }}
+              className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors text-left"
+              role="menuitem"
+            >
+              <Plus size={12} />
+              {selectedNodeId ? t.manualNodeAsChild : t.manualNodeButton}
+            </button>
+            {/* 强制创建为根节点（始终可用） */}
+            <button
+              onClick={() => {
+                createManualNode(null, paneContextMenu.x, paneContextMenu.y);
+                setPaneContextMenu(null);
+              }}
+              className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors text-left"
+              role="menuitem"
+            >
+              <Network size={12} />
+              {t.manualNodeAsRoot}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* diff 视图抽屉（T029）：懒加载，用户点击"对比"后渲染 */}

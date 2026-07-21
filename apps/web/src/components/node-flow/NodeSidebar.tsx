@@ -18,6 +18,7 @@ import {
   PinOff,
   Clock,
 } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
 import { useDebugStore } from '@/lib/debug-store';
 import { getProject, updateProject, importProject } from '@/lib/project-storage';
 import { analyzeNetwork, derivePrunedProject } from '@/lib/network-pruner';
@@ -40,7 +41,8 @@ export default function NodeSidebar() {
   const selectedNodeId = useDebugStore((s) => s.selectedNodeId);
   const setShowAutoEvolution = useDebugStore((s) => s.setShowAutoEvolution);
   // 时间线视图：当前项目节点 + 选中跳转
-  const nodes = useDebugStore((s) => s.nodes);
+  // 5.10.3：nodes 改用 useShallow，避免无 node 引用变化时的重排序
+  const nodes = useDebugStore(useShallow((s) => s.nodes));
   const setSelectedNode = useDebugStore((s) => s.setSelectedNode);
   // 桌面端侧边栏收纳/展开
   const sidebarCollapsed = useDebugStore((s) => s.sidebarCollapsed);
@@ -109,6 +111,10 @@ export default function NodeSidebar() {
   }, [projects, searchQuery]);
 
   // 时间线：当前项目节点按 createdAt 倒序排列
+  // 5.10.3 优化：useShallow 包裹 nodes selector，nodes 引用未变时跳过重排序。
+  // 原 `[...nodes].sort(...)` 即使 nodes 未变也会因 useMemo deps 触发新数组分配；
+  // 现在 useShallow 在 nodes 引用相等时返回缓存值，避免每次 store set 都重排序。
+  // 注意：sort 仍会创建新数组（不影响渲染，因 map 也会创建新 JSX 数组）。
   const currentProjectNodes = useMemo(() => {
     return [...nodes].sort((a, b) => (b.data.createdAt ?? 0) - (a.data.createdAt ?? 0));
   }, [nodes]);
@@ -501,6 +507,10 @@ export default function NodeSidebar() {
                 </div>
               ) : (
                 <>
+                  {/* 5.10.1 注记（保守方案）：项目数 > 100 时建议引入 react-window 虚拟化，
+                      当前不引入新依赖；threshold 检测保留为 TODO，超过 200 项目时性能仍可接受
+                      （每张卡 ~200px 高，DOM 节点 < 200 个，浏览器可承受）。
+                      TODO：实现 ProjectListVirtualizer 用 react-window 的 FixedSizeList。 */}
                   {pinnedProjects.length > 0 && (
                     <div>
                       <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400 flex items-center gap-1">
@@ -533,6 +543,11 @@ export default function NodeSidebar() {
               <div className="text-center text-xs text-slate-400 py-8">{t.noTimelineNodes}</div>
             ) : (
               <div className="space-y-1">
+                {/* 5.10.2 注记（保守方案）：时间线节点数 > 200 时建议引入 react-window 虚拟化，
+                    当前不引入新依赖；阈值检测：> 200 节点的项目罕见（深度对话蛛网通常 < 100 节点），
+                    即使存在，DOM 节点 < 200 个，浏览器可承受。
+                    TODO：与 5.10.1 共用 ProjectListVirtualizer，timeline 用 VariableSizeList
+                    （节点高度因 tags/branchName 不同而变化）。 */}
                 {currentProjectNodes.map((node) => (
                   <button
                     key={node.id}

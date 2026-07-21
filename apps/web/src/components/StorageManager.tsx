@@ -26,6 +26,12 @@ type KeyInfo = {
   clearFn: () => void;
 };
 
+/**
+ * 4.4.7：本应用所有 localStorage key 的统一前缀。
+ * clearAll 仅清理此前缀的 key，避免清除同域其他应用的数据。
+ */
+const AI_DEBUG_KEY_PREFIX = 'ai-debug:';
+
 // 字节数格式化
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -157,11 +163,23 @@ export function StorageManager() {
   ];
 
   // 清空全部数据（危险操作）
+  // 4.4.7：仅清理 `ai-debug:` 前缀的 key，避免清除同域其他应用的数据。
   const clearAll = () => {
     if (!confirm(t.confirmClearAll)) return;
     setClearing(true);
     try {
-      window.localStorage.clear();
+      // 4.4.7：枚举 localStorage 中所有以 ai-debug: 开头的 key 并逐个删除，
+      // 不要调用 localStorage.clear() 以免误伤同域其他应用的数据
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const key = window.localStorage.key(i);
+        if (key && key.startsWith(AI_DEBUG_KEY_PREFIX)) {
+          keysToRemove.push(key);
+        }
+      }
+      for (const key of keysToRemove) {
+        window.localStorage.removeItem(key);
+      }
       refreshLlmConfig();
       refreshProjects();
       refreshAppSettings();

@@ -49,17 +49,25 @@ export async function quickCallLLM(
   // 传入 onDelta 时走流式调用，并把 signal 透传给底层 fetch
   if (onDelta) {
     let accumulated = '';
-    for await (const chunk of callLLMStream({
-      config: effectiveConfig,
-      messages,
-      signal,
-      temperature,
-      maxTokens,
-    })) {
-      accumulated += chunk;
-      onDelta(chunk);
+    try {
+      for await (const chunk of callLLMStream({
+        config: effectiveConfig,
+        messages,
+        signal,
+        temperature,
+        maxTokens,
+      })) {
+        accumulated += chunk;
+        onDelta(chunk);
+      }
+      return accumulated;
+    } catch (err) {
+      // 3.2.5：流式调用中途出错时清空 accumulated，避免半截内容被误当作完整结果返回。
+      // 调用方（如 streamTurnResponse）会捕获错误并标记节点 status='error'，
+      // 此处抛出错误让上层走错误分支，不返回部分内容。
+      accumulated = '';
+      throw err;
     }
-    return accumulated;
   }
 
   // 否则走非流式调用，同样透传 signal

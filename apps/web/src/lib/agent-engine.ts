@@ -4,6 +4,11 @@
 // 助手对话独立于节点对话，不挂载在 parentId 链上，避免污染节点上下文。
 // 助手收到用户消息后调用 LLM 流式响应；回答完成后可选地转发到节点。
 // 转发通过 onForwarded 回调让 UI 层处理（不在引擎内直接修改 store）。
+//
+// TODO(6.7 agent-engine 与 network-engine 关系): 当前 agent-engine 与
+// network-engine 各自实现「构建 system 消息 + 调用 LLM + 处理流式响应」流程，
+// 存在职责重叠。后续考虑抽取 LlmOrchestrator 抽象（统一 system 组装、流式
+// 调度、错误处理），两个引擎基于该抽象差异化实现（大规模重构，暂不做）。
 // ============================================================
 
 import type { AssistantMessage, NodeAttachment, Skill } from '@/components/node-flow/types';
@@ -18,6 +23,10 @@ import { describeError } from './request';
  *
  * v2 增强：融入 ai-debug 画布概念（分支/合并/上下文路径/草稿态），
  * 让助手能主动建议用户何时该分叉、何时该合并、何时该开新项目。
+ *
+ * TODO(6.2 模块边界): 与 network-engine SYSTEM_PROMPT 同属硬编码字符串，
+ * 后续新增 prompt 遵循统一注释格式（用途 + 输出约束 + 兼容性说明），
+ * 待规模扩大再抽 `lib/llm-prompts.ts` 统一管理（大规模重构，暂不做）。
  */
 export const ASSISTANT_SYSTEM_PROMPT = `你是「蛛网 · AI Debug」的内置助手，服务于一个蛛网式 AI 对话上下文管理工具。
 你的核心职责：帮助用户梳理思路、整理问题、规划节点结构，并在合适时机把内容转发到画布。

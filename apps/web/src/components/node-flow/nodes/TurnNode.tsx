@@ -21,6 +21,14 @@ function truncate(text: string, n: number): string {
   return text.length > n ? text.slice(0, n) + '…' : text;
 }
 
+/**
+ * 模块级空数组常量，用作 childrenMap[id] 的 fallback。
+ * 若用 `?? []` 字面量，每次 selector 调用都会创建新数组引用，
+ * Zustand 浅比较认为状态变化 → 触发重渲染 → 又调用 selector → 无限循环。
+ * 用同一常量引用保证浅比较稳定。
+ */
+const EMPTY_CHILD_IDS: string[] = [];
+
 type TurnNodeProps = NodeProps<TurnNodeData>;
 
 function TurnNodeComponent({ id, data, selected }: TurnNodeProps) {
@@ -82,22 +90,20 @@ function TurnNodeComponent({ id, data, selected }: TurnNodeProps) {
       ? `${t.nodeAttachmentsLabel}: ${parsedAttachments.map((a) => a.name).join(', ')}`
       : '';
 
-  // 分支切换器：订阅当前节点的子节点列表（csv 字符串避免数组引用变化）。
+  // 分支切换器：订阅当前节点的子节点列表。
+  // H-11：改用 store 中的 childrenMap 索引（增量维护），避免每节点都做
+  // nodes.filter(...).sort(...).map(...) 的 O(N) 操作（N 节点累计 O(N²)）。
   // 仅当子节点数 > 1 时显示分支徽标；点击展开 `< 1/N >` 切换器。
   // T017 升级：用 selectedChildIdMap[id] 记录每节点独立选中的子分支，
   // 而非全局 selectedNodeId（避免选中其他不相关节点时切换器错乱）。
-  // 分支按 createdAt 升序排序（1=最早，N=最新）。
+  // 分支按 createdAt 升序排序（1=最早，N=最新），childrenMap 已预排序。
   const setSelectedNode = useDebugStore((s) => s.setSelectedNode);
   const setSelectedChild = useDebugStore((s) => s.setSelectedChild);
   const selectedChildId = useDebugStore((s) => s.selectedChildIdMap[id] ?? '');
-  const childIdsCsv = useDebugStore((s) =>
-    s.nodes
-      .filter((n) => n.data.parentId === id)
-      .sort((a, b) => (a.data.createdAt ?? 0) - (b.data.createdAt ?? 0))
-      .map((n) => n.id)
-      .join(','),
-  );
-  const childIds = useMemo(() => (childIdsCsv ? childIdsCsv.split(',') : []), [childIdsCsv]);
+  // 直接订阅数组引用；childrenMap 在 store 中增量更新，未变更的父节点数组引用稳定。
+  // 关键：用模块级常量 EMPTY_CHILD_IDS 作为 fallback，避免 `?? []` 每次创建新数组
+  // 导致 Zustand 浅比较失败 → 无限渲染循环（getSnapshot should be cached 报错）。
+  const childIds = useDebugStore((s) => s.childrenMap[id] ?? EMPTY_CHILD_IDS);
   // git 模式下 dagre 自动展开所有分支，不需要分支切换器
   const hasMultipleBranches = childIds.length > 1 && !isGitMode;
   const [branchSwitcherOpen, setBranchSwitcherOpen] = useState(false);

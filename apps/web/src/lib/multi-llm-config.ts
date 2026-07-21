@@ -11,7 +11,12 @@
 
 import type { LLMConfig, LLMProvider } from './llm-config';
 import { generateId } from '@/lib/id';
-import { obfuscateJSON, deobfuscateJSON } from '@/lib/crypto';
+import {
+  obfuscateJSON,
+  deobfuscateJSON,
+  obfuscateJSONAsync,
+  deobfuscateJSONAsync,
+} from '@/lib/crypto';
 
 /** 单个命名的 LLM 配置组合 */
 export interface LLMConfigEntry {
@@ -42,48 +47,83 @@ function notify(): void {
 
 // generateId 已迁移至 @/lib/id（统一 CSPRNG ID 生成）
 
+/** 字段校验：过滤掉结构不合法的条目，防止 localStorage 损坏导致运行时崩溃 */
+function filterValidEntries(list: unknown): LLMConfigEntry[] {
+  if (!Array.isArray(list)) return [];
+  return list.filter(
+    (e): e is LLMConfigEntry =>
+      e &&
+      typeof e === 'object' &&
+      typeof e.id === 'string' &&
+      typeof e.name === 'string' &&
+      e.config &&
+      typeof e.config === 'object' &&
+      typeof e.config.provider === 'string' &&
+      typeof e.config.apiKey === 'string' &&
+      typeof e.config.baseUrl === 'string' &&
+      typeof e.config.model === 'string' &&
+      typeof e.createdAt === 'number' &&
+      typeof e.updatedAt === 'number',
+  );
+}
+
 /**
- * 从 localStorage 读取配置列表。
+ * 同步从 localStorage 读取配置列表。
  * - SSR（typeof window === 'undefined'）时返回空数组
+ * - 仅能解密 `enc:` 前缀的旧 XOR 数据与明文 JSON
+ * - `aes:` 前缀的 AES-GCM 数据需用 readFromStorageAsync 异步读取（本函数返回空数组）
  * - JSON 解析失败或格式不合法也返回空数组
- * - 读取时自动解混淆，兼容旧版明文存储的数据
  */
 function readFromStorage(): LLMConfigEntry[] {
   if (typeof window === 'undefined') return [];
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
-    // 自动检测：混淆格式（enc: 前缀）用 deobfuscateJSON，否则按明文 JSON 解析（兼容旧数据）
+    // 同步路径：仅处理 enc: 前缀的旧 XOR 数据与明文 JSON；aes: 前缀数据返回空（等异步加载）
+    if (raw.startsWith('aes:')) return [];
     const parsed = deobfuscateJSON<LLMConfigEntry[]>(raw);
-    if (!parsed || !Array.isArray(parsed)) return [];
-    // 字段兼容性过滤：只保留合法条目
-    return parsed.filter(
-      (e): e is LLMConfigEntry =>
-        e &&
-        typeof e === 'object' &&
-        typeof e.id === 'string' &&
-        typeof e.name === 'string' &&
-        e.config &&
-        typeof e.config === 'object' &&
-        typeof e.config.provider === 'string' &&
-        typeof e.config.apiKey === 'string' &&
-        typeof e.config.baseUrl === 'string' &&
-        typeof e.config.model === 'string' &&
-        typeof e.createdAt === 'number' &&
-        typeof e.updatedAt === 'number',
-    );
+    return filterValidEntries(parsed);
   } catch {
     return [];
   }
 }
 
-/** 写入 localStorage（混淆存储，避免明文 API Key），失败时静默忽略 */
-function writeToStorage(entries: LLMConfigEntry[]): void {
+/**
+ * 异步从 localStorage 读取配置列表。
+ * - 优先尝试 AES-GCM（`aes:` 前缀）解密
+ * - 回退到同步 XOR（`enc:` 前缀）与明文 JSON
+ * - 兼容从旧版本数据自动迁移到 AES-GCM
+ */
+async function readFromStorageAsync(): Promise<LLMConfigEntry[]> {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = await deobfuscateJSONAsync<LLMConfigEntry[]>(raw);
+    return filterValidEntries(parsed);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 异步写入 localStorage（AES-GCM 加密，避免明文 API Key）。
+ * - 主路径：使用 Web Crypto AES-GCM 加密
+ * - Fallback：Web Crypto 不可用时回退到同步 XOR 混淆
+ * - 失败时静默忽略
+ */
+async function writeToStorage(entries: LLMConfigEntry[]): Promise<void> {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(STORAGE_KEY, obfuscateJSON(entries));
+    const encoded = await obfuscateJSONAsync(entries);
+    window.localStorage.setItem(STORAGE_KEY, encoded);
   } catch {
-    // 静默忽略
+    // 异步加密失败，回退到同步 XOR
+    try {
+      window.localStorage.setItem(STORAGE_KEY, obfuscateJSON(entries));
+    } catch {
+      // 静默忽略
+    }
   }
 }
 
@@ -111,19 +151,44 @@ function writeActiveId(id: string | null): void {
   }
 }
 
-/** 刷新内存快照（从 localStorage 读取） */
+/** 刷新内存快照（同步路径，仅处理 enc: 旧 XOR / 明文 JSON） */
 function refreshSnapshot(): void {
   snapshot = readFromStorage();
 }
 
-// 模块加载时初始化快照
+/**
+ * 异步刷新内存快照（处理 aes: AES-GCM / enc: 旧 XOR / 明文 JSON）。
+ * - 用于模块初始化时加载 AES-GCM 加密的数据
+ * - 用于 storage 事件后重新加载跨标签页写入的 AES-GCM 数据
+ * - 若 await 期间 snapshot 被同步写操作修改，则跳过本次更新（避免覆盖用户写入）
+ */
+let snapshotVersion = 0;
+async function refreshSnapshotAsync(): Promise<void> {
+  if (typeof window === 'undefined') return;
+  const myVersion = snapshotVersion;
+  const fresh = await readFromStorageAsync();
+  // 如果 await 期间发生了同步写操作（saveLlmConfig / deleteLlmConfig 等），跳过本次更新
+  if (snapshotVersion !== myVersion) return;
+  if (fresh.length === 0 && snapshot.length > 0) {
+    // 异步读取返回空（可能解密失败），但 snapshot 已有数据，保留 snapshot 不清空
+    return;
+  }
+  snapshot = fresh;
+  notify();
+}
+
+// 模块加载时初始化快照：先同步加载（用于首屏立即渲染），再异步加载 AES-GCM 数据
 if (typeof window !== 'undefined') {
   refreshSnapshot();
+  // 异步加载 AES-GCM 加密的数据（首屏可能为空，加载完成后通过 notify 触发重渲染）
+  void refreshSnapshotAsync();
   // 跨标签页同步：监听 window 'storage' 事件
   window.addEventListener('storage', (event: StorageEvent) => {
     if (event.key === STORAGE_KEY || event.key === ACTIVE_KEY) {
       refreshSnapshot();
       notify();
+      // AES-GCM 数据需异步解密，再刷一次
+      void refreshSnapshotAsync();
     }
   });
 }
@@ -221,8 +286,11 @@ export function saveLlmConfig(
     }
   }
 
-  writeToStorage(nextList);
+  // 异步写入 AES-GCM 加密数据（fire-and-forget）；snapshot 同步更新保证 UI 立即响应
+  void writeToStorage(nextList);
   snapshot = [...nextList];
+  // 标记 snapshot 被同步修改，使进行中的 refreshSnapshotAsync 失效（避免覆盖用户写入）
+  snapshotVersion++;
   notify();
   return next;
 }
@@ -231,8 +299,10 @@ export function saveLlmConfig(
 export function deleteLlmConfig(id: string): void {
   const nextList = snapshot.filter((e) => e.id !== id);
   if (nextList.length === snapshot.length) return;
-  writeToStorage(nextList);
+  // 异步写入 AES-GCM 加密数据（fire-and-forget）；snapshot 同步更新保证 UI 立即响应
+  void writeToStorage(nextList);
   snapshot = [...nextList];
+  snapshotVersion++;
   // 若删除的是激活配置，清空激活态
   if (readActiveId() === id) {
     writeActiveId(null);
@@ -269,15 +339,23 @@ export function getActiveLlmConfig(): LLMConfigEntry | null {
 
 /**
  * 迁移：若 multi-llm-configs 为空但旧的 ai-debug:llm-config 存在，
- * 自动迁移为「默认」条目并设为激活。
+ * 自动迁移为「默认」条目并设为激活，并删除旧 key 避免重复迁移。
  * 非浏览器环境（SSR）静默跳过。
  */
 export function migrateFromLegacyIfNeeded(): void {
   if (typeof window === 'undefined') return;
   try {
-    // 已有 multi 配置：跳过迁移
+    // 已有 multi 配置：跳过迁移，但仍清理可能残留的旧 key
     const existingMulti = readFromStorage();
-    if (existingMulti.length > 0) return;
+    if (existingMulti.length > 0) {
+      // 已有数据，安全清理旧 key（避免每次启动都尝试迁移）
+      try {
+        window.localStorage.removeItem(LEGACY_LLM_CONFIG_KEY);
+      } catch {
+        // 静默忽略
+      }
+      return;
+    }
 
     const legacyRaw = window.localStorage.getItem(LEGACY_LLM_CONFIG_KEY);
     if (!legacyRaw) return;
@@ -289,6 +367,12 @@ export function migrateFromLegacyIfNeeded(): void {
       typeof legacy.baseUrl !== 'string' ||
       typeof legacy.model !== 'string'
     ) {
+      // 旧数据损坏，删除以避免下次再尝试解析
+      try {
+        window.localStorage.removeItem(LEGACY_LLM_CONFIG_KEY);
+      } catch {
+        // 静默忽略
+      }
       return;
     }
 
@@ -306,9 +390,17 @@ export function migrateFromLegacyIfNeeded(): void {
       createdAt: now,
       updatedAt: now,
     };
-    writeToStorage([entry]);
+    // 写入新格式数据（异步 AES-GCM 加密）
+    void writeToStorage([entry]);
     writeActiveId(entry.id);
     snapshot = [entry];
+    snapshotVersion++;
+    // 迁移成功后删除旧 key，避免重复迁移
+    try {
+      window.localStorage.removeItem(LEGACY_LLM_CONFIG_KEY);
+    } catch {
+      // 静默忽略
+    }
     notify();
   } catch {
     // 旧数据损坏，静默跳过

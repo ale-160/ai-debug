@@ -13,6 +13,13 @@ import type { Language } from '@/data/i18n';
  *
  * persist 接管后：客户端挂载时先迁移旧 key，再手动 rehydrate store，
  * 完成后再渲染编辑器，确保 projects/currentProjectId 从 localStorage 恢复。
+ *
+ * 5.12.3 优化：rehydrate 用 requestIdleCallback 包裹，让出首帧给骨架屏渲染。
+ * - 原 rehydrate 在 useEffect 首帧同步读取 localStorage（persist 同步存储），
+ *   阻塞 ~5-15ms，导致骨架屏延后绘制
+ * - 改为 scheduleIdle 后，骨架屏先绘制一帧，rehydrate 在下一个空闲帧执行
+ * - timeout: 500ms 兜底，避免空闲期迟迟不触发导致编辑器无法加载
+ * - fallback：不支持 requestIdleCallback 的环境用 setTimeout(0)
  */
 export default function DebugFlowEditorLoader({ lang }: { lang: Language }) {
   const [mounted, setMounted] = useState(false);
@@ -20,11 +27,28 @@ export default function DebugFlowEditorLoader({ lang }: { lang: Language }) {
   useEffect(() => {
     // 迁移旧 key ai-debug:network-projects → ai-debug-store（一次性，仅旧 key 有数据时）
     migrateLegacyProjectsKey();
-    // 手动 rehydrate：persist 配置了 skipHydration:true，需在此触发
-    // rehydrate 可能返回 void（同步存储）或 Promise（异步存储），用 Promise.resolve 兼容
-    Promise.resolve(useDebugStore.persist.rehydrate()).then(() => {
-      setMounted(true);
-    });
+
+    // 5.12.3：rehydrate 延迟到 idle 帧，让骨架屏先绘制
+    const runRehydrate = () => {
+      // 手动 rehydrate：persist 配置了 skipHydration:true，需在此触发
+      // rehydrate 可能返回 void（同步存储）或 Promise（异步存储），用 Promise.resolve 兼容
+      Promise.resolve(useDebugStore.persist.rehydrate()).then(() => {
+        setMounted(true);
+      });
+    };
+
+    let handle: number;
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+      handle = window.requestIdleCallback(runRehydrate, { timeout: 500 }) as unknown as number;
+      return () => {
+        if (typeof window.cancelIdleCallback === 'function') {
+          window.cancelIdleCallback(handle);
+        }
+      };
+    }
+    // SSR / 旧浏览器 fallback
+    handle = window.setTimeout(runRehydrate, 0) as unknown as number;
+    return () => window.clearTimeout(handle);
   }, []);
 
   if (!mounted) {

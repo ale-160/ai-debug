@@ -141,7 +141,7 @@ export function MemoryPanel({ open, onClose }: MemoryPanelProps) {
     setProjectDraft('');
   };
 
-  const dialogRef = useDialogA11y(open, onClose);
+  const { containerRef: dialogRef, containerProps } = useDialogA11y(open, onClose);
 
   if (!open) return null;
 
@@ -154,10 +154,8 @@ export function MemoryPanel({ open, onClose }: MemoryPanelProps) {
         ref={dialogRef}
         className="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-lg bg-white shadow-xl dark:bg-slate-800"
         onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
+        {...containerProps}
         aria-label={t.memoryManagement}
-        tabIndex={-1}
       >
         {/* 标题栏 */}
         <div className="flex items-center justify-between border-b border-slate-100 p-4 dark:border-slate-700">

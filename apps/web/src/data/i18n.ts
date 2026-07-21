@@ -1,3 +1,16 @@
+// ============================================================
+// AI Debug — i18n 字符串表（zh / en）
+//
+// TODO(6.6 i18n 实现): 本单文件已超 1500 行，后续按域拆分为
+//   - i18n/projects.ts（项目列表 / 增删改）
+//   - i18n/node-flow.ts（画布 / 节点 / 边）
+//   - i18n/settings.ts（设置 / 记忆 / 冲突）
+//   - i18n/agent.ts（助手 / 技能）
+//   - i18n/common.ts（通用动作 / 时间 / 错误）
+// 并在 i18n/index.ts 聚合导出 STRINGS_ZH / STRINGS_EN。
+// 当前保守起见不拆分（大规模重构风险高，需同步更新所有 useTranslation 调用方）。
+// ============================================================
+
 export type Language = 'zh' | 'en';
 
 export const STRINGS_ZH = {
@@ -56,7 +69,7 @@ export const STRINGS_ZH = {
   goToProviderConsole: '前往 {provider} 官方控制台创建 API Key，并在模型列表中查看可用的模型名。',
 
   apiKeySecurityNote:
-    'API Key 仅存储在当前浏览器 localStorage，不会上传到任何服务器（除你配置的 LLM 服务商外）',
+    'API Key 加密存储在当前浏览器 localStorage，不会上传到任何服务器（除你配置的 LLM 服务商外）。开源项目加密规则公开，无法防御拿到浏览器本地数据的攻击者，请勿在公共电脑保存。',
 
   pleaseFillApiKey: '请先填写 API Key',
   pleaseFillBaseUrl: '请先填写 Base URL',
@@ -317,6 +330,7 @@ export const STRINGS_ZH = {
   helpCanvasIntro: '画布是蛛网的主要工作区，所有节点以放射状/树状布局展开。常用操作：',
   helpCanvasOps: [
     '新建节点：NodeInspector 输入框输入消息 → Enter 发送；助手面板开启自动建图模式后对话即可建节点',
+    '手动新建节点：双击空白画布（不调用 AI，仅创建空节点用于测试或笔记）',
     '分叉：选中任意节点 → 在 Inspector 输入新消息，自动作为该节点的子分支',
     '合并：右键节点 → 选「合并节点」→ 选多个来源 → 输入合并意图',
     '删除/废弃/忽略：右键节点或 Inspector 底部操作区',
@@ -742,6 +756,28 @@ export const STRINGS_ZH = {
   fullscreenExit: '退出全屏 (Esc)',
   toggleSidebarExpand: '展开侧边栏',
   toggleSidebarCollapse: '收起侧边栏',
+
+  // H-18：错误处理相关文案（ErrorBoundary fallback / 全局 error.tsx）
+  canvasRenderFailed: '画布渲染失败，请刷新页面',
+
+  // 手动新建节点（右键菜单 / 浮动工具栏）：用于测试布局或手动记录笔记，不调用 LLM
+  manualNodeDefaultText: '手动节点',
+  manualNodeTooltip: '右键空白处或点击左下角按钮新建节点（不调用 AI）',
+  manualNodeCreated: '已新建手动节点',
+  // 浮动工具栏按钮：智能判断（有选中 → 子节点 / 无选中 → 根节点）
+  manualNodeButton: '新建节点',
+  // 右键菜单项：明确创建为选中节点的子节点
+  manualNodeAsChild: '新建子节点',
+  // 右键菜单项：强制创建为根节点
+  manualNodeAsRoot: '新建根节点',
+  // 浮动工具栏 tooltip：当前会从选中节点分叉
+  manualNodeSelectedHint: '将从选中节点分叉',
+  reloadPage: '刷新页面',
+  errorBoundaryTitle: '渲染出错',
+  errorBoundaryRetry: '重试',
+  errorPageTitle: '页面出错啦',
+  errorPageHint: '应用遇到未预期的错误。请尝试重试，或刷新页面。',
+  quotaExceededHint: '本地存储已满，部分数据可能未保存。请清理浏览器数据后重试。',
 };
 
 export const STRINGS_EN = {
@@ -801,7 +837,7 @@ export const STRINGS_EN = {
     'Go to {provider} console to create an API Key and check available model names.',
 
   apiKeySecurityNote:
-    'API Key is stored only in your browser localStorage, never uploaded to any server (except your configured LLM provider).',
+    "API Key is encrypted and stored in your browser's localStorage, never uploaded to any server (except your configured LLM provider). As an open-source project, the encryption scheme is public and cannot defend against attackers with local browser access. Do not save on public computers.",
 
   pleaseFillApiKey: 'Please fill in the API Key',
   pleaseFillBaseUrl: 'Please fill in the Base URL',
@@ -1073,6 +1109,7 @@ export const STRINGS_EN = {
     'The canvas is the main workspace of AI Debug. All nodes expand in a radial/tree layout. Common operations:',
   helpCanvasOps: [
     'New node: Type in NodeInspector input → Enter; or chat in the assistant panel with auto-create mode enabled',
+    'Manual new node: Double-click empty canvas (no AI call, creates an empty node for testing or notes)',
     'Fork: Select any node → type a new message in Inspector → automatically becomes a child branch',
     'Merge: Right-click a node → select "Merge Nodes" → pick multiple sources → enter merge intent',
     'Delete/Abandon/Ignore: Right-click a node or use the Inspector bottom action area',
@@ -1509,6 +1546,30 @@ export const STRINGS_EN = {
   fullscreenExit: 'Exit Fullscreen (Esc)',
   toggleSidebarExpand: 'Expand Sidebar',
   toggleSidebarCollapse: 'Collapse Sidebar',
+
+  // H-18: Error handling (ErrorBoundary fallback / global error.tsx)
+  canvasRenderFailed: 'Canvas rendering failed, please reload the page',
+
+  // Manual node creation (context menu / floating toolbar): for layout testing or notes, no LLM call
+  manualNodeDefaultText: 'Manual node',
+  manualNodeTooltip:
+    'Right-click empty area or use the bottom-left button to create a node (no AI call)',
+  manualNodeCreated: 'Manual node created',
+  // Floating toolbar button: smart logic (selected → child / no selection → root)
+  manualNodeButton: 'Create node',
+  // Context menu item: explicitly create as child of selected node
+  manualNodeAsChild: 'Create child node',
+  // Context menu item: force creating as root
+  manualNodeAsRoot: 'Create root node',
+  // Floating toolbar tooltip: will fork from the selected node
+  manualNodeSelectedHint: 'Will fork from selected node',
+  reloadPage: 'Reload Page',
+  errorBoundaryTitle: 'Something went wrong',
+  errorBoundaryRetry: 'Retry',
+  errorPageTitle: 'Something went wrong',
+  errorPageHint: 'The app hit an unexpected error. Please retry, or reload the page.',
+  quotaExceededHint:
+    'Local storage is full; some data may not have been saved. Please clear browser data and retry.',
 };
 
 export type Strings = typeof STRINGS_ZH;

@@ -125,7 +125,7 @@ NO_PR=1 pnpm push:feature chore/update-deps
 - [ ] CI 全部通过（绿色 ✅）
 - [ ] Diff 范围符合预期，没有意外变更
 - [ ] 没有硬编码的密钥/Token
-- [ ] 类型安全，没有新增 `any`
+- [ ] 类型安全，没有新增 `any`（eslint `no-explicit-any: warn` 不阻断 CI，但审查时需评估是否可避免）
 - [ ] 关键逻辑有合理的注释
 - [ ] 不包含破坏性变更（如有，是否已标记）
 - [ ] SSR 安全（localStorage/navigator 在 useEffect 中）

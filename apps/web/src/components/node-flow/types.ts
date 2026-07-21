@@ -83,6 +83,12 @@ export interface TurnNodeData {
   suggestions: Suggestion[];
   /** 节点状态 */
   status: TurnStatus;
+  /**
+   * abandonBranch 时保留的原 status，供 reactivateBranch 恢复。
+   * 仅在 status === 'abandoned' 时可能有值；reactivate 后清除。
+   * 不持久化语义无关（持久化时序列化为普通字段，向后兼容）。
+   */
+  _preAbandonStatus?: TurnStatus;
   /** 错误信息 */
   errorMessage?: string;
   /** 摘要标题（commit message）：流式完成后由 LLM 生成的 ≤20 字一句话摘要 */
@@ -181,9 +187,14 @@ export interface NetworkProject {
   pinnedAt?: number;
 }
 
-/** 从节点 data 中提取 TurnNodeData 的类型守卫 */
-export function isTurnNodeData(data: any): data is TurnNodeData {
-  return data && typeof data.userMessage === 'string' && typeof data.parentId !== 'undefined';
+/**
+ * 从节点 data 中提取 TurnNodeData 的类型守卫。
+ * 入参类型为 unknown（遵循 AGENTS.md「避免 any」约定），调用方需先经此守卫才能安全窄化为 TurnNodeData。
+ */
+export function isTurnNodeData(data: unknown): data is TurnNodeData {
+  if (data === null || typeof data !== 'object') return false;
+  const obj = data as Record<string, unknown>;
+  return typeof obj.userMessage === 'string' && typeof obj.parentId !== 'undefined';
 }
 
 /**

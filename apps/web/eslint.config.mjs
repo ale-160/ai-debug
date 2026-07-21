@@ -14,7 +14,6 @@
 // - react-hooks/exhaustive-deps：warn（依赖完整性）
 //
 // 关闭的规则（代码库历史原因，精确化风险高或属合法模式）：
-// - no-explicit-any：节点 config 为动态结构，历史代码大量使用 any
 // - react-hooks/set-state-in-effect：合法 prop-sync 模式（节点切换清空缓存等）
 // - react/no-array-index-key：静态列表 index 是合理 key
 // ============================================================
@@ -26,6 +25,14 @@ import prettierConfig from 'eslint-config-prettier';
 const eslintConfig = [
   ...nextConfig,
   {
+    // 启用 typescript-eslint 的 type-aware linting（projectService），
+    // 供 no-floating-promises 等需要类型信息的规则使用。
+    // projectService 自动从最近的 tsconfig.json 构建程序，无需手动指定 project。
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+      },
+    },
     plugins: {
       '@typescript-eslint': tseslint.plugin,
     },
@@ -37,10 +44,14 @@ const eslintConfig = [
       ],
       '@typescript-eslint/consistent-type-imports': [
         'error',
-        { prefer: 'type-imports', fixStyle: 'inline-type-imports' },
+        // disallowTypeAnnotations: false 允许 `typeof import('mod')` 类型注解，
+        // 动态导入场景（dagre 等）需要此语法获取模块类型
+        { prefer: 'type-imports', fixStyle: 'inline-type-imports', disallowTypeAnnotations: false },
       ],
-      // 节点 config 为动态结构，历史代码大量使用 any，关闭以避免噪音
-      '@typescript-eslint/no-explicit-any': 'off',
+      // 节点 config 为动态结构，历史代码大量使用 any；先 warn 不阻断，引导逐步消除
+      '@typescript-eslint/no-explicit-any': 'warn',
+      // 浮动 Promise（未 await/return/catch 的 Promise 调用）容易吞异常，先 warn
+      '@typescript-eslint/no-floating-promises': 'warn',
 
       // ===== JS 通用严格规则 =====
       'no-console': ['error', { allow: ['warn', 'error'] }],

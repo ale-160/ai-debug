@@ -71,14 +71,61 @@ import {
   DEFAULT_SETTINGS,
 } from './settings-storage';
 import { saveSnapshot as saveSnapshotToStore, getSnapshotById } from './canvas-snapshots-store';
+import { createIdleLocalStorage } from './project-storage';
 import { generateId } from '@/lib/id';
 
 // immer patches 全局初始化：
 // - enablePatches：开启 patch 序列化能力（produceWithPatches 依赖）
 // - setAutoFreeze(false)：draft 结果与 React Flow 的 node 对象共享引用，
 //   冻结会导致 React Flow 内部就地更新报错，故关闭
+//
+// 3.1.6：setAutoFreeze 是 immer 模块级全局副作用，会影响所有使用 immer 的代码。
+// 用 typeof window 判断包裹，确保 SSR 环境（构建期）不被触发，避免污染 Node.js
+// 全局 immer 配置（SSR 不会执行 React Flow 渲染，无需关闭 autoFreeze）。
 enablePatches();
-setAutoFreeze(false);
+if (typeof window !== 'undefined') {
+  setAutoFreeze(false);
+}
+
+// ============================================================
+// H-8：流式 chunk 暂存区（模块级，不触发 set）
+//
+// 每个 chunk（10-50ms 一个）若直接触发 set + nodes.map 遍历，100 节点画布
+// 每秒约 2000-5000 次 map 操作。改为：
+// - appendStreamChunk：仅写入 buffer + 调度 rAF flush（同一帧内只 flush 一次）
+// - flushStreamBuffer：rAF 节流后一次性把 buffer 应用到 nodes
+// - appendAssistantChunk：内部走 buffer + rAF flush（API 兼容）
+// 调用方在 stream end 时必须调用 flushStreamBuffer 强制刷新，避免最后一段丢失。
+// ============================================================
+const streamingBuffers = new Map<string, string>();
+const streamingRafIds = new Map<string, number>();
+
+// ============================================================
+// H-11：childrenMap 索引构建器
+//
+// 在 store 中维护 childrenMap: Record<parentId, childId[]>，避免每个
+// TurnNode 都做 nodes.filter(...).sort(...).map(...) 的 O(N) 操作（N 节点
+// 累计 O(N²)）。childrenMap 在 createTurnNode/deleteNode 等修改 nodes 的
+// action 中增量更新；loadProject/undo/redo/startNewProject 等批量替换 nodes
+// 的场景一次性重算。
+// ============================================================
+function buildChildrenMap(nodes: Node<TurnNodeData>[]): Record<string, string[]> {
+  const groups: Record<string, Node<TurnNodeData>[]> = {};
+  for (const n of nodes) {
+    const pid = n.data.parentId;
+    if (pid === null) continue;
+    if (!groups[pid]) groups[pid] = [];
+    groups[pid].push(n);
+  }
+  // 每组按 createdAt 升序排序后提取 id（与原 TurnNode 选择器行为一致）
+  const map: Record<string, string[]> = {};
+  for (const pid of Object.keys(groups)) {
+    const group = groups[pid];
+    group.sort((a, b) => (a.data.createdAt ?? 0) - (b.data.createdAt ?? 0));
+    map[pid] = group.map((n) => n.id);
+  }
+  return map;
+}
 
 /** 画布视口 */
 export interface FlowViewport {
@@ -102,6 +149,19 @@ export interface FlowViewport {
 
 /** 历史栈上限 */
 const MAX_HISTORY = 200;
+/**
+ * 4.4.6：历史栈 patches 总字节数上限（50MB）。
+ *
+ * 长会话下 _undoStack 持续累积 immer patches，每条历史含 forward + backward
+ * 两组 patch。200 步上限在常规节点尺寸下足够安全，但极端场景（如单节点
+ * assistantMessage 数 MB、连续 200 次 setNodeSuggestions 全量替换）可能
+ * 让总字节数突破 50MB，导致 store 内存占用过高 / localStorage 写入超配额。
+ *
+ * 入栈前用 JSON.stringify 估算单条 patch 字节数，累计超限则丢弃最早的历史
+ * （与 200 步上限同策略：shift 出栈）。50MB 是保守上限：浏览器 localStorage
+ * 通常 5-10MB，但 _undoStack 不持久化（运行时态），所以可用更高上限。
+ */
+const MAX_HISTORY_BYTES = 50 * 1024 * 1024;
 /** 合并窗口（毫秒）：500ms 内的连续变更合并为一条历史 */
 const MERGE_WINDOW_MS = 500;
 
@@ -125,6 +185,12 @@ interface HistoryState {
  *
  * 假设：调用方不重排数组顺序。本项目内 setNodes/setEdges 均保持顺序
  * （filter/map/concat），故按 id 同步后顺序与 newArr 一致。
+ *
+ * 3.1.7 注记：实际调用链中 createTurnNode 等会调用 incrementalLayout
+ * 重新计算节点 position 后返回新数组，position 变化导致节点对象引用变化
+ * 但 id 顺序不变，syncArrayById 仍按 id 就地替换对应 patch（不会重排），
+ * 此行为符合预期。若未来增量布局改为重排 nodes 数组顺序，需改为直接整体
+ * 替换（return newArr）而非按 id 同步。
  *
  * 注：original() 在运行时按 proxy 标识识别 draft，与静态类型无关，
  * 此处用 `as unknown` 绕过 immer 复杂的 WritableDraft 嵌套类型，
@@ -226,6 +292,12 @@ interface NetworkState {
   /** 切换某节点的选中子分支 */
   setSelectedChild: (parentId: string, childId: string) => void;
 
+  // ========== H-11：childrenMap 索引 ==========
+  // 派生字段：key=父节点 id, value=按 createdAt 升序排序的子节点 id 数组。
+  // 在 createTurnNode/deleteNode 等修改 nodes 的 action 中增量维护；
+  // loadProject/undo/redo/startNewProject 批量替换时重算。不持久化。
+  childrenMap: Record<string, string[]>;
+
   // ========== React Flow 集成 ==========
   onNodesChange: (changes: NodeChange[]) => void;
   onEdgesChange: (changes: EdgeChange[]) => void;
@@ -236,7 +308,8 @@ interface NetworkState {
    * 创建一个 Turn 节点，返回新节点 id。
    * @param userMessage  用户消息文本
    * @param parentId     父节点 ID（根节点为 null）
-   * @param options      可选：images 图片 base64 列表 / attachments 多模态附件 / source 来源标记
+   * @param options      可选：images 图片 base64 列表 / attachments 多模态附件 / source 来源标记 /
+   *                     position 显式指定节点位置（如双击画布手动建节点时跳过增量布局）
    */
   createTurnNode: (
     userMessage: string,
@@ -245,14 +318,19 @@ interface NetworkState {
       images?: string[];
       attachments?: NodeAttachment[];
       source?: 'manual' | 'assistant';
+      position?: { x: number; y: number };
     },
   ) => string;
   /** 创建合并节点（多选节点合并为新支线根），返回新节点 id。LLM 调用由调用方触发 */
   createMergedNode: (sourceIds: string[], intent: string) => string;
   /** 更新节点 data 的部分字段 */
   updateTurnNode: (nodeId: string, partial: Partial<TurnNodeData>) => void;
-  /** 流式追加 assistantMessage */
+  /** 流式追加 assistantMessage（H-8：内部走 buffer + rAF 节流，调用方 stream end 时需调 flushStreamBuffer） */
   appendAssistantChunk: (nodeId: string, delta: string) => void;
+  /** H-8：仅写入 buffer + 调度 rAF flush，不触发 set。高频 chunk 时使用 */
+  appendStreamChunk: (nodeId: string, delta: string) => void;
+  /** H-8：强制把 nodeId 的 buffer 立即应用到 nodes。stream end 时调用 */
+  flushStreamBuffer: (nodeId: string) => void;
   /** 设置节点的 suggestions 列表 */
   setNodeSuggestions: (nodeId: string, suggestions: Suggestion[]) => void;
   /** 注册节点的 AbortController（调用方发起流式请求时注册，供 abortRunningTurn 取消） */
@@ -304,6 +382,8 @@ interface NetworkState {
   togglePinProject: (id: string) => void;
   /** 从 storage 重新加载 projects 列表 */
   refreshProjects: () => void;
+  /** 将派生项目（如精简版）直接加入 store.projects，persist 自动同步到 localStorage */
+  addDerivedProject: (project: NetworkProject) => void;
 
   // ========== 记忆操作 ==========
   /** 追加全局记忆条目（来源默认 manual） */
@@ -321,7 +401,7 @@ interface NetworkState {
   /** 从 storage 重新加载全局记忆 */
   refreshGlobalMemory: () => void;
   /** 计数器 +1（每次 AI 回答成功后调用） */
-  incrementTurnCounter: () => void;
+  incrementTurnCounter: () => number;
 
   // ========== 设置操作 ==========
   /** 更新应用设置（合并传入字段）并持久化 */
@@ -518,13 +598,16 @@ function collectDescendants(nodeId: string, nodes: Node<TurnNodeData>[]): Set<st
       childrenMap.set(n.data.parentId, list);
     }
   }
-  const queue: string[] = childrenMap.get(nodeId) ?? [];
+  // 3.3.2：入队前用 result 去重，避免环引用或菱形依赖时 queue 无限增长
+  const queue: string[] = (childrenMap.get(nodeId) ?? []).filter((id) => !result.has(id));
   while (queue.length > 0) {
     const id = queue.shift()!;
-    if (result.has(id)) continue; // 防止异常环引用导致死循环
+    if (result.has(id)) continue; // 兜底：防环
     result.add(id);
     const children = childrenMap.get(id) ?? [];
-    queue.push(...children);
+    for (const c of children) {
+      if (!result.has(c)) queue.push(c);
+    }
   }
   return result;
 }
@@ -538,8 +621,13 @@ export const SKILLS_STORAGE_KEY = 'ai-debug:skills';
 
 /**
  * 迁移旧 key `ai-debug:network-projects` 到新 persist key `ai-debug-store`。
- * 仅在旧 key 有数据且新 key 无数据时执行一次性迁移，迁移后保留旧 key 不删除
- * （等用户确认新版正常后再清理，避免数据丢失风险）。
+ * 仅在旧 key 有数据且新 key 无数据时执行一次性迁移，迁移成功后立即删除旧 key
+ * 避免残留（4.4.5：原实现保留旧 key 不删除，存在数据双写风险与存储空间浪费）。
+ *
+ * 4.4.5 注记：迁移失败时（JSON.parse 抛错或防御性校验失败）保留旧 key 不删除，
+ * 让用户下次启动可重试；迁移成功才删除。删除旧 key 包裹 try/catch 静默失败
+ * （隐私模式 / 配额异常等场景不应阻塞主流程）。
+ *
  * 非浏览器环境（SSR）静默跳过。
  */
 export function migrateLegacyProjectsKey(): void {
@@ -557,6 +645,13 @@ export function migrateLegacyProjectsKey(): void {
         version: 1,
       };
       window.localStorage.setItem(STORE_PERSIST_KEY, JSON.stringify(migratedState));
+      // 4.4.5：迁移成功后立即删除旧 key，避免数据双写与存储空间浪费。
+      // 删除失败不阻塞主流程（下次启动会再次尝试，但新 key 已有数据会跳过迁移）。
+      try {
+        window.localStorage.removeItem(LEGACY_PROJECTS_KEY);
+      } catch {
+        // 删除失败静默忽略（隐私模式 / 配额异常等）
+      }
     }
   } catch {
     // 旧数据损坏，静默跳过（persist 会用默认空状态）
@@ -642,6 +737,12 @@ export const useDebugStore = create<NetworkState>()(
             selectedChildIdMap: { ...state.selectedChildIdMap, [parentId]: childId },
           })),
 
+        // ========== H-11：childrenMap 索引 ==========
+        // 派生字段：key=父节点 id, value=按 createdAt 升序排序的子节点 id 数组。
+        // 初始空对象（无节点）；loadProject/startNewProject/undo/redo/createTurnNode/
+        // deleteNode 等修改 nodes 的 action 中增量或批量更新。不持久化。
+        childrenMap: {},
+
         // ========== 自动推演 ==========
         // 默认 idle，由引擎在 start/done 时切换
         autoEvolutionState: { status: 'idle', currentStep: 0, maxSteps: 0, activeBranches: 0 },
@@ -651,13 +752,40 @@ export const useDebugStore = create<NetworkState>()(
         _abortControllers: new Map<string, AbortController>(),
 
         // ========== React Flow 集成 ==========
-        // 选中变化不算 dirty，避免无谓的自动保存。
+        // 5.2.2 / 5.2.3 性能优化注记：
+        //   - 当前所有 action 手动展开 `{...n, data: {...n.data, ...}}`，无结构性共享。
+        //     迁移计划（保守，不本次执行）：引入 immer 中间件替换 set 内的手动展开，
+        //     利用 draft + 自动 patch 实现结构性共享，减少大 nodes 数组的全量拷贝。
+        //     新增 action 已尽量使用 produce 风格的局部更新（见 createTurnNode 等）。
+        //   - onNodesChange 优化（5.2.3）：纯 selection 变化短路返回不创建新数组；
+        //     position 变化中区分 dragging 中 / drag 结束，dragging 中不标记 isDirty，
+        //     减少 auto-save 防抖触发次数（仍每帧 set nodes 以保持视觉反馈）。
+        //     TODO：进一步引入 transient update 模式（subscribeWithSelector + ref 暂存
+        //     拖动中位置，仅 drag 结束时 set），消除每帧新数组分配，需配合 NodeCanvas 改造。
         onNodesChange: (changes) => {
-          const hasNonSelectionChanges = changes.some((c) => c.type !== 'select');
-          set((state) => ({
-            nodes: applyNodeChanges(changes, state.nodes),
-            isDirty: hasNonSelectionChanges ? true : state.isDirty,
-          }));
+          // 5.2.3 短路：纯 selection 变化不创建新 nodes 数组
+          if (changes.length > 0 && changes.every((c) => c.type === 'select')) {
+            return;
+          }
+          set((state) => {
+            const newNodes = applyNodeChanges(changes, state.nodes);
+            // H-11：若有 remove 类变化，重算 childrenMap（O(N) 一次性）
+            // 其他类型变化（position/select/dimensions）不影响父子关系
+            const hasRemove = changes.some((c) => c.type === 'remove');
+            // 5.2.3：position 变化仅在 drag 结束（dragging=false）时标记 isDirty，
+            // dragging 中不触发自动保存（saveProject 仍被防抖窗口拦住，但减少 dirty 翻转）
+            const hasDragEnd = changes.some(
+              (c) => c.type === 'position' && (c as { dragging?: boolean }).dragging === false,
+            );
+            const hasNonPositionNonSelection = changes.some(
+              (c) => c.type !== 'select' && c.type !== 'position',
+            );
+            return {
+              nodes: newNodes,
+              childrenMap: hasRemove ? buildChildrenMap(newNodes) : state.childrenMap,
+              isDirty: hasDragEnd || hasNonPositionNonSelection ? true : state.isDirty,
+            };
+          });
         },
 
         onEdgesChange: (changes) => {
@@ -681,7 +809,7 @@ export const useDebugStore = create<NetworkState>()(
           const newNode: Node<TurnNodeData> = {
             id,
             type: 'turn',
-            position: { x: 0, y: 0 },
+            position: options?.position ?? { x: 0, y: 0 },
             data: createTurnNodeData(userMessage, parentId, options),
           };
           // 先 append 节点，再视情况补 edge，最后增量布局
@@ -696,11 +824,19 @@ export const useDebugStore = create<NetworkState>()(
                 animated: false,
               });
             }
-            // 增量布局仅重算新节点（及兄弟）位置
-            const laidOut = incrementalLayout(id, newNodes, newEdges);
+            // 显式指定 position（如双击画布手动建节点）时跳过增量布局，保留用户选择的位置
+            const laidOut = options?.position
+              ? newNodes
+              : incrementalLayout(id, newNodes, newEdges);
+            // H-11：增量更新 childrenMap（新节点 createdAt 通常最大，追加到末尾）
+            const newChildrenMap = { ...state.childrenMap };
+            if (parentId !== null) {
+              newChildrenMap[parentId] = (newChildrenMap[parentId] ?? []).concat(id);
+            }
             return {
               nodes: laidOut,
               edges: newEdges,
+              childrenMap: newChildrenMap,
               isDirty: true,
             };
           });
@@ -749,9 +885,66 @@ export const useDebugStore = create<NetworkState>()(
           }));
         },
 
-        // 流式追加：assistantMessage += delta；同时兜底确保 status 为 running
-        // （流式开始时调用方一般会先设 running，此处仅作保险）。
-        appendAssistantChunk: (nodeId, delta) => {
+        // H-8：仅写入 buffer + 调度 rAF flush，不触发 set。
+        // 同一帧内多次调用只 flush 一次（rAF 句柄去重）。流式高频 chunk 时使用。
+        appendStreamChunk: (nodeId, delta) => {
+          // 累积 delta 到 buffer
+          const prev = streamingBuffers.get(nodeId) ?? '';
+          streamingBuffers.set(nodeId, prev + delta);
+          // 已调度 rAF 则跳过（同帧去重）
+          if (streamingRafIds.has(nodeId)) return;
+          // 调度 rAF flush（SSR/无 rAF 环境用 setTimeout(0) fallback）
+          const flush = () => {
+            streamingRafIds.delete(nodeId);
+            const buffered = streamingBuffers.get(nodeId);
+            if (buffered === undefined) return;
+            streamingBuffers.delete(nodeId);
+            if (buffered === '') return;
+            set((state) => ({
+              nodes: state.nodes.map((n) =>
+                n.id === nodeId
+                  ? {
+                      ...n,
+                      data: {
+                        ...n.data,
+                        assistantMessage: n.data.assistantMessage + buffered,
+                        status: 'running' as const,
+                      },
+                    }
+                  : n,
+              ),
+              isDirty: true,
+            }));
+          };
+          if (typeof window === 'undefined' || typeof requestAnimationFrame !== 'function') {
+            const tid = (typeof window !== 'undefined' ? window.setTimeout(flush, 0) : 0) as number;
+            streamingRafIds.set(nodeId, tid);
+          } else {
+            const rafId = requestAnimationFrame(flush);
+            streamingRafIds.set(nodeId, rafId as unknown as number);
+          }
+        },
+
+        // H-8：强制把 nodeId 的 buffer 立即应用到 nodes。
+        // stream end 时调用，避免最后一段 chunk 滞留在 buffer 中。
+        flushStreamBuffer: (nodeId) => {
+          // 取消待执行的 rAF
+          const rafId = streamingRafIds.get(nodeId);
+          if (rafId !== undefined) {
+            streamingRafIds.delete(nodeId);
+            if (typeof window !== 'undefined') {
+              if (typeof cancelAnimationFrame === 'function') {
+                cancelAnimationFrame(rafId);
+              } else {
+                window.clearTimeout(rafId);
+              }
+            }
+          }
+          // 立即 flush
+          const buffered = streamingBuffers.get(nodeId);
+          if (buffered === undefined) return;
+          streamingBuffers.delete(nodeId);
+          if (buffered === '') return;
           set((state) => ({
             nodes: state.nodes.map((n) =>
               n.id === nodeId
@@ -759,7 +952,7 @@ export const useDebugStore = create<NetworkState>()(
                     ...n,
                     data: {
                       ...n.data,
-                      assistantMessage: n.data.assistantMessage + delta,
+                      assistantMessage: n.data.assistantMessage + buffered,
                       status: 'running' as const,
                     },
                   }
@@ -767,6 +960,15 @@ export const useDebugStore = create<NetworkState>()(
             ),
             isDirty: true,
           }));
+        },
+
+        // 流式追加：assistantMessage += delta；同时兜底确保 status 为 running
+        // （流式开始时调用方一般会先设 running，此处仅作保险）。
+        // H-8：内部走 buffer + rAF 节流，避免每个 chunk 都触发 set + nodes.map。
+        // 调用方在 stream end 时必须调用 flushStreamBuffer(nodeId) 强制刷新，
+        // 否则最后一段 chunk 可能滞留在 buffer 中。
+        appendAssistantChunk: (nodeId, delta) => {
+          get().appendStreamChunk(nodeId, delta);
         },
 
         setNodeSuggestions: (nodeId, suggestions) => {
@@ -786,8 +988,10 @@ export const useDebugStore = create<NetworkState>()(
             // 覆盖前先 abort 旧的，避免悬挂请求
             prev.abort();
           }
-          state._abortControllers.set(nodeId, controller);
-          // 注册的 controller 不触发 set（不进 React 视图，避免无谓重渲染）
+          // 3.1.2：用新 Map 替换原 Map，避免直接 mutate state（zustand 不可变约定）
+          set({
+            _abortControllers: new Map(state._abortControllers).set(nodeId, controller),
+          });
         },
 
         // 取消指定 running 节点的流式请求：abort controller + 标记节点 error 状态
@@ -797,7 +1001,14 @@ export const useDebugStore = create<NetworkState>()(
           if (controller && !controller.signal.aborted) {
             controller.abort();
           }
-          state._abortControllers.delete(nodeId);
+          // 3.1.2：用新 Map 删除 entry，避免直接 mutate state
+          if (state._abortControllers.has(nodeId)) {
+            const nextMap = new Map(state._abortControllers);
+            nextMap.delete(nodeId);
+            set({ _abortControllers: nextMap });
+          }
+          // H-8：abort 前先 flush 流式 buffer，保留已生成的部分内容供用户查看
+          get().flushStreamBuffer(nodeId);
           set((s) => ({
             nodes: s.nodes.map((n) =>
               n.id === nodeId
@@ -810,13 +1021,54 @@ export const useDebugStore = create<NetworkState>()(
 
         // 删除节点 + 其所有下游子节点（递归通过 parentId 找子节点）+ 相关 edges
         deleteNode: (nodeId) => {
+          // 3.1.3：先 abort 该节点及其所有子节点正在进行的流式请求，避免悬挂
+          const stateBeforeDelete = get();
+          const toAbort = collectDescendants(nodeId, stateBeforeDelete.nodes);
+          toAbort.add(nodeId);
+          for (const id of toAbort) {
+            if (stateBeforeDelete._abortControllers.has(id)) {
+              // 只 abort controller，不更新节点 status（节点马上要删除）
+              const ctrl = stateBeforeDelete._abortControllers.get(id);
+              if (ctrl && !ctrl.signal.aborted) ctrl.abort();
+              const nextMap = new Map(stateBeforeDelete._abortControllers);
+              nextMap.delete(id);
+              set({ _abortControllers: nextMap });
+            }
+          }
           set((state) => {
             const toDelete = collectDescendants(nodeId, state.nodes);
             toDelete.add(nodeId);
             const isDeleted = (id: string) => toDelete.has(id);
+            // H-11：增量更新 childrenMap，删除被删节点及其后代的 entry，
+            // 并从父节点数组中移除被删 id。空数组 key 不保留（保持对象紧凑）
+            const newChildrenMap: Record<string, string[]> = {};
+            for (const [pid, arr] of Object.entries(state.childrenMap)) {
+              if (isDeleted(pid)) continue; // 父节点被删，丢弃整个 entry
+              const filtered = arr.filter((cid) => !isDeleted(cid));
+              if (filtered.length > 0) newChildrenMap[pid] = filtered;
+            }
+            // 3.3.3：扫描所有合并节点，移除 mergedFromIds 中已删除的 id，
+            // 避免悬空引用导致 collectContextPath 在回溯来源路径时返回空段。
+            // 若清理后某合并节点的 mergedFromIds 变为空数组，置为 undefined
+            // （类型约定：mergedFromIds 为空数组等价于无合并来源，统一为 undefined）
+            const newNodes = state.nodes.map((n) => {
+              if (!isDeleted(n.id) && n.data.mergedFromIds && n.data.mergedFromIds.length > 0) {
+                const filteredSources = n.data.mergedFromIds.filter((sid) => !isDeleted(sid));
+                if (filteredSources.length === n.data.mergedFromIds.length) return n; // 无变化
+                return {
+                  ...n,
+                  data: {
+                    ...n.data,
+                    mergedFromIds: filteredSources.length > 0 ? filteredSources : undefined,
+                  },
+                };
+              }
+              return n;
+            });
             return {
-              nodes: state.nodes.filter((n) => !isDeleted(n.id)),
+              nodes: newNodes.filter((n) => !isDeleted(n.id)),
               edges: state.edges.filter((e) => !isDeleted(e.source) && !isDeleted(e.target)),
+              childrenMap: newChildrenMap,
               selectedNodeId: isDeleted(state.selectedNodeId ?? '') ? null : state.selectedNodeId,
               isDirty: true,
             };
@@ -828,6 +1080,20 @@ export const useDebugStore = create<NetworkState>()(
         // 不删除推演起点本身（起点是用户节点，可能仍想保留）。
         // 删除后保留失去子节点的父节点（spec 约束：不强制清理）。
         deleteEvolutionNodes: (startNodeId) => {
+          // 3.1.3：先 abort 待删节点中正在进行的流式请求
+          const stateBeforeDelete = get();
+          const toAbortIds = stateBeforeDelete.nodes
+            .filter((n) => n.data.evolutionMeta && n.data.evolutionMeta.startNodeId === startNodeId)
+            .map((n) => n.id);
+          if (toAbortIds.length > 0) {
+            const nextMap = new Map(stateBeforeDelete._abortControllers);
+            for (const id of toAbortIds) {
+              const ctrl = nextMap.get(id);
+              if (ctrl && !ctrl.signal.aborted) ctrl.abort();
+              nextMap.delete(id);
+            }
+            set({ _abortControllers: nextMap });
+          }
           set((state) => {
             const toDelete = new Set<string>();
             for (const n of state.nodes) {
@@ -837,9 +1103,17 @@ export const useDebugStore = create<NetworkState>()(
             }
             if (toDelete.size === 0) return {};
             const isDeleted = (id: string) => toDelete.has(id);
+            // H-11：增量更新 childrenMap（与 deleteNode 同策略）
+            const newChildrenMap: Record<string, string[]> = {};
+            for (const [pid, arr] of Object.entries(state.childrenMap)) {
+              if (isDeleted(pid)) continue;
+              const filtered = arr.filter((cid) => !isDeleted(cid));
+              if (filtered.length > 0) newChildrenMap[pid] = filtered;
+            }
             return {
               nodes: state.nodes.filter((n) => !isDeleted(n.id)),
               edges: state.edges.filter((e) => !isDeleted(e.source) && !isDeleted(e.target)),
+              childrenMap: newChildrenMap,
               selectedNodeId: isDeleted(state.selectedNodeId ?? '') ? null : state.selectedNodeId,
               isDirty: true,
             };
@@ -849,13 +1123,37 @@ export const useDebugStore = create<NetworkState>()(
 
         // ========== 支线操作 ==========
         abandonBranch: (nodeId) => {
+          // 3.1.3：先 abort 该节点及其子节点中正在进行的流式请求
+          const stateBeforeAbandon = get();
+          const toAbort = collectDescendants(nodeId, stateBeforeAbandon.nodes);
+          toAbort.add(nodeId);
+          const toAbortFiltered = Array.from(toAbort).filter((id) =>
+            stateBeforeAbandon._abortControllers.has(id),
+          );
+          if (toAbortFiltered.length > 0) {
+            const nextMap = new Map(stateBeforeAbandon._abortControllers);
+            for (const id of toAbortFiltered) {
+              const ctrl = nextMap.get(id);
+              if (ctrl && !ctrl.signal.aborted) ctrl.abort();
+              nextMap.delete(id);
+            }
+            set({ _abortControllers: nextMap });
+          }
           set((state) => {
             const toAbandon = collectDescendants(nodeId, state.nodes);
             toAbandon.add(nodeId);
             return {
               nodes: state.nodes.map((n) =>
                 toAbandon.has(n.id)
-                  ? { ...n, data: { ...n.data, status: 'abandoned' as const } }
+                  ? {
+                      ...n,
+                      data: {
+                        ...n.data,
+                        // 3.1.4：保留原 status 供 reactivateBranch 恢复
+                        _preAbandonStatus: n.data.status,
+                        status: 'abandoned' as const,
+                      },
+                    }
                   : n,
               ),
               isDirty: true,
@@ -875,8 +1173,11 @@ export const useDebugStore = create<NetworkState>()(
                       ...n,
                       data: {
                         ...n.data,
-                        // 若 assistantMessage 非空则 'success'，否则 'idle'
-                        status: n.data.assistantMessage.trim() !== '' ? 'success' : 'idle',
+                        // 3.1.4：优先恢复 abandon 前的 status，无记录则按原规则推断
+                        status:
+                          n.data._preAbandonStatus ??
+                          (n.data.assistantMessage.trim() !== '' ? 'success' : 'idle'),
+                        _preAbandonStatus: undefined,
                       },
                     }
                   : n,
@@ -968,6 +1269,8 @@ export const useDebugStore = create<NetworkState>()(
             highlightedPathIds: [],
             // 清空分支切换器选中状态（UI 临时态不跨项目）
             selectedChildIdMap: {},
+            // H-11：清空 childrenMap（草稿态无节点）
+            childrenMap: {},
           });
           // 切换项目清空历史栈（草稿态不入栈，等绑定项目后再记录 base）
           get().clearHistory();
@@ -994,6 +1297,8 @@ export const useDebugStore = create<NetworkState>()(
             highlightedPathIds: [],
             // 清空分支切换器选中状态（UI 临时态不跨项目）
             selectedChildIdMap: {},
+            // H-11：切换项目后重算 childrenMap（基于新项目的 nodes）
+            childrenMap: buildChildrenMap(project.nodes),
           });
           // 切换项目清空历史栈，并以新项目画布作为下次 push 的 base
           get().clearHistory();
@@ -1052,6 +1357,12 @@ export const useDebugStore = create<NetworkState>()(
         // persist 接管后：projects 由 persist 中间件自动从 localStorage rehydrate，
         // 此函数保留为 no-op 以兼容 EditorInner 的 refreshProjects() 调用（避免破坏接口）
         refreshProjects: () => {},
+
+        // 派生项目（如精简版）直接加入 store.projects：persist 中间件自动同步到 localStorage。
+        // 用于 network-pruner 等旁路模块——它们构造完整项目对象后通过此 action 入库，
+        // 避免直接写 localStorage 导致 store.projects 不更新、侧边栏不刷新。
+        addDerivedProject: (project) =>
+          set((state) => ({ projects: [...state.projects, project] })),
 
         // ========== 记忆操作 ==========
         // 全局记忆：直接读写 localStorage，再同步到 store
@@ -1129,7 +1440,12 @@ export const useDebugStore = create<NetworkState>()(
 
         refreshGlobalMemory: () => set({ globalMemory: loadGlobalMemory() }),
 
-        incrementTurnCounter: () => set((state) => ({ turnCounter: state.turnCounter + 1 })),
+        // 返回新计数器值，供调用方避免闭包旧值竞态（两个流式同时完成时读到相同旧值）
+        incrementTurnCounter: () => {
+          const newTurnCounter = get().turnCounter + 1;
+          set({ turnCounter: newTurnCounter });
+          return newTurnCounter;
+        },
 
         // ========== 设置操作 ==========
         updateAppSettings: (partial) => {
@@ -1322,8 +1638,12 @@ export const useDebugStore = create<NetworkState>()(
           const base = state._lastHistoryState;
           // 首次入栈：仅记录 base，不产生 patch（无前序状态可对比）
           if (!base) {
+            // 3.1.5：浅拷贝 nodes/edges 隔离 base，避免后续 mutate 影响 _lastHistoryState
             set({
-              _lastHistoryState: { nodes: state.nodes, edges: state.edges },
+              _lastHistoryState: {
+                nodes: state.nodes.map((n) => ({ ...n, data: { ...n.data } })),
+                edges: state.edges.map((e) => ({ ...e })),
+              },
               _lastPushTime: Date.now(),
             });
             return;
@@ -1346,6 +1666,19 @@ export const useDebugStore = create<NetworkState>()(
           // 上限 200 步：超出时丢弃最早的历史
           if (newUndoStack.length > MAX_HISTORY) {
             newUndoStack.shift();
+          }
+          // 4.4.6：累计字节数上限 50MB，超出时丢弃最早的历史直到低于上限。
+          // 用 JSON.stringify 粗略估算字节数（immer patch 是普通对象数组），
+          // 计算开销 O(总字节数)，仅在入栈时执行一次，不影响常态性能。
+          // 极端情况下若单条 patch 已超过 50MB（不太可能），仍保留该条入栈
+          // 但不再追加新条目，保证当前操作可被 undo。
+          let stackBytes = 0;
+          for (const entry of newUndoStack) {
+            stackBytes += JSON.stringify(entry).length;
+          }
+          while (stackBytes > MAX_HISTORY_BYTES && newUndoStack.length > 1) {
+            const dropped = newUndoStack.shift()!;
+            stackBytes -= JSON.stringify(dropped).length;
           }
           set({
             _undoStack: newUndoStack,
@@ -1370,16 +1703,15 @@ export const useDebugStore = create<NetworkState>()(
             _undoStack: state._undoStack.slice(0, -1),
             _redoStack: [...state._redoStack, entry],
             _lastHistoryState: reverted,
-            _isUndoRedoing: true,
+            // 同步释放守卫：与主体操作同一批 set，避免连点 undo 时第二次被 _isUndoRedoing 拦截导致撤销丢失
+            _isUndoRedoing: false,
             nodes: reverted.nodes,
             edges: reverted.edges,
+            // H-11：undo 后父子关系可能变化，重算 childrenMap
+            childrenMap: buildChildrenMap(reverted.nodes),
             isDirty: true,
             undoCount: state._undoStack.length - 1,
             redoCount: state._redoStack.length + 1,
-          });
-          // 同步释放标记：使用微任务确保本次 set 触发的订阅者跳过入栈
-          Promise.resolve().then(() => {
-            set({ _isUndoRedoing: false });
           });
         },
 
@@ -1396,15 +1728,15 @@ export const useDebugStore = create<NetworkState>()(
             _redoStack: state._redoStack.slice(0, -1),
             _undoStack: [...state._undoStack, entry],
             _lastHistoryState: applied,
-            _isUndoRedoing: true,
+            // 同步释放守卫：与主体操作同一批 set，避免连点 redo 时第二次被 _isUndoRedoing 拦截导致重做丢失
+            _isUndoRedoing: false,
             nodes: applied.nodes,
             edges: applied.edges,
+            // H-11：redo 后父子关系可能变化，重算 childrenMap
+            childrenMap: buildChildrenMap(applied.nodes),
             isDirty: true,
             undoCount: state._undoStack.length + 1,
             redoCount: state._redoStack.length - 1,
-          });
-          Promise.resolve().then(() => {
-            set({ _isUndoRedoing: false });
           });
         },
 
@@ -1414,8 +1746,12 @@ export const useDebugStore = create<NetworkState>()(
           set({
             _undoStack: [],
             _redoStack: [],
+            // 3.1.5：浅拷贝隔离 base，避免后续 mutate 影响 _lastHistoryState
             _lastHistoryState: state.currentProjectId
-              ? { nodes: state.nodes, edges: state.edges }
+              ? {
+                  nodes: state.nodes.map((n) => ({ ...n, data: { ...n.data } })),
+                  edges: state.edges.map((e) => ({ ...e })),
+                }
               : null,
             _isUndoRedoing: false,
             _lastPushTime: 0,
@@ -1498,14 +1834,11 @@ export const useDebugStore = create<NetworkState>()(
             _undoStack: [],
             _redoStack: [],
             _lastHistoryState: { nodes: cleanNodes, edges: cleanEdges },
-            _isUndoRedoing: true,
+            // 同步释放守卫：与主体操作同一批 set，避免快速操作时被 _isUndoRedoing 拦截
+            _isUndoRedoing: false,
             _lastPushTime: 0,
             undoCount: 0,
             redoCount: 0,
-          });
-          // 同步释放守卫：使用微任务确保本次 set 触发的订阅者跳过入栈
-          Promise.resolve().then(() => {
-            set({ _isUndoRedoing: false });
           });
           return true;
         },
@@ -1816,7 +2149,9 @@ export const useDebugStore = create<NetworkState>()(
       // appSettings/globalMemory 由 settings-storage 独立管理（保留 refresh* 兼容）
       {
         name: STORE_PERSIST_KEY,
-        storage: createJSONStorage(() => localStorage),
+        // H-12：用 idle 模式的 localStorage 包装器，序列化与写入在 requestIdleCallback
+        // 空闲期执行，避免阻塞主线程。fallback 到 setTimeout(0)；beforeunload 时强制 flush。
+        storage: createJSONStorage(() => createIdleLocalStorage()),
         partialize: (state) => ({
           projects: state.projects,
           currentProjectId: state.currentProjectId,

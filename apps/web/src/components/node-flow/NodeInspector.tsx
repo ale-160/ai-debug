@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useDeferredValue } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Loader2, GitFork, Bookmark, ChevronDown, ChevronUp } from 'lucide-react';
@@ -21,6 +21,10 @@ import PathSummaryCard from './inspector/PathSummaryCard';
 import EvolutionMetaCard from './inspector/EvolutionMetaCard';
 import ParamRenderer from './inspector/ParamRenderer';
 import { useInspectorActions } from './inspector/useInspectorActions';
+
+// H-9：remark 插件数组提取为模块级常量，避免每次渲染都创建新数组引用
+// 导致 ReactMarkdown 内部 memo 失效（修复 5.4.3）
+const REMARK_PLUGINS = [remarkGfm];
 
 /** Markdown 元素样式（项目未启用 tailwindcss/typography，故手动提供基础排版） */
 const mdComponents: Components = {
@@ -143,6 +147,17 @@ export default function NodeInspector() {
         label: n.data.summary?.trim() || n.data.userMessage.slice(0, 30) || n.id,
       }));
   }, [nodes, selectedNode]);
+
+  // H-9：useDeferredValue 必须在 early return 之前调用（Hook 规则），
+  // 否则 selectedNode 为空时 Hook 顺序变化会触发 React 警告。
+  // selectedNode 为空时传入空字符串作为 fallback，渲染分支不会进入 Markdown 路径。
+  const deferredMessage = useDeferredValue(
+    selectedNode
+      ? selectedNode.data.status === 'running'
+        ? truncateStreamingText(selectedNode.data.assistantMessage)
+        : selectedNode.data.assistantMessage
+      : '',
+  );
 
   if (!selectedNode) return null;
 
@@ -287,10 +302,16 @@ export default function NodeInspector() {
             <div className="text-slate-400 dark:text-slate-500 text-sm italic">
               {t.waitingForGeneration}
             </div>
+          ) : isRunning ? (
+            // H-9：流式期间用纯文本 <pre> 渲染，避免每个 chunk 都触发 Markdown 解析
+            // （2000 字约 10-30ms × 20-50ms chunk 频率导致解析积压）
+            <pre className="text-sm text-slate-700 dark:text-slate-300 break-words whitespace-pre-wrap font-sans m-0">
+              {displayMessage}
+            </pre>
           ) : (
             <div className="text-sm text-slate-700 dark:text-slate-300 break-words">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-                {displayMessage}
+              <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={mdComponents}>
+                {deferredMessage}
               </ReactMarkdown>
             </div>
           )}

@@ -8,14 +8,33 @@ import { useEffect, useRef, useCallback } from 'react';
  * - Tab/Shift+Tab 在弹窗内循环（焦点陷阱）
  * - Escape 键关闭弹窗
  * - 关闭时焦点恢复到触发按钮
+ * - 通过 containerProps 强制注入 role="dialog" / aria-modal / tabIndex，
+ *   避免调用方遗忘导致可访问性退化
  *
  * @param open     弹窗是否打开
  * @param onClose  关闭回调
- * @returns 需要绑定到弹窗容器 div 的 ref
+ * @param options  可选：ariaLabelledBy 指向标题元素 id（与 aria-label 二选一）
+ * @returns containerRef 绑定到弹窗容器 div；containerProps 展开到同一 div
  */
-export function useDialogA11y(open: boolean, onClose: () => void) {
+export function useDialogA11y(
+  open: boolean,
+  onClose: () => void,
+  options?: { ariaLabelledBy?: string },
+) {
   const containerRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+
+  /**
+   * 容器默认 ARIA 属性：调用方必须通过展开 containerProps 注入，
+   * 确保 role="dialog" / aria-modal / tabIndex 不被遗漏。
+   * 调用方可额外叠加 aria-label（覆盖 aria-labelledby 的语义）。
+   */
+  const containerProps = {
+    role: 'dialog' as const,
+    'aria-modal': true as const,
+    tabIndex: -1,
+    ...(options?.ariaLabelledBy ? { 'aria-labelledby': options.ariaLabelledBy } : {}),
+  };
 
   // 获取容器内所有可聚焦元素
   const getFocusableElements = useCallback((): HTMLElement[] => {
@@ -95,5 +114,5 @@ export function useDialogA11y(open: boolean, onClose: () => void) {
     }
   }, [open]);
 
-  return containerRef;
+  return { containerRef, containerProps };
 }

@@ -53,6 +53,7 @@ export type SchemaNodeDefinition = NodeDefinition & {
  *   - images: 图片 base64 列表（向后兼容字段，优先使用 attachments）
  *   - attachments: 多模态附件列表（支持 image/text/binary 三类）
  *   - source: 节点来源标记（'manual' 用户手动 / 'assistant' 助手转发）
+ *   - position: 由调用方（store）使用，createTurnNodeData 自身忽略此字段
  */
 export function createTurnNodeData(
   userMessage: string,
@@ -61,6 +62,7 @@ export function createTurnNodeData(
     images?: string[];
     attachments?: NodeAttachment[];
     source?: 'manual' | 'assistant';
+    position?: { x: number; y: number };
   },
 ): TurnNodeData {
   const now = Date.now();

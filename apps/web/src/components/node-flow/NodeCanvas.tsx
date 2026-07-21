@@ -17,6 +17,7 @@ import {
   Tag,
   Copy,
   CornerDownRight,
+  Plus,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { nodeTypes } from './nodes';
@@ -186,47 +187,38 @@ export default function NodeCanvas() {
   // cherry-pick 状态（T031）：源节点 id，设置后右键其他节点可"移植到此处"
   const [cherryPickSource, setCherryPickSource] = useState<string | null>(null);
 
-  // 双击空白画布建节点时回溯 parentId 用：onPaneClick 在 dblclick 前触发并清除
-  // store.selectedNodeId，此处先快照到 ref，供 handlePaneDoubleClick 读取
-  const selectedBeforePaneClickRef = useRef<string | null>(null);
-  const clearSelectedRefTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 空白画布右键菜单 state：记录右键坐标（用于"手动新建节点"菜单）
+  const [paneContextMenu, setPaneContextMenu] = useState<{ x: number; y: number } | null>(null);
 
   const onPaneClick = useCallback(() => {
-    // 仅在仍有选中节点时更新 ref，避免双击的第二次 click 覆盖第一次记录的值
-    const current = useDebugStore.getState().selectedNodeId;
-    if (current !== null) {
-      selectedBeforePaneClickRef.current = current;
-      // 双击窗口（~300ms）后清除 ref，避免"先单击取消选中、再双击"误用旧选中节点
-      if (clearSelectedRefTimerRef.current) clearTimeout(clearSelectedRefTimerRef.current);
-      clearSelectedRefTimerRef.current = setTimeout(() => {
-        selectedBeforePaneClickRef.current = null;
-      }, 350);
-    }
     setSelectedNode(null);
     setContextMenu(null);
+    setPaneContextMenu(null);
   }, [setSelectedNode]);
 
-  // 双击空白画布手动新建节点（不调用 LLM，仅创建结构用于测试或手动填充）
-  // - 有选中节点 → 创建为选中节点的子节点（通过 ref 回溯，dblclick 前 click 已清空 store）
-  // - 无选中节点 → 创建为根节点（parentId = null）
-  // 节点位置取双击处的画布坐标，跳过增量布局以保留用户选择的位置
-  // React Flow 11 无 onPaneDoubleClick，用 onDoubleClick + 目标 class 过滤实现
-  const handlePaneDoubleClick = useCallback(
-    (event: React.MouseEvent) => {
-      // 仅响应空白画布双击（react-flow__pane），忽略节点/边上的双击
-      const target = event.target as HTMLElement;
-      if (!target.classList.contains('react-flow__pane')) return;
-      const parentId = selectedBeforePaneClickRef.current ?? null;
-      const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+  // 手动新建节点的核心逻辑：根据传入的 parentId 与屏幕坐标创建节点
+  // parentId === null 时创建根节点；非空时创建为对应节点的子节点
+  // 节点位置取屏幕坐标转换后的画布坐标，跳过增量布局以保留用户选择的位置
+  const createManualNode = useCallback(
+    (parentId: string | null, screenX: number, screenY: number) => {
+      const position = screenToFlowPosition({ x: screenX, y: screenY });
       const newId = createTurnNode(t.manualNodeDefaultText, parentId, {
         source: 'manual',
         position,
       });
       setSelectedNode(newId);
       toast.success(t.manualNodeCreated);
+      return newId;
     },
     [screenToFlowPosition, createTurnNode, setSelectedNode, t],
   );
+
+  // 空白画布右键：显示手动新建节点菜单
+  const onPaneContextMenu = useCallback((event: React.MouseEvent) => {
+    event.preventDefault();
+    setContextMenu(null);
+    setPaneContextMenu({ x: event.clientX, y: event.clientY });
+  }, []);
 
   // 右键节点时记录位置并显示菜单（T024）
   const onNodeContextMenu = useCallback((e: React.MouseEvent, node: Node) => {
@@ -762,7 +754,7 @@ export default function NodeCanvas() {
           onConnect={onConnect}
           onNodeClick={onNodeClick}
           onPaneClick={onPaneClick}
-          onDoubleClick={handlePaneDoubleClick}
+          onPaneContextMenu={onPaneContextMenu}
           onNodeContextMenu={onNodeContextMenu}
           onNodeDragStop={handleNodeDragStop}
           onMove={onMove}
@@ -898,6 +890,29 @@ export default function NodeCanvas() {
           onUndo={undo}
           onRedo={redo}
         />
+
+        {/* 左下角浮动工具栏：手动新建节点（仅在已有项目时显示，草稿态由 EmptyStateInput 处理） */}
+        {currentProjectId && (
+          <div className="absolute bottom-4 left-4 z-20 flex items-center gap-1 bg-slate-100/90 dark:bg-white/10 backdrop-blur-xl rounded-full px-1.5 py-1.5 border border-slate-200 dark:border-white/10 shadow-2xl shadow-black/10 dark:shadow-black/40">
+            <button
+              type="button"
+              onClick={() => {
+                // 智能判断：有选中节点 → 子节点 / 无选中 → 根节点
+                // 节点位置：视口中心转换为画布坐标
+                const parentId = selectedNodeId ?? null;
+                createManualNode(parentId, window.innerWidth / 2, window.innerHeight / 2);
+              }}
+              title={selectedNodeId ? t.manualNodeSelectedHint : t.manualNodeButton}
+              aria-label={t.manualNodeButton}
+              className="flex items-center gap-1.5 px-2.5 h-8 rounded-full text-xs font-medium text-slate-700 dark:text-white/80 hover:bg-slate-900/10 dark:hover:bg-white/10 transition-colors"
+            >
+              <Plus size={14} />
+              <span className="hidden sm:inline">
+                {selectedNodeId ? t.manualNodeAsChild : t.manualNodeButton}
+              </span>
+            </button>
+          </div>
+        )}
 
         {/* 浮动工具条（T024）：至少 1 个节点选中时显示在画布底部居中 */}
         {(appSettings.nodeActionsStyle === 'toolbar' || appSettings.nodeActionsStyle === 'both') &&
@@ -1130,6 +1145,41 @@ export default function NodeCanvas() {
               })()}
             </div>
           )}
+
+        {/* 空白画布右键菜单：手动新建节点（不调用 LLM） */}
+        {paneContextMenu && (
+          <div
+            className="fixed z-50 min-w-[160px] py-1 bg-white border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-lg shadow-lg"
+            style={{ left: paneContextMenu.x, top: paneContextMenu.y }}
+            role="menu"
+          >
+            {/* 智能判断：有选中节点 → 子节点 / 无选中 → 根节点 */}
+            <button
+              onClick={() => {
+                const parentId = selectedNodeId ?? null;
+                createManualNode(parentId, paneContextMenu.x, paneContextMenu.y);
+                setPaneContextMenu(null);
+              }}
+              className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors text-left"
+              role="menuitem"
+            >
+              <Plus size={12} />
+              {selectedNodeId ? t.manualNodeAsChild : t.manualNodeButton}
+            </button>
+            {/* 强制创建为根节点（始终可用） */}
+            <button
+              onClick={() => {
+                createManualNode(null, paneContextMenu.x, paneContextMenu.y);
+                setPaneContextMenu(null);
+              }}
+              className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors text-left"
+              role="menuitem"
+            >
+              <Network size={12} />
+              {t.manualNodeAsRoot}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* diff 视图抽屉（T029）：懒加载，用户点击"对比"后渲染 */}

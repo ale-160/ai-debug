@@ -760,10 +760,18 @@ export const STRINGS_ZH = {
   // H-18：错误处理相关文案（ErrorBoundary fallback / 全局 error.tsx）
   canvasRenderFailed: '画布渲染失败，请刷新页面',
 
-  // 手动新建节点（双击空白画布）：用于测试布局或手动记录笔记，不调用 LLM
+  // 手动新建节点（右键菜单 / 浮动工具栏）：用于测试布局或手动记录笔记，不调用 LLM
   manualNodeDefaultText: '手动节点',
-  manualNodeTooltip: '双击空白处新建节点（不调用 AI）',
+  manualNodeTooltip: '右键空白处或点击左下角按钮新建节点（不调用 AI）',
   manualNodeCreated: '已新建手动节点',
+  // 浮动工具栏按钮：智能判断（有选中 → 子节点 / 无选中 → 根节点）
+  manualNodeButton: '新建节点',
+  // 右键菜单项：明确创建为选中节点的子节点
+  manualNodeAsChild: '新建子节点',
+  // 右键菜单项：强制创建为根节点
+  manualNodeAsRoot: '新建根节点',
+  // 浮动工具栏 tooltip：当前会从选中节点分叉
+  manualNodeSelectedHint: '将从选中节点分叉',
   reloadPage: '刷新页面',
   errorBoundaryTitle: '渲染出错',
   errorBoundaryRetry: '重试',
@@ -1542,10 +1550,18 @@ export const STRINGS_EN = {
   // H-18: Error handling (ErrorBoundary fallback / global error.tsx)
   canvasRenderFailed: 'Canvas rendering failed, please reload the page',
 
-  // Manual node creation (double-click empty canvas): for layout testing or notes, no LLM call
+  // Manual node creation (context menu / floating toolbar): for layout testing or notes, no LLM call
   manualNodeDefaultText: 'Manual node',
-  manualNodeTooltip: 'Double-click empty area to create a node (no AI call)',
+  manualNodeTooltip: 'Right-click empty area or use the bottom-left button to create a node (no AI call)',
   manualNodeCreated: 'Manual node created',
+  // Floating toolbar button: smart logic (selected → child / no selection → root)
+  manualNodeButton: 'Create node',
+  // Context menu item: explicitly create as child of selected node
+  manualNodeAsChild: 'Create child node',
+  // Context menu item: force creating as root
+  manualNodeAsRoot: 'Create root node',
+  // Floating toolbar tooltip: will fork from the selected node
+  manualNodeSelectedHint: 'Will fork from selected node',
   reloadPage: 'Reload Page',
   errorBoundaryTitle: 'Something went wrong',
   errorBoundaryRetry: 'Retry',

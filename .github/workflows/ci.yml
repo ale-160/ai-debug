@@ -31,7 +31,7 @@ jobs:
       is_external: ${{ steps.permission.outputs.is_external }}
       has_functions: ${{ steps.functions.outputs.has }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Check author permission
         id: permission
@@ -68,7 +68,7 @@ jobs:
     outputs:
       status: ${{ steps.result.outputs.status }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v5
       # 不指定 version，自动读 package.json 的 packageManager 字段
@@ -164,7 +164,7 @@ jobs:
     if: always() && github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Download CI logs
         if: needs.quality.result == 'failure'

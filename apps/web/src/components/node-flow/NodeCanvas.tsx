@@ -129,7 +129,14 @@ export default function NodeCanvas() {
   const nodeDisplayMode = useDebugStore((s) => s.nodeDisplayMode);
   const toggleNodeDisplayMode = useDebugStore((s) => s.toggleNodeDisplayMode);
 
-  const { zoomIn, zoomOut, fitView, setViewport: rfSetViewport, getViewport } = useReactFlow();
+  const { zoomIn, zoomOut, fitView, setViewport: rfSetViewport, getViewport, screenToFlowPosition } =
+    useReactFlow();
+
+  // 稳定 nodeTypes / defaultEdgeOptions 引用，避免 React Flow "created a new nodeTypes or
+  // edgeTypes object" 警告（模块级常量已稳定，但 useMemo 进一步防御 React Compiler 'all' 模式
+  // 可能对 import binding 产生的间接重计算）
+  const memoizedNodeTypes = useMemo(() => nodeTypes, []);
+  const memoizedDefaultEdgeOptions = useMemo(() => defaultEdgeOptions, []);
 
   const abortRef = useRef<AbortController | null>(null);
   const registerAbortController = useDebugStore((s) => s.registerAbortController);
@@ -179,10 +186,47 @@ export default function NodeCanvas() {
   // cherry-pick 状态（T031）：源节点 id，设置后右键其他节点可"移植到此处"
   const [cherryPickSource, setCherryPickSource] = useState<string | null>(null);
 
+  // 双击空白画布建节点时回溯 parentId 用：onPaneClick 在 dblclick 前触发并清除
+  // store.selectedNodeId，此处先快照到 ref，供 handlePaneDoubleClick 读取
+  const selectedBeforePaneClickRef = useRef<string | null>(null);
+  const clearSelectedRefTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const onPaneClick = useCallback(() => {
+    // 仅在仍有选中节点时更新 ref，避免双击的第二次 click 覆盖第一次记录的值
+    const current = useDebugStore.getState().selectedNodeId;
+    if (current !== null) {
+      selectedBeforePaneClickRef.current = current;
+      // 双击窗口（~300ms）后清除 ref，避免"先单击取消选中、再双击"误用旧选中节点
+      if (clearSelectedRefTimerRef.current) clearTimeout(clearSelectedRefTimerRef.current);
+      clearSelectedRefTimerRef.current = setTimeout(() => {
+        selectedBeforePaneClickRef.current = null;
+      }, 350);
+    }
     setSelectedNode(null);
     setContextMenu(null);
   }, [setSelectedNode]);
+
+  // 双击空白画布手动新建节点（不调用 LLM，仅创建结构用于测试或手动填充）
+  // - 有选中节点 → 创建为选中节点的子节点（通过 ref 回溯，dblclick 前 click 已清空 store）
+  // - 无选中节点 → 创建为根节点（parentId = null）
+  // 节点位置取双击处的画布坐标，跳过增量布局以保留用户选择的位置
+  // React Flow 11 无 onPaneDoubleClick，用 onDoubleClick + 目标 class 过滤实现
+  const handlePaneDoubleClick = useCallback(
+    (event: React.MouseEvent) => {
+      // 仅响应空白画布双击（react-flow__pane），忽略节点/边上的双击
+      const target = event.target as HTMLElement;
+      if (!target.classList.contains('react-flow__pane')) return;
+      const parentId = selectedBeforePaneClickRef.current ?? null;
+      const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+      const newId = createTurnNode(t.manualNodeDefaultText, parentId, {
+        source: 'manual',
+        position,
+      });
+      setSelectedNode(newId);
+      toast.success(t.manualNodeCreated);
+    },
+    [screenToFlowPosition, createTurnNode, setSelectedNode, t],
+  );
 
   // 右键节点时记录位置并显示菜单（T024）
   const onNodeContextMenu = useCallback((e: React.MouseEvent, node: Node) => {
@@ -718,12 +762,13 @@ export default function NodeCanvas() {
           onConnect={onConnect}
           onNodeClick={onNodeClick}
           onPaneClick={onPaneClick}
+          onDoubleClick={handlePaneDoubleClick}
           onNodeContextMenu={onNodeContextMenu}
           onNodeDragStop={handleNodeDragStop}
           onMove={onMove}
-          nodeTypes={nodeTypes}
+          nodeTypes={memoizedNodeTypes}
           fitView
-          defaultEdgeOptions={defaultEdgeOptions}
+          defaultEdgeOptions={memoizedDefaultEdgeOptions}
           deleteKeyCode={null}
           zoomOnScroll={false}
           panOnScroll={false}

@@ -69,7 +69,7 @@ export const STRINGS_ZH = {
   goToProviderConsole: '前往 {provider} 官方控制台创建 API Key，并在模型列表中查看可用的模型名。',
 
   apiKeySecurityNote:
-    'API Key 使用 AES-GCM 加密后存储在当前浏览器 localStorage，不会上传到任何服务器（除你配置的 LLM 服务商外）。注意：加密密钥同样保存在本地，能延迟攻击者但无法防御拿到本机访问权限的攻击者。',
+    'API Key 加密存储在当前浏览器 localStorage，不会上传到任何服务器（除你配置的 LLM 服务商外）。开源项目加密规则公开，无法防御拿到浏览器本地数据的攻击者，请勿在公共电脑保存。',
 
   pleaseFillApiKey: '请先填写 API Key',
   pleaseFillBaseUrl: '请先填写 Base URL',
@@ -330,6 +330,7 @@ export const STRINGS_ZH = {
   helpCanvasIntro: '画布是蛛网的主要工作区，所有节点以放射状/树状布局展开。常用操作：',
   helpCanvasOps: [
     '新建节点：NodeInspector 输入框输入消息 → Enter 发送；助手面板开启自动建图模式后对话即可建节点',
+    '手动新建节点：双击空白画布（不调用 AI，仅创建空节点用于测试或笔记）',
     '分叉：选中任意节点 → 在 Inspector 输入新消息，自动作为该节点的子分支',
     '合并：右键节点 → 选「合并节点」→ 选多个来源 → 输入合并意图',
     '删除/废弃/忽略：右键节点或 Inspector 底部操作区',
@@ -758,6 +759,11 @@ export const STRINGS_ZH = {
 
   // H-18：错误处理相关文案（ErrorBoundary fallback / 全局 error.tsx）
   canvasRenderFailed: '画布渲染失败，请刷新页面',
+
+  // 手动新建节点（双击空白画布）：用于测试布局或手动记录笔记，不调用 LLM
+  manualNodeDefaultText: '手动节点',
+  manualNodeTooltip: '双击空白处新建节点（不调用 AI）',
+  manualNodeCreated: '已新建手动节点',
   reloadPage: '刷新页面',
   errorBoundaryTitle: '渲染出错',
   errorBoundaryRetry: '重试',
@@ -823,7 +829,7 @@ export const STRINGS_EN = {
     'Go to {provider} console to create an API Key and check available model names.',
 
   apiKeySecurityNote:
-    'API Key is encrypted with AES-GCM before being stored in your browser localStorage, and is never uploaded to any server (except your configured LLM provider). Note: the encryption key is also stored locally — this slows down attackers but cannot prevent access by someone with full control of your machine.',
+    "API Key is encrypted and stored in your browser's localStorage, never uploaded to any server (except your configured LLM provider). As an open-source project, the encryption scheme is public and cannot defend against attackers with local browser access. Do not save on public computers.",
 
   pleaseFillApiKey: 'Please fill in the API Key',
   pleaseFillBaseUrl: 'Please fill in the Base URL',
@@ -1095,6 +1101,7 @@ export const STRINGS_EN = {
     'The canvas is the main workspace of AI Debug. All nodes expand in a radial/tree layout. Common operations:',
   helpCanvasOps: [
     'New node: Type in NodeInspector input → Enter; or chat in the assistant panel with auto-create mode enabled',
+    'Manual new node: Double-click empty canvas (no AI call, creates an empty node for testing or notes)',
     'Fork: Select any node → type a new message in Inspector → automatically becomes a child branch',
     'Merge: Right-click a node → select "Merge Nodes" → pick multiple sources → enter merge intent',
     'Delete/Abandon/Ignore: Right-click a node or use the Inspector bottom action area',
@@ -1534,6 +1541,11 @@ export const STRINGS_EN = {
 
   // H-18: Error handling (ErrorBoundary fallback / global error.tsx)
   canvasRenderFailed: 'Canvas rendering failed, please reload the page',
+
+  // Manual node creation (double-click empty canvas): for layout testing or notes, no LLM call
+  manualNodeDefaultText: 'Manual node',
+  manualNodeTooltip: 'Double-click empty area to create a node (no AI call)',
+  manualNodeCreated: 'Manual node created',
   reloadPage: 'Reload Page',
   errorBoundaryTitle: 'Something went wrong',
   errorBoundaryRetry: 'Retry',

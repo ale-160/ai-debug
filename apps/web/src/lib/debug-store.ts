@@ -308,7 +308,8 @@ interface NetworkState {
    * 创建一个 Turn 节点，返回新节点 id。
    * @param userMessage  用户消息文本
    * @param parentId     父节点 ID（根节点为 null）
-   * @param options      可选：images 图片 base64 列表 / attachments 多模态附件 / source 来源标记
+   * @param options      可选：images 图片 base64 列表 / attachments 多模态附件 / source 来源标记 /
+   *                     position 显式指定节点位置（如双击画布手动建节点时跳过增量布局）
    */
   createTurnNode: (
     userMessage: string,
@@ -317,6 +318,7 @@ interface NetworkState {
       images?: string[];
       attachments?: NodeAttachment[];
       source?: 'manual' | 'assistant';
+      position?: { x: number; y: number };
     },
   ) => string;
   /** 创建合并节点（多选节点合并为新支线根），返回新节点 id。LLM 调用由调用方触发 */
@@ -807,7 +809,7 @@ export const useDebugStore = create<NetworkState>()(
           const newNode: Node<TurnNodeData> = {
             id,
             type: 'turn',
-            position: { x: 0, y: 0 },
+            position: options?.position ?? { x: 0, y: 0 },
             data: createTurnNodeData(userMessage, parentId, options),
           };
           // 先 append 节点，再视情况补 edge，最后增量布局
@@ -822,8 +824,10 @@ export const useDebugStore = create<NetworkState>()(
                 animated: false,
               });
             }
-            // 增量布局仅重算新节点（及兄弟）位置
-            const laidOut = incrementalLayout(id, newNodes, newEdges);
+            // 显式指定 position（如双击画布手动建节点）时跳过增量布局，保留用户选择的位置
+            const laidOut = options?.position
+              ? newNodes
+              : incrementalLayout(id, newNodes, newEdges);
             // H-11：增量更新 childrenMap（新节点 createdAt 通常最大，追加到末尾）
             const newChildrenMap = { ...state.childrenMap };
             if (parentId !== null) {
